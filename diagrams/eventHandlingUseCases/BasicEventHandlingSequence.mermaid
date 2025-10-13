@@ -1,0 +1,15 @@
+sequenceDiagram
+    autonumber
+    participant S as Event Source
+    participant R as EventHandlingRouter
+    participant H as Target Handler
+
+    S->>R: handle(event)
+    R->>R: lookup by event.target
+    alt Handler found
+        R->>H: handle(event)
+        H-->>R: Event (response event)
+        R-->>S: Event
+    else No handler
+        R-->>S: HandlerNotFoundException
+    end

@@ -1,0 +1,49 @@
+classDiagram
+    direction TB
+
+    class Event {
+        -String source
+        -String target
+        -Map~String,Serializable~ parameters
+        -Map~String,Serializable~ metadata
+        -Serializable payload
+        +String getSource()
+        +String getTarget()
+        +Map~String,Serializable~ getParameters()
+        +Map~String,Serializable~ getMetadata()
+        +Serializable getPayload()
+        +Builder toBuilder()
+        +static Builder builder()
+    }
+
+    class EventHandler {
+        <<interface>>
+        +Event handle(Event)
+    }
+
+    class EventHandlingException {
+        <<exception>>
+        -Serializable payload
+        +Serializable getPayload()
+    }
+
+    class HandlerNotFoundException {
+        -String target
+        +String getTarget()
+    }
+
+    class UnexpectedEventHandlingException {
+    }
+
+    class EventHandlingRouter {
+        -Map~String,EventHandler~ handlers
+        +Event handle(Event)
+        +static Builder builder()
+    }
+
+    EventHandler ..> Event: handles
+    RuntimeException <|-- EventHandlingException
+    EventHandlingException <|-- HandlerNotFoundException
+    EventHandlingException <|-- UnexpectedEventHandlingException
+    EventHandler <|.. EventHandlingRouter: implements
+    EventHandlingRouter o--> EventHandler: delegates handling

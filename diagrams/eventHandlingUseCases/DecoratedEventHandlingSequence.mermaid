@@ -1,0 +1,30 @@
+sequenceDiagram
+    autonumber
+    participant S as Event Source
+    participant D as DecoratedEventHandler
+    participant H as Delegate Handler
+
+    S->>D: handle(event)
+    alt event is null
+        D-->>S: NullPointerException
+    else event not null & delegate returns
+        opt before hook
+            D->>D: before.accept(event)
+        end
+        D->>H: delegate.handle(event)
+        H-->>D: Event
+        opt afterSuccess hook
+            D->>D: afterSuccess.accept(event)
+        end
+        D-->>S: Event
+    else event not null & delegate throws (EventHandlingException | RuntimeException | Error)
+        opt before hook
+            D->>D: before.accept(event)
+        end
+        D->>H: delegate.handle(event)
+        H-->>D: exception
+        opt onError hook
+            D->>D: onError.accept(event, exception)
+        end
+        D-->>S: propagate exception
+    end
