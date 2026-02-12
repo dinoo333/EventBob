@@ -1,4 +1,4 @@
-package io.eventbob.core;
+package io.eventbob.core.eventrouting;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -58,7 +58,7 @@ public class EventHandlingRouter implements EventHandler {
     }
 
     /**
-     * Build the EventRunner with an unmodifiable handler map.
+     * Build the EventRouter with an unmodifiable handler map.
      */
     public EventHandlingRouter build() {
       return new EventHandlingRouter(this);

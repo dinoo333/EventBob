@@ -1,5 +1,10 @@
 package io.eventbob.core;
 
+import io.eventbob.core.eventrouting.Event;
+import io.eventbob.core.eventrouting.EventHandler;
+import io.eventbob.core.eventrouting.EventHandlingException;
+import io.eventbob.core.eventrouting.UnexpectedEventHandlingException;
+import io.eventbob.core.eventrouting.DecoratedEventHandler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

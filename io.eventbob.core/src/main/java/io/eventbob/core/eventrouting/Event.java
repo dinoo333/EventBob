@@ -1,4 +1,4 @@
-package io.eventbob.core;
+package io.eventbob.core.eventrouting;
 
 import java.io.Serial;
 import java.io.Serializable;

@@ -132,23 +132,39 @@ public class DecoratedEventHandler implements EventHandler { ... }
 ```
 io.eventbob.core/
   src/main/java/io/eventbob/core/
-    Event.java
-    EventHandler.java
-    EventHandlingRouter.java
-    DecoratedEventHandler.java
-    EventHandlingException.java
-    HandlerNotFoundException.java
-    UnexpectedEventHandlingException.java
-    MetadataKeys.java
+    eventrouting/                      # Event Routing subdomain
+      Event.java
+      EventHandler.java
+      EventHandlingRouter.java
+      DecoratedEventHandler.java
+      EventHandlerCapability.java      # Annotation for registration
+      MetadataKeys.java
+      EventHandlingException.java
+      HandlerNotFoundException.java
+      UnexpectedEventHandlingException.java
+    endpointresolution/                # Endpoint Resolution subdomain
+      Capability.java                  # READ/WRITE/ADMIN enum
+      CapabilityResolver.java          # Port/interface
+      RoutingKey.java                  # Service operation identifier
+      Endpoint.java                    # Physical endpoint address
+      EndpointState.java               # GREEN/BLUE deployment state
   src/test/java/io/eventbob/core/
     EventTest.java
     EventHandlingRouterTest.java
     DecoratedEventHandlerTest.java
     MetadataKeysTest.java
+    CoreArchitectureTest.java          # ArchUnit boundary enforcement
+  docs/
+    core_dependency_graph.md           # Generated Martin metrics
 ```
 
+**Package Organization:**
+- **Bounded context packages** — eventrouting/ and endpointresolution/ are subdomains within the Event Routing bounded context
+- **Dependency direction** — eventrouting → endpointresolution (one-way, enforced by ArchUnit)
+- **Exceptions flattened** — Exceptions live in eventrouting/ package directly (part of routing domain language)
+
 **Convention:**
-- Production code: `src/main/java/io/eventbob/core/`
+- Production code: `src/main/java/io/eventbob/core/{subdomain}/`
 - Test code: `src/test/java/io/eventbob/core/`
 - Test class name = `{ProductionClass}Test.java`
 
@@ -179,15 +195,16 @@ io.eventbob.core/
 **Hierarchy:**
 ```
 RuntimeException
-  └─ EventHandlingException
-       ├─ HandlerNotFoundException
-       └─ UnexpectedEventHandlingException
+  └─ io.eventbob.core.eventrouting.EventHandlingException
+       ├─ io.eventbob.core.eventrouting.HandlerNotFoundException
+       └─ io.eventbob.core.eventrouting.UnexpectedEventHandlingException
 ```
 
 **Design Decisions:**
 - RuntimeException base (unchecked) - callers decide whether to catch
 - EventHandlingException carries optional Serializable payload for diagnostics
 - Specific subclasses for specific failure modes
+- **Exceptions are part of eventrouting subdomain** - they describe routing failures (handler not found, unexpected routing error), not general endpoint resolution failures
 
 **Pattern:**
 ```java
@@ -202,6 +219,12 @@ public class EventHandlingException extends RuntimeException {
   public Serializable getPayload() { return payload; }
 }
 ```
+
+**Rationale for flattening:**
+Previously exceptions were in a separate `exceptions/` subpackage. They were moved into `eventrouting/` directly because:
+1. Exceptions are part of the routing domain language (not infrastructure)
+2. Flattening eliminates cyclic dependency risk (eventrouting ↔ exceptions)
+3. Simpler package structure with cohesive domain concepts
 
 ### JavaDoc Standards
 

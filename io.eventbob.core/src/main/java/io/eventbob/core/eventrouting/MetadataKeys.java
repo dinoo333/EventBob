@@ -1,4 +1,4 @@
-package io.eventbob.core;
+package io.eventbob.core.eventrouting;
 
 /**
  * Standard metadata keys for EventBob event routing and observability.

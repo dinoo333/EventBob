@@ -1,5 +1,7 @@
 package io.eventbob.core;
 
+import io.eventbob.core.eventrouting.Event;
+import io.eventbob.core.eventrouting.MetadataKeys;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

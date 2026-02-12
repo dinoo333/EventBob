@@ -10,7 +10,8 @@
     <description>Parent POM for the project</description>
 
     <modules>
-        <module>io.eventbob.core</module><!-- List child modules -->
+        <module>io.eventbob.core</module>
+        <module>io.eventbob.registry</module>
     </modules>
 
     <properties>
@@ -20,10 +21,32 @@
         <junit.version>5.12.2</junit.version>
         <assertj.version>3.25.3</assertj.version>
         <mockito.version>5.18.0</mockito.version>
+        <spring-boot.version>3.2.2</spring-boot.version>
+        <testcontainers.version>1.19.3</testcontainers.version>
+        <slf4j.version>2.0.11</slf4j.version>
+        <archunit.version>1.2.1</archunit.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Testcontainers BOM -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- Centralized versions -->
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
@@ -40,6 +63,17 @@
                 <groupId>org.mockito</groupId>
                 <artifactId>mockito-core</artifactId>
                 <version>${mockito.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>

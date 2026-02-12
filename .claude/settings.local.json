@@ -7,7 +7,15 @@
       "Bash(ln:*)",
       "Bash(git add:*)",
       "Bash(grep:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(mvn clean test:*)",
+      "Bash(for file in *.java)",
+      "Bash(do sed -i '' '1s/package io.eventbob.core.exceptions;/package io.eventbob.core.domain.exceptions;/' \"$file\")",
+      "Bash(done)",
+      "Bash(mvn clean compile:*)",
+      "Bash(mvn -q test -Dtest=CoreArchitectureTest)",
+      "Bash(mvn:*)",
+      "Bash(git reset:*)"
     ]
   }
 }

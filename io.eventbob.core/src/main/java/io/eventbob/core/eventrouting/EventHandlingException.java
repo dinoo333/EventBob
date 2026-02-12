@@ -1,6 +1,5 @@
-package io.eventbob.core;
+package io.eventbob.core.eventrouting;
 
-import java.io.Serial;
 import java.io.Serializable;
 
 /**
@@ -20,6 +19,7 @@ public class EventHandlingException extends RuntimeException {
     super(message, cause);
     this.payload = null;
   }
+
   public EventHandlingException(String message, Serializable payload) {
     super(message);
     this.payload = payload;

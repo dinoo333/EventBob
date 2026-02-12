@@ -1,4 +1,4 @@
-package io.eventbob.core;
+package io.eventbob.core.eventrouting;
 
 import java.util.Objects;
 import java.util.function.BiConsumer;

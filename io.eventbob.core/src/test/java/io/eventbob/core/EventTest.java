@@ -1,5 +1,7 @@
 package io.eventbob.core;
 
+import io.eventbob.core.eventrouting.Event;
+
 import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

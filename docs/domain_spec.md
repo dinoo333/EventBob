@@ -34,11 +34,17 @@ An independently versioned component loaded via isolated classloader that implem
 ### Bounded Contexts
 
 #### Event Routing Context (Core)
-**Responsibility:** Route events between services based on target, method, and path. Manage request/response correlation. Propagate trace context.
+**Responsibility:** Route events between services based on target, method, and path. Resolve service capabilities to physical endpoints for progressive deployment. Manage request/response correlation. Propagate trace context.
 
-**Vocabulary:** Event, EventHandler, EventHandlingRouter, routing semantics (target, method, path, correlation-id, reply-to), trace context (trace-id, span-id)
+**Subdomains:**
+- **Event Routing** (`eventrouting` package) — Route events by target to handlers. Handle event lifecycle, decoration, and failure modes.
+- **Endpoint Resolution** (`endpointresolution` package) — Resolve service capabilities (READ/WRITE/ADMIN operations) to physical endpoint addresses for routing decisions. Support progressive deployment (GREEN/BLUE states).
 
-**Boundaries:** Does NOT know about specific transports (HTTP, gRPC, queues). Does NOT know about business domains (users, orders, inventory).
+**Vocabulary:**
+- Event Routing: Event, EventHandler, EventHandlingRouter, DecoratedEventHandler, routing semantics (target, method, path, correlation-id, reply-to), trace context (trace-id, span-id), exceptions (EventHandlingException, HandlerNotFoundException)
+- Endpoint Resolution: Capability (READ/WRITE/ADMIN), CapabilityResolver (port/interface), RoutingKey (service + capability + method + path), Endpoint (physical URL), EndpointState (GREEN/BLUE)
+
+**Boundaries:** Does NOT know about specific transports (HTTP, gRPC, queues). Does NOT know about persistence (registry database). Does NOT know about business domains (users, orders, inventory).
 
 #### Transport Adapter Context
 **Responsibility:** Translate between transport-specific protocols (HTTP requests, gRPC calls, queue messages) and EventBob events.
@@ -46,6 +52,26 @@ An independently versioned component loaded via isolated classloader that implem
 **Vocabulary:** Transport-specific (http.status, http.content-type, grpc.service, queue.topic). Each adapter defines its own namespace.
 
 **Boundaries:** Depends on Event Routing Context. Implements EventHandler. Does NOT leak transport concepts into core.
+
+#### Service Registry Context
+**Responsibility:** Discover, register, and track service capabilities in macro-services. Maintain a live registry of which physical instances provide which operations. Enable capability-based endpoint resolution for progressive deployments.
+
+**Type:** Supporting Subdomain (serves Event Routing Core Domain)
+
+**Vocabulary:**
+- Macro-Service - logical deployment unit bundling multiple service JARs
+- Instance - single running process of a macro-service (macroName + instanceId)
+- Capability Registration - discovery via JAR scanning (`@EventHandlerCapability` annotations)
+- Deployment State - rollout lifecycle (BLUE, GREEN, GRAY, RETIRED)
+- Instance Status - health state (HEALTHY, UNHEALTHY, DRAINING, TERMINATED)
+- Routing Key - composite identifier (serviceName:capability:method:pathPattern)
+- Conflict Detection - version mismatch between declared and registered capabilities
+
+**Implements (future):** `CapabilityResolver` port (defined in Endpoint Resolution subdomain)
+
+**Anti-Corruption Layer:** Translates internal `DeploymentState` (BLUE/GREEN/GRAY/RETIRED) to external `EndpointState` (BLUE/GREEN) when implementing CapabilityResolver. GRAY and RETIRED states never cross to core.
+
+**Boundaries:** Depends on Event Routing Context (imports Capability enum, EventHandler interface, EventHandlerCapability annotation). Does NOT leak infrastructure concerns (PostgreSQL, Spring Boot, ClassGraph) into core.
 
 #### Service Domain Context
 **Responsibility:** Business logic processing. Interprets events using routing semantics (method, path) and parameters to perform domain operations.
@@ -57,6 +83,8 @@ An independently versioned component loaded via isolated classloader that implem
 ### Anti-Corruption Layers
 
 **Transport → Event Routing:** Adapters translate transport requests into Events, ensuring transport-specific concerns (HTTP status codes, gRPC metadata) remain in adapter metadata namespace, not core routing metadata.
+
+**Service Registry → Event Routing:** Registry translates its internal deployment model (DeploymentState: BLUE/GREEN/GRAY/RETIRED) to core's routing model (EndpointState: BLUE/GREEN). The registry's infrastructure model (PostgreSQL schema, Spring Boot, ClassGraph) never crosses to core. Core sees only Endpoint + EndpointState via CapabilityResolver port.
 
 **Event Routing → Service Domain:** Services interpret routing semantics (method, path) in domain-specific ways. A POST to "orders" might mean CreateOrder in one service, different operation in another.
 
@@ -95,6 +123,8 @@ An independently versioned component loaded via isolated classloader that implem
 - Status: Planned (not yet implemented)
 
 ### Evolution & Future Directions
+
+**Implemented:** Service Registry Context (2026-02-12) - JAR scanning, capability registration, instance tracking, deployment state management. Future: implement CapabilityResolver port for endpoint resolution.
 
 **Next Bounded Context:** HTTP Adapter Context - when first HTTP adapter is built, will establish patterns for transport translation and metadata namespacing.
 
