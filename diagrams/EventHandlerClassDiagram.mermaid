@@ -1,0 +1,71 @@
+classDiagram
+    direction TB
+
+    class Event {
+        -String source
+        -String target
+        -Map~String,Serializable~ parameters
+        -Map~String,Serializable~ metadata
+        -Serializable payload
+        +String getSource()
+        +String getTarget()
+        +Map~String,Serializable~ getParameters()
+        +Map~String,Serializable~ getMetadata()
+        +Serializable getPayload()
+        +Builder toBuilder()
+        +static Builder builder()
+    }
+
+    class EventHandler {
+        <<interface>>
+        +Event handle(Event)
+    }
+
+    class EventHandlingException {
+        <<exception>>
+        -Serializable payload
+        +Serializable getPayload()
+    }
+
+    class HandlerNotFoundException {
+        -String target
+        +String getTarget()
+    }
+
+    class UnexpectedEventHandlingException {
+    }
+
+    class EventHandlingRouter {
+        -Map~String,EventHandler~ handlers
+        +Event handle(Event)
+        +static Builder builder()
+    }
+
+    class DecoratedEventHandler {
+        -EventHandler delegate
+        -Consumer~Event~ before
+        -BiConsumer~Event,Event~ afterSuccess
+        -BiFunction~Event,Throwable,Event~ onError
+        +Event handle(Event)
+        +static Builder builder()
+    }
+
+    class MetadataKeys {
+        <<constants>>
+        +String CORRELATION_ID
+        +String REPLY_TO
+        +String METHOD
+        +String PATH
+        +String TRACE_ID
+        +String SPAN_ID
+    }
+
+    EventHandler ..> Event: handles
+    RuntimeException <|-- EventHandlingException
+    EventHandlingException <|-- HandlerNotFoundException
+    EventHandlingException <|-- UnexpectedEventHandlingException
+    EventHandler <|.. EventHandlingRouter: implements
+    EventHandler <|.. DecoratedEventHandler: implements
+    EventHandlingRouter o--> EventHandler: delegates handling
+    DecoratedEventHandler o--> EventHandler: wraps delegate
+    Event ..> MetadataKeys: uses keys from
