@@ -41,9 +41,31 @@ classDiagram
         +static Builder builder()
     }
 
+    class DecoratedEventHandler {
+        -EventHandler delegate
+        -Consumer~Event~ before
+        -BiConsumer~Event,Event~ afterSuccess
+        -BiFunction~Event,Throwable,Event~ onError
+        +Event handle(Event)
+        +static Builder builder()
+    }
+
+    class MetadataKeys {
+        <<constants>>
+        +String CORRELATION_ID
+        +String REPLY_TO
+        +String METHOD
+        +String PATH
+        +String TRACE_ID
+        +String SPAN_ID
+    }
+
     EventHandler ..> Event: handles
     RuntimeException <|-- EventHandlingException
     EventHandlingException <|-- HandlerNotFoundException
     EventHandlingException <|-- UnexpectedEventHandlingException
     EventHandler <|.. EventHandlingRouter: implements
+    EventHandler <|.. DecoratedEventHandler: implements
     EventHandlingRouter o--> EventHandler: delegates handling
+    DecoratedEventHandler o--> EventHandler: wraps delegate
+    Event ..> MetadataKeys: uses keys from

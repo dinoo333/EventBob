@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn test:*)",
+      "Bash(find:*)",
+      "Bash(shasum:*)",
+      "Bash(ln:*)",
+      "Bash(git add:*)",
+      "Bash(grep:*)",
+      "Bash(tee:*)"
+    ]
+  }
+}
