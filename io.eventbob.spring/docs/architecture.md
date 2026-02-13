@@ -16,9 +16,9 @@ This is NOT "a registry using Spring." This is **EventBob implemented using Spri
 
 ## Module Purpose
 
-This Spring implementation provides the complete EventBob macro-service infrastructure:
-- **Capability-based service discovery** (JAR scanning, registration, conflict detection)
-- **Instance tracking and health management** (deployment states, heartbeat monitoring)
+This Spring implementation provides the EventBob macro-service infrastructure:
+- **Capability-based service discovery** (JAR scanning, registration)
+- **Macro tracking** (logical deployment units and their endpoints)
 - **Macro-service bootstrap** (startup orchestration, configuration)
 - **Persistence layer** (Spring JDBC with PostgreSQL)
 
@@ -27,14 +27,14 @@ It sits at the infrastructure layer, implementing ports defined by `io.eventbob.
 **Responsibilities:**
 - Scan JARs for `@EventHandlerCapability` annotations
 - Persist capability metadata to PostgreSQL
-- Track running instances and their health
-- Detect capability version conflicts
+- Track macros (logical deployment units) and their endpoints
 - (Future) Implement `CapabilityResolver` port for endpoint resolution
 
 **Not responsible for:**
 - Event routing logic (core domain)
 - Request handling (application layer)
 - Business domain operations (service layer)
+- Deployment orchestration (infrastructure concern - handled by DNS, service mesh, load balancers)
 
 ## Layer Assignment
 
@@ -50,374 +50,393 @@ It sits at the infrastructure layer, implementing ports defined by `io.eventbob.
               ↑
 ┌─────────────────────────────────┐
 │   Infrastructure Layer          │
-│   io.eventbob.spring            │  JAR scanning, JDBC, Spring Boot (Bridge Implementation)
-│                                 │
-│   - CapabilityScanner           │  (uses ClassGraph)
-│   - CapabilityRegistrar         │  (service layer)
-│   - ServiceRegistryRepository   │  (JDBC persistence)
-│   - MacroServiceBootstrap       │  (startup orchestration)
+│   io.eventbob.spring            │  CapabilityScanner, CapabilityRegistrar, MacroServiceBootstrap
+│                                 │  ServiceRegistryRepository (Spring JDBC)
+└─────────────────────────────────┘
+              ↓
+┌─────────────────────────────────┐
+│   Database                      │  PostgreSQL (service_capabilities, service_macros,
+│                                 │  macro_capabilities, registry_version)
 └─────────────────────────────────┘
 ```
 
-**Dependency direction:** Spring Implementation → Core (infrastructure depends on domain, never reverse)
+**Dependency direction:** Infrastructure → Core (outer depends on inner). Core never imports from infrastructure.
 
-## Future Implementations
+**Anti-Corruption Layer:** Translates Spring-specific types (JdbcTemplate, ResultSet) to core types (Capability, Endpoint). Infrastructure persistence never crosses to core.
 
-The Bridge Pattern enables multiple framework-based implementations:
-- `io.eventbob.spring` - Spring Boot + Spring JDBC (this module)
-- `io.eventbob.dropwizard` - Dropwizard + JDBI (planned)
-- `io.eventbob.micronaut` - Micronaut + Micronaut Data (future)
+## Component Design
 
-All implementations depend on `io.eventbob.core`. None depend on each other.
+### CapabilityScanner
 
-## Dependencies on Core
+**Responsibility:** Discover capabilities from JARs via annotation scanning.
 
-### Imports from io.eventbob.core
+**Pattern:** Domain Service (infrastructure-flavored)
 
-**From `io.eventbob.core.endpointresolution`:**
-- `Capability` (enum: READ, WRITE, ADMIN)
+**Key operations:**
+- `scanJar(jarPath, classLoader) → List<CapabilityDescriptor>`
 
-**From `io.eventbob.core.eventrouting`:**
-- `EventHandler` (interface)
-- `EventHandlerCapability` (annotation)
+**Dependencies:**
+- ClassGraph (JAR scanning library)
+- `@EventHandlerCapability` annotation (from core)
 
-**Purpose:**
-- `Capability` - needed to parse capability types from annotations
-- `EventHandler` - ClassGraph scans for classes implementing this interface
-- `EventHandlerCapability` - annotation that declares capability metadata
+**Data flow:**
+```
+JAR file → ClassGraph.scan() → Find @EventHandlerCapability annotations
+         → Parse operations ("GET /path") → Build CapabilityDescriptor list
+```
 
-### Implements (future)
+**Why this design:**
+- Annotation scanning is infrastructure concern (ClassGraph, reflection, classloaders)
+- Core defines WHAT is scanned (`@EventHandlerCapability` contract)
+- Infrastructure defines HOW to scan (ClassGraph implementation)
 
-**Will implement:**
-- `CapabilityResolver` port (defined in core)
+---
 
-**Contract:**
+### CapabilityDescriptor
+
+**Responsibility:** In-memory representation of discovered capability metadata.
+
+**Pattern:** Data Transfer Object
+
+**Structure:**
 ```java
-public interface CapabilityResolver {
-    List<Endpoint> resolveEndpoints(String routingKey);
+public final class CapabilityDescriptor {
+    private final String serviceName;
+    private final Capability capability;      // READ/WRITE/ADMIN
+    private final int capabilityVersion;
+    private final String method;              // HTTP method
+    private final String pathPattern;
+    private final String handlerClassName;
 }
 ```
 
-**Translation layer (Anti-Corruption):**
-This implementation's internal `DeploymentState` (BLUE, GREEN, GRAY, RETIRED) will be translated to core's `EndpointState` (BLUE, GREEN) when implementing the resolver. GRAY and RETIRED states never cross the boundary.
+**Lifecycle:** Created by scanner → passed to registrar → persisted → discarded
 
-**Why "Spring" not "Registry"?**
+**Why immutable:** Metadata should not change after discovery. Builder pattern enforces complete construction.
 
-The module is named `io.eventbob.spring` because:
-1. It identifies the **implementation framework** (Spring Boot)
-2. It provides ALL EventBob infrastructure capabilities, not just registry
-3. It enables peer implementations like `io.eventbob.dropwizard` to coexist
-4. The domain abstraction lives in `io.eventbob.core`, not here
+---
 
-## Infrastructure Choices
+### CapabilityRegistrar
 
-### PostgreSQL (Database)
+**Responsibility:** Register macros and their capabilities in the registry.
 
-**Why PostgreSQL:**
-- ACID transactions ensure instance + capabilities + linkage are atomic
-- Partial unique indexes (`WHERE deployment_state = 'GREEN'`) enforce business rules at DB level
-- JSONB support for future rollout policies
-- Native enum types for deployment_state, instance_status, capability_type
-- Mature replication for multi-region registry (future)
+**Pattern:** Application Service (infrastructure layer)
 
-**Alternatives considered:**
-- Redis - too ephemeral, loses state on restart
-- DynamoDB - no partial unique indexes, can't enforce single GREEN rule
-- Consul - service discovery focus, lacks transaction semantics
+**Key operations:**
+- `registerMacro(request) → RegistrationResult`
 
-**Trade-off:** PostgreSQL requires operational overhead (backups, monitoring) but provides correctness guarantees critical for routing.
-
-### Spring Boot JDBC (Persistence)
-
-**Why Spring JDBC (not JPA/Hibernate):**
-- Registry has complex queries (idempotent upserts, conflict detection)
-- `ON CONFLICT` clauses are idiomatic in PostgreSQL but awkward in JPA
-- Row mapping is simple (records map 1:1 to DTOs)
-- No object-relational impedance mismatch (no lazy loading, no cascades)
-
-**Alternatives considered:**
-- JPA/Hibernate - adds complexity, hides SQL
-- jOOQ - type-safe SQL but requires code generation
-- Plain JDBC - verbose, no transaction management
-
-**Trade-off:** Spring JDBC is verbose (manual row mapping) but explicit and debuggable.
-
-### Flyway (Database Migrations)
-
-**Why Flyway:**
-- Version-controlled schema evolution
-- Repeatable migrations for development
-- CI integration (migration runs before tests)
-
-**Alternatives considered:**
-- Liquibase - XML overhead, less readable than SQL
-
-### ClassGraph (JAR Scanning)
-
-**Why ClassGraph:**
-- Fast classpath scanning without loading classes
-- Annotation parameter extraction without reflection
-- Works with JARs (not just exploded directories)
-
-**Alternatives considered:**
-- Spring's classpath scanning - slower, requires Spring context
-- Manual reflection - too low-level, error-prone
-
-**Trade-off:** ClassGraph is a third-party dependency, but it's the de facto standard for annotation scanning.
-
-## Internal Package Structure
-
-**Current structure (flat):**
-```
-io.eventbob.spring/
-├── CapabilityDescriptor.java       (value object)
-├── CapabilityRegistrar.java        (service)
-├── CapabilityScanner.java          (service)
-├── DeploymentState.java            (enum)
-├── InstanceStatus.java             (enum)
-├── MacroServiceBootstrap.java      (orchestration)
-└── ServiceRegistryRepository.java  (data access)
-```
-
-**Rationale for flat structure:**
-- Small module (7 classes)
-- No internal complexity requiring subpackages
-- All classes are cohesive (capability registration domain)
-
-**Future subpackage structure (when needed):**
-```
-io.eventbob.spring/
-├── api/                  (REST endpoints for registry queries)
-├── domain/               (CapabilityDescriptor, DeploymentState, InstanceStatus)
-├── repository/           (ServiceRegistryRepository, row mappers)
-├── scanner/              (CapabilityScanner, JAR introspection)
-└── service/              (CapabilityRegistrar, MacroServiceBootstrap)
-```
-
-**Trigger for subpackaging:** When module exceeds 15 classes or when boundary tests (ArchUnit) detect cycles in flat structure.
-
-## Architectural Boundaries
-
-### No Dependency on Other Implementation Modules
-
-**Enforced by:** `RegistryArchitectureTest.registryShouldNotDependOnOtherModules()`
-
-**Rule:** Registry must not depend on:
-- `io.eventbob.api` (future HTTP API module)
-- `io.eventbob.gateway` (future gateway module)
-- `io.eventbob.service` (future service implementation module)
-
-**Rationale:** Registry is infrastructure. It depends only on core domain and third-party libraries. Coupling to other implementation modules would create cycles.
-
-### Acyclic Package Dependencies
-
-**Enforced by:** `RegistryArchitectureTest.noCyclicDependencies()`
-
-**Rule:** If subpackages are introduced, they must be acyclic.
-
-**Current status:** Flat structure (no subpackages) - test passes with `allowEmptyShould(true)`.
-
-### Dependency on Infrastructure Only
-
-**Allowed dependencies:**
-- Spring Boot (JDBC, transactions, dependency injection)
-- PostgreSQL driver (JDBC connectivity)
-- Flyway (migrations)
-- ClassGraph (JAR scanning)
-- SLF4J (logging)
-
-**Forbidden dependencies:**
-- GUI frameworks (Swing, JavaFX)
-- Alternative databases (MongoDB, Cassandra) without abstraction
-- Alternative web frameworks (Dropwizard, Micronaut) without abstraction
-
-**Enforcement:** ArchUnit test verifies registry only depends on whitelisted packages.
-
-## Future Extension Points
-
-### 1. Implement CapabilityResolver Port
-
-**Current state:** Registry stores capabilities and instances but doesn't expose resolution logic to core.
-
-**Future state:** Registry implements `CapabilityResolver` port:
+**Request/Response:**
 ```java
-@Service
-public class DatabaseCapabilityResolver implements CapabilityResolver {
-    @Override
-    public List<Endpoint> resolveEndpoints(String routingKey) {
-        // Query service_capabilities JOIN instance_capabilities
-        // Filter by deployment_state = GREEN
-        // Filter by instance_status = HEALTHY
-        // Return list of endpoints
+public record RegistrationRequest(
+    String macroName,
+    String endpoint,  // Logical name
+    List<CapabilityDescriptor> capabilities
+) {}
+
+public record RegistrationResult(
+    UUID macroId,
+    Map<String, UUID> capabilityIds
+) {
+    public boolean isSuccess() {
+        return macroId != null && !capabilityIds.isEmpty();
     }
 }
 ```
 
-**When:** After Event Routing context defines the `CapabilityResolver` port contract.
+**Transaction boundary:** Entire registration (macro + capabilities + links) is atomic.
 
-### 2. Progressive Rollout Logic
+**Idempotency:** Re-registering same macro updates endpoint but doesn't create duplicates.
 
-**Current state:** Deployment states (BLUE, GREEN) exist but traffic splitting is not implemented.
+**Why this design:**
+- Orchestrates repository calls (registerMacro, registerCapability, linkMacroCapability)
+- Encapsulates transaction boundary
+- Provides high-level registration API for bootstrap
 
-**Future state:**
-- `rollout_policy` JSONB column stores canary percentages
-- `CapabilityResolver` returns weighted endpoints (e.g., 90% GREEN, 10% BLUE)
-- Automatic rollback on error rate threshold
+---
 
-**Schema ready:** `rollout_policy` column exists but unused.
+### ServiceRegistryRepository
 
-### 3. Health-Based Routing
+**Responsibility:** Persistence of macros, capabilities, and their relationships.
 
-**Current state:** Instance status (HEALTHY, UNHEALTHY) tracked but not used in resolution.
+**Pattern:** Repository (Spring JDBC)
 
-**Future state:**
-- `CapabilityResolver` excludes UNHEALTHY instances from results
-- DRAINING instances receive no new requests (graceful shutdown)
+**Key operations:**
+- `registerMacro(macroName, endpoint) → UUID`
+- `registerCapability(descriptor) → UUID`
+- `linkMacroCapability(macroId, capabilityId) → void`
+- `getCurrentVersion() → long`
 
-**When:** After health check service is implemented.
+**Database tables:**
+- `service_macros` - logical deployment units
+- `service_capabilities` - capability operations
+- `macro_capabilities` - junction table (which macros provide which capabilities)
+- `registry_version` - cache invalidation counter
 
-### 4. Multi-Region Registry
+**Idempotency strategy:**
+- Macros: `ON CONFLICT (macro_name) DO UPDATE SET endpoint = ...`
+- Capabilities: Check existence, return existing UUID
+- Links: `ON CONFLICT DO NOTHING`
 
-**Current state:** Single PostgreSQL database.
+**Why Spring JDBC (not JPA):**
+- Explicit SQL control (no hidden queries)
+- PostgreSQL-specific features (gen_random_uuid(), triggers)
+- Performance (no object-relational mapping overhead)
 
-**Future state:**
-- PostgreSQL logical replication to regional replicas
-- Read replicas for endpoint resolution (local latency)
-- Write leader for registration (consistency)
+---
 
-**Trade-off:** Eventual consistency between regions vs. strong consistency in single region.
+### MacroServiceBootstrap
 
-## Known Technical Debt
+**Responsibility:** Bootstrap a macro-service on startup.
 
-### 1. Multiple Operations Handling (FIXED in this commit)
+**Pattern:** Application Service (infrastructure layer)
 
-**Previous state:** `CapabilityScanner` silently dropped all but first operation when a handler declared multiple operations.
+**Key operations:**
+- `bootstrap(config) → BootstrapResult`
 
-**Current state:** Scanner creates one descriptor per operation and returns a list.
-
-**Rationale:** Handlers can legitimately declare multiple operations (e.g., GET /item, GET /item/{id}).
-
-### 2. Unused Schema Columns
-
-**Columns defined but not used:**
-- `rollout_policy` JSONB (future: canary percentages, rollback rules)
-- `became_blue_at`, `became_green_at`, `became_gray_at`, `retired_at` (future: state transition timestamps)
-
-**Decision:** Keep columns in V001 migration (future-proofing) OR remove them and re-add in V002 when rollout logic is implemented.
-
-**Current stance:** Keep columns. Migration rollback is complex; adding columns later requires downtime.
-
-### 3. No Interface for CapabilityScanner
-
-**Current state:** `CapabilityScanner` is a concrete class with hardcoded `URLClassLoader`.
-
-**Future state:** Extract `CapabilityScanner` interface when testing becomes difficult or when multiple scanner implementations are needed (e.g., Maven plugin scanner for build-time validation).
-
-**When:** After first pain point (hard to test, need alternative implementation).
-
-### 4. TODOs in Code
-
-**`CapabilityRegistrar` line 150:**
+**Configuration:**
 ```java
-// TODO: Emit metric for conflict detection
+public record BootstrapConfig(
+    String macroName,
+    List<Path> jarPaths,
+    String endpoint  // null = defaults to macroName
+) {}
 ```
 
-**Decision:** Either emit the metric or remove the comment. TODOs in shipped code are debt.
-
-**Action:** Will emit metric in future observability pass.
-
-## Deployment State Model Design
-
-### Why BLUE/GREEN/GRAY/RETIRED?
-
-**Industry standard patterns:**
-- Blue/Green deployment - two versions, instant cutover
-- Canary deployment - gradual rollout with percentage split
-
-**EventBob model combines both:**
-- **BLUE** = canary version (progressive rollout 0% → 100%)
-- **GREEN** = production version (100% traffic)
-- **GRAY** = superseded or failed version (no traffic, awaiting cleanup)
-- **RETIRED** = cleaned up (eventual deletion)
-
-**Why not just BLUE/GREEN?**
-- Need to track superseded versions for audit (can't delete GREEN immediately when BLUE becomes new GREEN)
-- Need to track failed rollouts separately from successful versions (GRAY vs RETIRED)
-
-**Why not RED/GREEN/BLUE?**
-- RED implies error state, but GRAY versions might be healthy (just superseded)
-- Industry uses "blue/green" terminology already
-
-**Alternative considered:** ACTIVE, CANARY, DEPRECATED, DELETED
-- More explicit but less familiar to operators
-- "Active" is ambiguous (is CANARY active?)
-
-## Martin Metrics (Package Health)
-
-**Current state (flat package):**
+**Bootstrap flow:**
 ```
-io.eventbob.spring:
-  A (Abstractedness) = 0.14  (1 interface, 6 concrete classes)
-  I (Instability) = 1.0      (depends on core, nothing depends on it)
-  D (Distance) = 0.14        (close to ideal: concrete + unstable)
+1. Scan JARs for capabilities (via CapabilityScanner)
+2. Validate at least one capability found
+3. Determine endpoint (explicit or default to macroName)
+4. Register macro + capabilities (via CapabilityRegistrar)
+5. Return result
 ```
 
-**Interpretation:**
-- Low abstractedness is correct (infrastructure is concrete)
-- High instability is correct (outer layer should be unstable)
-- Distance of 0.14 is healthy (far from Zone of Pain)
+**Why this design:**
+- Separates bootstrap orchestration from registration logic
+- Single entry point for macro-service initialization
+- Explicit configuration record (no hidden defaults)
 
-**When to refactor:**
-- If Distance > 0.5, consider extracting abstractions
-- If new modules depend on registry, Instability should decrease
+---
 
-## ArchUnit Enforcement
+## Database Schema
 
-**Tests in `RegistryArchitectureTest`:**
+### service_macros
 
-1. **Registry can depend on Core**
-   - Verifies registry only imports from allowed packages (core, Spring, PostgreSQL, etc.)
-   - Prevents accidental dependencies on GUI libraries, alternative frameworks
+Tracks logical deployment units.
 
-2. **Registry should not depend on other implementation modules**
-   - Prevents cycles with future API, gateway, service modules
-   - Keeps registry as pure infrastructure
+```sql
+CREATE TABLE service_macros (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  macro_name VARCHAR(255) NOT NULL UNIQUE,
+  endpoint VARCHAR(500) NOT NULL,
+  registered_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  metadata JSONB
+);
+```
 
-3. **Packages should be acyclic**
-   - Currently passes (flat structure)
-   - Will enforce DAG when subpackages are introduced
+**Key insight:** One record per macro. Endpoint is logical name, resolved by infrastructure.
 
-4. **Generate dependency graph**
-   - Auto-generates `docs/registry_dependency_graph.md`
-   - Run test to update after structural changes
+---
 
-## Testing Strategy
+### service_capabilities
 
-See `implementation_notes.md` for detailed test patterns.
+Tracks capability operations.
 
-**Architecture test coverage:**
-- Dependency direction enforced
-- Cycle detection enforced
-- Allowed dependency whitelist enforced
-- Martin metrics tracked
+```sql
+CREATE TABLE service_capabilities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  service_name VARCHAR(255) NOT NULL,
+  capability capability_type NOT NULL,
+  capability_version INTEGER NOT NULL,
+  method VARCHAR(10) NOT NULL,
+  path_pattern VARCHAR(500) NOT NULL,
+  registered_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  metadata JSONB,
+
+  CONSTRAINT uq_capability_routing_key
+    UNIQUE(service_name, capability, capability_version, method, path_pattern)
+);
+```
+
+**Key insight:** Routing key must be unique. One version per routing key.
+
+---
+
+### macro_capabilities
+
+Junction table linking macros to capabilities.
+
+```sql
+CREATE TABLE macro_capabilities (
+  macro_id UUID NOT NULL REFERENCES service_macros(id) ON DELETE CASCADE,
+  capability_id UUID NOT NULL REFERENCES service_capabilities(id) ON DELETE CASCADE,
+  linked_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  PRIMARY KEY (macro_id, capability_id)
+);
+```
+
+**Key insight:** Capabilities can be shared across macros. Same capability, multiple macros.
+
+---
+
+### registry_version
+
+Cache invalidation counter.
+
+```sql
+CREATE TABLE registry_version (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  version BIGINT NOT NULL DEFAULT 1,
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT chk_single_row CHECK (id = 1)
+);
+
+CREATE OR REPLACE FUNCTION bump_registry_version()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE registry_version SET version = version + 1, updated_at = NOW() WHERE id = 1;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_capabilities_version
+  AFTER INSERT OR UPDATE OR DELETE ON service_capabilities
+  FOR EACH STATEMENT EXECUTE FUNCTION bump_registry_version();
+
+CREATE TRIGGER trigger_macros_version
+  AFTER INSERT OR UPDATE OR DELETE ON service_macros
+  FOR EACH STATEMENT EXECUTE FUNCTION bump_registry_version();
+```
+
+**Key insight:** Any registry change bumps version. Enables efficient cache invalidation.
+
+---
+
+## Infrastructure Choices
+
+### Why Spring Boot?
+
+- Mature dependency injection (component wiring)
+- Spring JDBC for explicit SQL control
+- Flyway for schema migrations
+- TestContainers integration for tests
+- Configuration management (application.yml)
+
+### Why PostgreSQL?
+
+- Transactional DDL (schema migrations are atomic)
+- Triggers (automatic version bumping)
+- Partial unique indexes (future extensibility)
+- JSONB for extensible metadata
+
+### Why ClassGraph?
+
+- Fast JAR scanning (no custom classloader needed)
+- Annotation filtering (find @EventHandlerCapability)
+- Works with modular JARs
+
+---
+
+## Simplification History
+
+### V002: Removed Deployment Orchestration (2026-02-12)
+
+**What was removed:**
+- Deployment state tracking (BLUE, GREEN, GRAY, RETIRED enums)
+- Instance-level tracking (instanceId, last_heartbeat, status)
+- Conflict detection (version mismatch warnings)
+- Deployment history (audit log)
+- jarVersion tracking
+
+**Why removed:**
+- Deployment orchestration is infrastructure concern (DNS, service mesh, load balancers)
+- Registry should track "what and where" (capabilities and endpoints), not "how" (deployment states)
+- Over-engineered for current needs (no consumers of deployment state data)
+
+**What changed:**
+- `service_instances` → `service_macros` (tracks logical units, not physical instances)
+- `instance_capabilities` → `macro_capabilities`
+- Endpoint is now logical name (e.g., "messages-service"), not physical URL
+- RegistrationRequest simplified from 7 fields to 3
+- Database schema simplified (removed state columns, deployment history table)
+
+**Trade-offs:**
+- Simpler model (less code, less complexity)
+- No runtime conflict detection (database unique constraint enforces single version per routing key)
+- No audit trail (no deployment history)
+- Cannot track multiple active versions of same capability (database constraint prevents it)
+
+---
+
+## Future Extension Points
+
+### 1. CapabilityResolver Implementation
+
+**Goal:** Implement `CapabilityResolver` port from core.
+
+**Signature:**
+```java
+public interface CapabilityResolver {
+    List<Endpoint> resolve(String routingKey);
+}
+```
+
+**Implementation approach:**
+- Query `service_capabilities` by routing key
+- Join to `macro_capabilities` to get macros
+- Join to `service_macros` to get endpoints
+- Return `List<Endpoint>` with logical names
+- Infrastructure (DNS, load balancers) resolves logical → physical
+
+**Why not yet implemented:** Routing logic still in development. Resolver will be added when router is ready.
+
+---
+
+### 2. Health-Based Routing (Future)
+
+**Goal:** Exclude unhealthy macros from resolution.
+
+**Approach (if needed):**
+- Add health check endpoint to macros
+- Periodically query health, update macro metadata
+- Filter unhealthy macros in resolver query
+
+**Note:** This may not be needed if infrastructure (load balancers, service mesh) already handles health.
+
+---
+
+### 3. Multi-Region Registry (Future)
+
+**Goal:** Replicate capabilities across regions.
+
+**Approach:**
+- Add region column to service_macros
+- Replicate capability metadata across regions
+- Resolver queries local region first, falls back to remote
+
+---
 
 ## Summary
 
-The registry module is **infrastructure** that serves the **Event Routing core domain** by:
-1. Scanning JARs for capabilities (ClassGraph)
-2. Persisting to PostgreSQL (Spring JDBC, Flyway)
-3. Tracking instances and health (JDBC repository)
-4. Enforcing business rules at DB level (unique indexes for BLUE/GREEN)
-5. (Future) Implementing CapabilityResolver port for endpoint resolution
+This Spring implementation provides a **simple, honest registry** for capability-based routing:
+
+1. **Scan JARs** to discover capabilities
+2. **Register macros** and their capabilities
+3. **Persist to PostgreSQL** with transactional guarantees
+4. **(Future) Resolve routing keys** to endpoints for the router
 
 **Key architectural decisions:**
 - PostgreSQL for transactional correctness
 - Spring JDBC for explicit SQL control
-- Flat package structure (will refactor when >15 classes)
-- Dependency direction: registry → core (never reverse)
-- Anti-Corruption Layer: internal DeploymentState → external EndpointState
+- Flat package structure (currently 5 classes, will refactor if >15)
+- Dependency direction: infrastructure → core (never reverse)
+- Anti-Corruption Layer: Spring types never leak to core
+- Logical endpoints (resolved by infrastructure) not physical URLs
 
-**Known debt:**
-- Unused schema columns (future rollout logic)
-- No scanner interface (will extract when needed)
-- TODOs in code (emit metrics, remove comments)
+**What this is NOT:**
+- Not a deployment orchestration system (that's infrastructure)
+- Not a health monitoring system (that's infrastructure)
+- Not a service mesh (that's infrastructure)
+- Just a capability registry enabling routing decisions
