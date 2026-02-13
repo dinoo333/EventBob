@@ -38,11 +38,11 @@ An independently versioned component loaded via isolated classloader that implem
 
 **Subdomains:**
 - **Event Routing** (`eventrouting` package) — Route events by target to handlers. Handle event lifecycle, decoration, and failure modes.
-- **Endpoint Resolution** (`endpointresolution` package) — Resolve service capabilities (READ/WRITE/ADMIN operations) to physical endpoint addresses for routing decisions. Support progressive deployment (GREEN/BLUE states).
+- **Endpoint Resolution** (`endpointresolution` package) — Resolve service capabilities (READ/WRITE/ADMIN operations) to endpoint addresses for routing decisions.
 
 **Vocabulary:**
 - Event Routing: Event, EventHandler, EventHandlingRouter, DecoratedEventHandler, routing semantics (target, method, path, correlation-id, reply-to), trace context (trace-id, span-id), exceptions (EventHandlingException, HandlerNotFoundException)
-- Endpoint Resolution: Capability (READ/WRITE/ADMIN), CapabilityResolver (port/interface), RoutingKey (service + capability + method + path), Endpoint (physical URL), EndpointState (GREEN/BLUE)
+- Endpoint Resolution: Capability (READ/WRITE/ADMIN), CapabilityResolver (port/interface), RoutingKey (service + capability + method + path), Endpoint (logical address)
 
 **Boundaries:** Does NOT know about specific transports (HTTP, gRPC, queues). Does NOT know about persistence (registry database). Does NOT know about business domains (users, orders, inventory).
 
@@ -75,22 +75,20 @@ An independently versioned component loaded via isolated classloader that implem
 **Provides:**
 - Implementation of `CapabilityResolver` port using Spring JDBC + PostgreSQL
 - JAR scanning for `@EventHandlerCapability` annotations using ClassGraph
-- Capability registration with conflict detection
-- Instance lifecycle tracking (health, heartbeat, deployment state)
-- Blue/green deployment management
+- Capability registration for macro-services
+- Macro tracking (logical deployment units and their endpoints)
+- Persistence of capability metadata to PostgreSQL
 
-**Anti-Corruption Layer:** Translates internal `DeploymentState` (BLUE/GREEN/GRAY/RETIRED) to external `EndpointState` (BLUE/GREEN) when implementing CapabilityResolver. GRAY and RETIRED states never cross to core. Spring-specific types (JdbcTemplate, ResultSet) never leak into core.
+**Anti-Corruption Layer:** Translates Spring-specific types (JdbcTemplate, ResultSet) to core types (Capability, Endpoint). Infrastructure persistence never crosses to core. Endpoint is stored as logical name, resolved by infrastructure (DNS, service mesh, load balancers) to physical addresses.
 
 **Boundaries:** Depends on Event Routing Context (imports Capability enum, EventHandler interface, EventHandlerCapability annotation). Does NOT leak infrastructure concerns (PostgreSQL, Spring Boot, ClassGraph) into core.
 
 **Vocabulary (Implementation-Specific, Not Domain):**
-- Macro-Service - logical deployment unit bundling multiple service JARs
-- Instance - single running process of a macro-service (macroName + instanceId)
-- Capability Registration - discovery via JAR scanning
-- Deployment State - rollout lifecycle (BLUE, GREEN, GRAY, RETIRED) - *implementation detail, not exposed to core*
-- Instance Status - health state (HEALTHY, UNHEALTHY, DRAINING, TERMINATED)
+- Macro or Macro-Service - logical deployment unit bundling multiple service JARs (e.g., "messages-service")
+- Endpoint - logical address where a macro can receive events (resolved by infrastructure to physical address)
+- Capability Registration - discovery via JAR scanning and persistence to registry
 - Routing Key - composite identifier (serviceName:capability:method:pathPattern)
-- Conflict Detection - version mismatch between declared and registered capabilities
+- Bootstrap - macro-service startup process (scan JARs → register → start router)
 
 #### Service Domain Context
 **Responsibility:** Business logic processing. Interprets events using routing semantics (method, path) and parameters to perform domain operations.

@@ -54,13 +54,13 @@ class CapabilityRegistrationIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbc.execute("TRUNCATE service_capabilities, service_instances, instance_capabilities, deployment_history CASCADE");
+        jdbc.execute("TRUNCATE service_capabilities, service_macros, macro_capabilities CASCADE");
         jdbc.execute("UPDATE registry_version SET version = 1");
     }
 
     @Test
-    @DisplayName("Given capabilities, when registering instance, then capabilities and instance are persisted")
-    void registerInstanceWithCapabilities() {
+    @DisplayName("Given capabilities, when registering macro, then capabilities and macro are persisted")
+    void registerMacroWithCapabilities() {
         // Arrange
         List<CapabilityDescriptor> capabilities = List.of(
             CapabilityDescriptor.builder()
@@ -82,30 +82,25 @@ class CapabilityRegistrationIntegrationTest {
         );
 
         CapabilityRegistrar.RegistrationRequest request = new CapabilityRegistrar.RegistrationRequest(
-            "messages-readonly-macro",
-            "pod-1",
-            "http://10.0.1.5:8080",
-            1,
-            DeploymentState.BLUE,
-            "1.2.3",
+            "messages-service",
+            "messages-service",  // Endpoint = macro name
             capabilities
         );
 
         // Act
-        CapabilityRegistrar.RegistrationResult result = registrar.registerInstance(request);
+        CapabilityRegistrar.RegistrationResult result = registrar.registerMacro(request);
 
         // Assert
         assertTrue(result.isSuccess());
-        assertFalse(result.hasWarnings());
-        assertNotNull(result.instanceId());
+        assertNotNull(result.macroId());
         assertEquals(2, result.capabilityIds().size());
 
-        // Verify instance in database
-        UUID instanceId = jdbc.queryForObject(
-            "SELECT id FROM service_instances WHERE instance_id = 'pod-1'",
+        // Verify macro in database
+        UUID macroId = jdbc.queryForObject(
+            "SELECT id FROM service_macros WHERE macro_name = 'messages-service'",
             UUID.class
         );
-        assertEquals(result.instanceId(), instanceId);
+        assertEquals(result.macroId(), macroId);
 
         // Verify capabilities in database
         int capabilityCount = jdbc.queryForObject(
@@ -116,23 +111,16 @@ class CapabilityRegistrationIntegrationTest {
 
         // Verify links
         int linkCount = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM instance_capabilities WHERE instance_id = ?",
+            "SELECT COUNT(*) FROM macro_capabilities WHERE macro_id = ?",
             Integer.class,
-            instanceId
+            macroId
         );
         assertEquals(2, linkCount);
-
-        // Verify deployment history
-        int historyCount = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM deployment_history WHERE macro_name = 'messages-readonly-macro'",
-            Integer.class
-        );
-        assertEquals(1, historyCount);
     }
 
     @Test
-    @DisplayName("Given multiple instances, when registering same capabilities, then both instances are linked")
-    void multipleInstancesSameCapabilities() {
+    @DisplayName("Given different macros, when registering same capabilities, then capabilities are shared")
+    void multipleMacrosSameCapabilities() {
         // Arrange
         List<CapabilityDescriptor> capabilities = List.of(
             CapabilityDescriptor.builder()
@@ -145,53 +133,45 @@ class CapabilityRegistrationIntegrationTest {
                 .build()
         );
 
-        // Act - Register instance 1
+        // Act - Register macro 1
         CapabilityRegistrar.RegistrationRequest request1 = new CapabilityRegistrar.RegistrationRequest(
-            "messages-readonly-macro",
-            "pod-1",
-            "http://10.0.1.5:8080",
-            1,
-            DeploymentState.BLUE,
-            "1.2.3",
+            "messages-readonly",
+            "messages-readonly",
             capabilities
         );
-        CapabilityRegistrar.RegistrationResult result1 = registrar.registerInstance(request1);
+        CapabilityRegistrar.RegistrationResult result1 = registrar.registerMacro(request1);
 
-        // Act - Register instance 2 (same capabilities)
+        // Act - Register macro 2 (same capabilities, different macro)
         CapabilityRegistrar.RegistrationRequest request2 = new CapabilityRegistrar.RegistrationRequest(
-            "messages-readonly-macro",
-            "pod-2",
-            "http://10.0.1.6:8080",
-            1,
-            DeploymentState.BLUE,
-            "1.2.3",
+            "messages-replica",
+            "messages-replica",
             capabilities
         );
-        CapabilityRegistrar.RegistrationResult result2 = registrar.registerInstance(request2);
+        CapabilityRegistrar.RegistrationResult result2 = registrar.registerMacro(request2);
 
         // Assert
         assertTrue(result1.isSuccess());
         assertTrue(result2.isSuccess());
-        assertNotEquals(result1.instanceId(), result2.instanceId());
+        assertNotEquals(result1.macroId(), result2.macroId());
 
-        // Only one capability record (shared by both instances)
+        // Only one capability record (shared by both macros)
         int capabilityCount = jdbc.queryForObject(
             "SELECT COUNT(*) FROM service_capabilities WHERE service_name = 'messages'",
             Integer.class
         );
         assertEquals(1, capabilityCount);
 
-        // Two instance records
-        int instanceCount = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM service_instances WHERE macro_name = 'messages-readonly-macro'",
+        // Two macro records
+        int macroCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM service_macros",
             Integer.class
         );
-        assertEquals(2, instanceCount);
+        assertEquals(2, macroCount);
 
-        // Two links (one per instance)
+        // Two links (one per macro)
         UUID capabilityId = result1.capabilityIds().values().iterator().next();
         int linkCount = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM instance_capabilities WHERE capability_id = ?",
+            "SELECT COUNT(*) FROM macro_capabilities WHERE capability_id = ?",
             Integer.class,
             capabilityId
         );
@@ -199,68 +179,8 @@ class CapabilityRegistrationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Given capability version conflict, when registering, then warning is returned")
-    void capabilityVersionConflict() {
-        // Arrange - Register v1 capability
-        List<CapabilityDescriptor> v1Capabilities = List.of(
-            CapabilityDescriptor.builder()
-                .serviceName("messages")
-                .capability(Capability.READ)
-                .capabilityVersion(1)
-                .method("GET")
-                .pathPattern("/content")
-                .handlerClassName("com.example.GetContentHandler")
-                .build()
-        );
-
-        CapabilityRegistrar.RegistrationRequest v1Request = new CapabilityRegistrar.RegistrationRequest(
-            "messages-macro",
-            "pod-1",
-            "http://10.0.1.5:8080",
-            1,
-            DeploymentState.GREEN,
-            "1.0.0",
-            v1Capabilities
-        );
-        registrar.registerInstance(v1Request);
-
-        // Act - Register v2 capability (conflicting version)
-        List<CapabilityDescriptor> v2Capabilities = List.of(
-            CapabilityDescriptor.builder()
-                .serviceName("messages")
-                .capability(Capability.READ)
-                .capabilityVersion(2)  // Different version!
-                .method("GET")
-                .pathPattern("/content")  // Same routing key
-                .handlerClassName("com.example.GetContentHandlerV2")
-                .build()
-        );
-
-        CapabilityRegistrar.RegistrationRequest v2Request = new CapabilityRegistrar.RegistrationRequest(
-            "messages-macro",
-            "pod-2",
-            "http://10.0.1.6:8080",
-            2,
-            DeploymentState.BLUE,
-            "2.0.0",
-            v2Capabilities
-        );
-        CapabilityRegistrar.RegistrationResult result = registrar.registerInstance(v2Request);
-
-        // Assert
-        assertTrue(result.hasWarnings());
-        assertEquals(1, result.warnings().size());
-        assertTrue(result.warnings().get(0).contains("version conflict"));
-        assertTrue(result.warnings().get(0).contains("v1"));
-        assertTrue(result.warnings().get(0).contains("v2"));
-
-        // Conflicting capability was skipped
-        assertEquals(0, result.capabilityIds().size());
-    }
-
-    @Test
-    @DisplayName("Given existing instance, when re-registering, then instance is updated")
-    void reRegisteringInstanceUpdates() {
+    @DisplayName("Given existing macro, when re-registering, then macro endpoint is updated")
+    void reRegisteringMacroUpdatesEndpoint() {
         // Arrange - Initial registration
         List<CapabilityDescriptor> capabilities = List.of(
             CapabilityDescriptor.builder()
@@ -274,44 +194,36 @@ class CapabilityRegistrationIntegrationTest {
         );
 
         CapabilityRegistrar.RegistrationRequest initialRequest = new CapabilityRegistrar.RegistrationRequest(
-            "messages-macro",
-            "pod-1",
-            "http://10.0.1.5:8080",
-            1,
-            DeploymentState.BLUE,
-            "1.0.0",
+            "messages-service",
+            "messages-service-old",
             capabilities
         );
-        CapabilityRegistrar.RegistrationResult initialResult = registrar.registerInstance(initialRequest);
+        CapabilityRegistrar.RegistrationResult initialResult = registrar.registerMacro(initialRequest);
 
         // Act - Re-register with different endpoint
         CapabilityRegistrar.RegistrationRequest updateRequest = new CapabilityRegistrar.RegistrationRequest(
-            "messages-macro",
-            "pod-1",  // Same instance ID
-            "http://10.0.1.10:8080",  // Different endpoint
-            1,
-            DeploymentState.BLUE,
-            "1.0.0",
+            "messages-service",
+            "messages-service-new",  // Different endpoint
             capabilities
         );
-        CapabilityRegistrar.RegistrationResult updateResult = registrar.registerInstance(updateRequest);
+        CapabilityRegistrar.RegistrationResult updateResult = registrar.registerMacro(updateRequest);
 
         // Assert
-        assertEquals(initialResult.instanceId(), updateResult.instanceId());
+        assertEquals(initialResult.macroId(), updateResult.macroId());
 
         // Verify endpoint was updated
         String endpoint = jdbc.queryForObject(
-            "SELECT endpoint FROM service_instances WHERE instance_id = 'pod-1'",
+            "SELECT endpoint FROM service_macros WHERE macro_name = 'messages-service'",
             String.class
         );
-        assertEquals("http://10.0.1.10:8080", endpoint);
+        assertEquals("messages-service-new", endpoint);
 
-        // Still only one instance record
-        int instanceCount = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM service_instances WHERE macro_name = 'messages-macro'",
+        // Still only one macro record
+        int macroCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM service_macros WHERE macro_name = 'messages-service'",
             Integer.class
         );
-        assertEquals(1, instanceCount);
+        assertEquals(1, macroCount);
     }
 
     @Test
@@ -332,17 +244,13 @@ class CapabilityRegistrationIntegrationTest {
         );
 
         CapabilityRegistrar.RegistrationRequest request = new CapabilityRegistrar.RegistrationRequest(
-            "messages-macro",
-            "pod-1",
-            "http://10.0.1.5:8080",
-            1,
-            DeploymentState.BLUE,
-            "1.0.0",
+            "messages-service",
+            "messages-service",
             capabilities
         );
 
         // Act
-        registrar.registerInstance(request);
+        registrar.registerMacro(request);
 
         // Assert
         long newVersion = repository.getCurrentVersion();
