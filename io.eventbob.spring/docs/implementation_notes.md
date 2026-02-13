@@ -1,6 +1,6 @@
 # Service Registry Implementation Notes
 
-**Module:** io.eventbob.registry
+**Module:** io.eventbob.spring
 **Last Updated:** 2026-02-12
 
 ## Data Structures

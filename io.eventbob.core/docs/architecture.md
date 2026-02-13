@@ -10,6 +10,190 @@
 
 ---
 
+## Core as Abstraction (Bridge Pattern)
+
+This module is the **abstraction** in the Bridge Pattern. It defines WHAT EventBob does, not HOW it's implemented.
+
+### What Core Provides
+
+**Domain Model:**
+- `Event` - Immutable routing envelope with source, target, metadata, parameters, payload
+- `EventHandler` - Universal interface for event processing
+- `Capability` - Operation types (READ, WRITE, ADMIN)
+- `MetadataKeys` - Standard routing vocabulary (correlation-id, method, path, trace-id)
+
+**Ports (Interfaces for Implementation):**
+- `CapabilityResolver` - Resolve service capabilities to physical endpoints
+- `EventHandler` - Implemented by services, routers, decorators, adapters
+
+**Routing Logic:**
+- `EventHandlingRouter` - Routes events by target to handlers
+- `DecoratedEventHandler` - Wraps handlers with cross-cutting concerns
+
+### What Core Does NOT Provide
+
+**Infrastructure (Implementation Concern):**
+- ❌ Database access (Spring JDBC, JDBI) - implemented by framework modules
+- ❌ JAR scanning - implemented by framework modules
+- ❌ HTTP/gRPC/Queue adapters - separate adapter modules
+- ❌ Configuration loading - implemented by framework modules
+- ❌ Deployment lifecycle - implemented by framework modules
+
+**Framework-Specific:**
+- ❌ Spring annotations (@Service, @Autowired, @Transactional)
+- ❌ Dropwizard resources (Resource, Environment, Application)
+- ❌ Any framework types whatsoever
+
+### Dependency Contract
+
+**Core Dependencies:**
+- ✅ JDK only (java.*, javax.*)
+- ✅ SLF4J for logging abstraction
+- ❌ No frameworks
+- ❌ No external libraries
+
+**Who Depends on Core:**
+- Framework implementations (`io.eventbob.spring`, `io.eventbob.dropwizard`)
+- Transport adapters (`io.eventbob.adapter.http`, `io.eventbob.adapter.grpc`)
+- Business services (implement `EventHandler`)
+
+**Who Core Depends On:**
+- Nobody (zero outgoing dependencies)
+
+### Multiple Implementations Pattern
+
+```
+┌─────────────────────────────────────────────┐
+│        io.eventbob.core                     │
+│        (Abstraction Layer)                  │
+│                                             │
+│  Defines:                                   │
+│  - Event, EventHandler, Capability          │
+│  - CapabilityResolver port                  │
+│  - Routing logic, decoration                │
+└─────────────────────────────────────────────┘
+                      ↑
+        ┌─────────────┴─────────────┐
+        │                           │
+┌───────────────────┐     ┌───────────────────┐
+│  io.eventbob      │     │  io.eventbob      │
+│    .spring        │     │  .dropwizard      │
+│                   │     │                   │
+│ Implementation 1  │     │ Implementation 2  │
+│ - Spring Boot     │     │ - Dropwizard      │
+│ - Spring JDBC     │     │ - JDBI            │
+│ - ClassGraph      │     │ - ClassGraph      │
+│ - PostgreSQL      │     │ - PostgreSQL      │
+│                   │     │                   │
+│ Implements:       │     │ Implements:       │
+│ CapabilityResolver│     │ CapabilityResolver│
+└───────────────────┘     └───────────────────┘
+```
+
+**Both implementations provide identical capabilities from core's perspective:**
+- Implement `CapabilityResolver` port
+- Return `Endpoint` objects with `EndpointState` (BLUE/GREEN)
+- Use core's ubiquitous language (Capability, RoutingKey)
+
+**Implementations differ in HOW:**
+- Spring uses Spring JDBC, Dropwizard uses JDBI
+- Spring uses @Service/@Autowired, Dropwizard uses manual wiring
+- Internal deployment states (GRAY/RETIRED) never cross to core
+
+### Port Contract Guidelines
+
+When core defines a port (interface), it must:
+
+1. **Use core types only** - No framework types in method signatures
+2. **Be framework-agnostic** - Assume multiple implementations will exist
+3. **Return core domain objects** - Not primitives or framework types
+4. **Document contract clearly** - JavaDoc explains semantics, not implementation
+
+**Example: CapabilityResolver Port**
+
+```java
+/**
+ * Resolves service capabilities to physical endpoints.
+ *
+ * <p>Implementations query their backing store (database, service registry, etc.)
+ * to find which physical endpoints provide the requested capability operation.
+ *
+ * <p>Supports progressive deployments by returning endpoints with deployment state
+ * (GREEN = production, BLUE = canary).
+ */
+public interface CapabilityResolver {
+    /**
+     * Resolve the given routing key to a list of available endpoints.
+     *
+     * @param key Routing key identifying the service capability operation
+     * @return List of endpoints providing this capability, empty if none found
+     * @throws EndpointResolutionException if resolution fails
+     */
+    List<Endpoint> resolveEndpoints(RoutingKey key) throws EndpointResolutionException;
+}
+```
+
+**What makes this a good port:**
+- ✅ Only core types: `RoutingKey`, `Endpoint`, `EndpointResolutionException`
+- ✅ No mention of Spring, JDBI, PostgreSQL
+- ✅ JavaDoc describes WHAT, not HOW
+- ✅ Multiple implementations can provide this differently
+
+### Anti-Corruption Layer Responsibility
+
+**Core does NOT translate framework types** - that's the implementation's job via Anti-Corruption Layer (ACL).
+
+**Implementation ACL pattern:**
+```java
+// In io.eventbob.spring (NOT in core)
+@Service
+public class SpringCapabilityResolver implements CapabilityResolver {
+
+    @Override
+    public List<Endpoint> resolveEndpoints(RoutingKey key) {
+        // 1. Query using Spring JDBC (framework-specific)
+        List<EndpointRow> rows = jdbcTemplate.query(...);
+
+        // 2. ACL: Translate Spring types → Core types
+        return rows.stream()
+            .map(this::toEndpoint) // ACL translation method
+            .collect(Collectors.toList());
+    }
+
+    // ACL: Spring-specific type → Core type
+    private Endpoint toEndpoint(EndpointRow row) {
+        return new Endpoint(
+            row.getUri(),
+            row.getDeploymentVersion(),
+            translateState(row.getState()) // Filter GRAY/RETIRED
+        );
+    }
+}
+```
+
+**Core never sees:**
+- `EndpointRow` (Spring JDBC type)
+- `JdbcTemplate` (Spring type)
+- Internal deployment states like GRAY/RETIRED
+
+### Evolution Strategy
+
+**When adding new abstractions to core:**
+
+1. **Evaluate need across implementations** - Will both Spring and Dropwizard need this?
+2. **Start framework-agnostic** - Design without frameworks in mind
+3. **Add port, not implementation** - Core defines interface, implementations provide concrete behavior
+4. **Document contract clearly** - What does this abstraction mean? What are its invariants?
+5. **Update tests** - ArchUnit should verify no framework leakage
+
+**When NOT to add to core:**
+
+- Implementation detail only one framework needs (keep in that implementation)
+- Framework-specific optimization (keep in that implementation)
+- Internal state that doesn't cross boundary (GRAY/RETIRED deployment states)
+
+---
+
 ## Package Structure
 
 ```
@@ -283,14 +467,16 @@ io.eventbob.core/
 
 ## Future Extensions
 
-### When Registry Module is Implemented
+### Spring Implementation Module (Implemented)
 
-**New module:** `io.eventbob.registry`
+**Implemented module:** `io.eventbob.spring`
 
 **Dependencies:**
-- io.eventbob.registry → io.eventbob.core.endpointresolution (implements CapabilityResolver port)
-- Registry will provide PostgreSQL-backed capability resolution
-- Registry will scan JARs for @EventHandlerCapability annotations and persist to database
+- io.eventbob.spring → io.eventbob.core.endpointresolution (implements CapabilityResolver port)
+- Spring implementation provides PostgreSQL-backed capability resolution using Spring JDBC
+- Scans JARs for @EventHandlerCapability annotations and persists to database using Flyway migrations
+
+**Note:** This is one implementation using Spring Boot. Future implementations (e.g., `io.eventbob.dropwizard`) can provide alternative implementations of the same ports.
 
 ### When Adapters are Implemented
 

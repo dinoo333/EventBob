@@ -1,12 +1,28 @@
-# Service Registry Architecture
+# EventBob Spring Implementation Architecture
 
-**Module:** io.eventbob.registry
-**Type:** Infrastructure / Supporting Subdomain
+**Module:** io.eventbob.spring
+**Type:** Infrastructure Implementation (Bridge Pattern)
 **Last Updated:** 2026-02-12
+
+## Bridge Pattern: Core + Spring
+
+This module is the **Spring Boot implementation of EventBob**. It implements the complete macro-service infrastructure using Spring Framework.
+
+**Architecture Pattern:** Bridge Pattern
+- **Abstraction:** `io.eventbob.core` (domain model, ports, interfaces)
+- **Implementation:** `io.eventbob.spring` (Spring-based concrete implementation)
+
+This is NOT "a registry using Spring." This is **EventBob implemented using Spring**.
 
 ## Module Purpose
 
-The registry module provides **capability-based service discovery** for EventBob macro-services. It sits at the infrastructure layer, implementing ports defined by the core domain.
+This Spring implementation provides the complete EventBob macro-service infrastructure:
+- **Capability-based service discovery** (JAR scanning, registration, conflict detection)
+- **Instance tracking and health management** (deployment states, heartbeat monitoring)
+- **Macro-service bootstrap** (startup orchestration, configuration)
+- **Persistence layer** (Spring JDBC with PostgreSQL)
+
+It sits at the infrastructure layer, implementing ports defined by `io.eventbob.core`.
 
 **Responsibilities:**
 - Scan JARs for `@EventHandlerCapability` annotations
@@ -34,7 +50,7 @@ The registry module provides **capability-based service discovery** for EventBob
               ↑
 ┌─────────────────────────────────┐
 │   Infrastructure Layer          │
-│   io.eventbob.registry          │  JAR scanning, JDBC, Spring Boot
+│   io.eventbob.spring            │  JAR scanning, JDBC, Spring Boot (Bridge Implementation)
 │                                 │
 │   - CapabilityScanner           │  (uses ClassGraph)
 │   - CapabilityRegistrar         │  (service layer)
@@ -43,7 +59,16 @@ The registry module provides **capability-based service discovery** for EventBob
 └─────────────────────────────────┘
 ```
 
-**Dependency direction:** Registry → Core (infrastructure depends on domain, never reverse)
+**Dependency direction:** Spring Implementation → Core (infrastructure depends on domain, never reverse)
+
+## Future Implementations
+
+The Bridge Pattern enables multiple framework-based implementations:
+- `io.eventbob.spring` - Spring Boot + Spring JDBC (this module)
+- `io.eventbob.dropwizard` - Dropwizard + JDBI (planned)
+- `io.eventbob.micronaut` - Micronaut + Micronaut Data (future)
+
+All implementations depend on `io.eventbob.core`. None depend on each other.
 
 ## Dependencies on Core
 
@@ -74,7 +99,15 @@ public interface CapabilityResolver {
 ```
 
 **Translation layer (Anti-Corruption):**
-The registry's internal `DeploymentState` (BLUE, GREEN, GRAY, RETIRED) will be translated to core's `EndpointState` (BLUE, GREEN) when implementing the resolver. GRAY and RETIRED states never cross the boundary.
+This implementation's internal `DeploymentState` (BLUE, GREEN, GRAY, RETIRED) will be translated to core's `EndpointState` (BLUE, GREEN) when implementing the resolver. GRAY and RETIRED states never cross the boundary.
+
+**Why "Spring" not "Registry"?**
+
+The module is named `io.eventbob.spring` because:
+1. It identifies the **implementation framework** (Spring Boot)
+2. It provides ALL EventBob infrastructure capabilities, not just registry
+3. It enables peer implementations like `io.eventbob.dropwizard` to coexist
+4. The domain abstraction lives in `io.eventbob.core`, not here
 
 ## Infrastructure Choices
 
@@ -136,7 +169,7 @@ The registry's internal `DeploymentState` (BLUE, GREEN, GRAY, RETIRED) will be t
 
 **Current structure (flat):**
 ```
-io.eventbob.registry/
+io.eventbob.spring/
 ├── CapabilityDescriptor.java       (value object)
 ├── CapabilityRegistrar.java        (service)
 ├── CapabilityScanner.java          (service)
@@ -153,7 +186,7 @@ io.eventbob.registry/
 
 **Future subpackage structure (when needed):**
 ```
-io.eventbob.registry/
+io.eventbob.spring/
 ├── api/                  (REST endpoints for registry queries)
 ├── domain/               (CapabilityDescriptor, DeploymentState, InstanceStatus)
 ├── repository/           (ServiceRegistryRepository, row mappers)
@@ -323,7 +356,7 @@ public class DatabaseCapabilityResolver implements CapabilityResolver {
 
 **Current state (flat package):**
 ```
-io.eventbob.registry:
+io.eventbob.spring:
   A (Abstractedness) = 0.14  (1 interface, 6 concrete classes)
   I (Instability) = 1.0      (depends on core, nothing depends on it)
   D (Distance) = 0.14        (close to ideal: concrete + unstable)

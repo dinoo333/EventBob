@@ -11,7 +11,7 @@
 
     <modules>
         <module>io.eventbob.core</module>
-        <module>io.eventbob.registry</module>
+        <module>io.eventbob.spring</module>
     </modules>
 
     <properties>

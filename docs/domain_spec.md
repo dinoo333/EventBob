@@ -53,25 +53,44 @@ An independently versioned component loaded via isolated classloader that implem
 
 **Boundaries:** Depends on Event Routing Context. Implements EventHandler. Does NOT leak transport concepts into core.
 
-#### Service Registry Context
-**Responsibility:** Discover, register, and track service capabilities in macro-services. Maintain a live registry of which physical instances provide which operations. Enable capability-based endpoint resolution for progressive deployments.
+#### Bridge Pattern: Framework Implementations (NOT Bounded Contexts)
 
-**Type:** Supporting Subdomain (serves Event Routing Core Domain)
+**Important:** Framework implementations like `io.eventbob.spring` and `io.eventbob.dropwizard` are **NOT bounded contexts**. They are infrastructure-layer implementations of the ports defined in the Event Routing bounded context.
 
-**Vocabulary:**
+**Why this distinction matters:**
+1. **Implementations don't define domain concepts** - They use the domain concepts from core
+2. **No ubiquitous language of their own** - They translate framework types to core types via Anti-Corruption Layers
+3. **Bounded contexts are about domain boundaries** - Implementations are about technical boundaries
+
+**What implementations provide:**
+- Concrete realization of `CapabilityResolver` port (defined in Endpoint Resolution subdomain)
+- Infrastructure capabilities: JAR scanning, persistence, instance tracking, deployment management
+- Framework-specific bootstrapping and configuration
+- Anti-Corruption Layer between framework types and core types
+
+**Example: io.eventbob.spring**
+
+**Type:** Infrastructure Implementation (Bridge Pattern)
+
+**Provides:**
+- Implementation of `CapabilityResolver` port using Spring JDBC + PostgreSQL
+- JAR scanning for `@EventHandlerCapability` annotations using ClassGraph
+- Capability registration with conflict detection
+- Instance lifecycle tracking (health, heartbeat, deployment state)
+- Blue/green deployment management
+
+**Anti-Corruption Layer:** Translates internal `DeploymentState` (BLUE/GREEN/GRAY/RETIRED) to external `EndpointState` (BLUE/GREEN) when implementing CapabilityResolver. GRAY and RETIRED states never cross to core. Spring-specific types (JdbcTemplate, ResultSet) never leak into core.
+
+**Boundaries:** Depends on Event Routing Context (imports Capability enum, EventHandler interface, EventHandlerCapability annotation). Does NOT leak infrastructure concerns (PostgreSQL, Spring Boot, ClassGraph) into core.
+
+**Vocabulary (Implementation-Specific, Not Domain):**
 - Macro-Service - logical deployment unit bundling multiple service JARs
 - Instance - single running process of a macro-service (macroName + instanceId)
-- Capability Registration - discovery via JAR scanning (`@EventHandlerCapability` annotations)
-- Deployment State - rollout lifecycle (BLUE, GREEN, GRAY, RETIRED)
+- Capability Registration - discovery via JAR scanning
+- Deployment State - rollout lifecycle (BLUE, GREEN, GRAY, RETIRED) - *implementation detail, not exposed to core*
 - Instance Status - health state (HEALTHY, UNHEALTHY, DRAINING, TERMINATED)
 - Routing Key - composite identifier (serviceName:capability:method:pathPattern)
 - Conflict Detection - version mismatch between declared and registered capabilities
-
-**Implements (future):** `CapabilityResolver` port (defined in Endpoint Resolution subdomain)
-
-**Anti-Corruption Layer:** Translates internal `DeploymentState` (BLUE/GREEN/GRAY/RETIRED) to external `EndpointState` (BLUE/GREEN) when implementing CapabilityResolver. GRAY and RETIRED states never cross to core.
-
-**Boundaries:** Depends on Event Routing Context (imports Capability enum, EventHandler interface, EventHandlerCapability annotation). Does NOT leak infrastructure concerns (PostgreSQL, Spring Boot, ClassGraph) into core.
 
 #### Service Domain Context
 **Responsibility:** Business logic processing. Interprets events using routing semantics (method, path) and parameters to perform domain operations.

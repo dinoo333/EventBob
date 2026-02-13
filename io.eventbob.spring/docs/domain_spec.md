@@ -1,17 +1,27 @@
-# Service Registry Domain Specification
+# EventBob Spring Implementation - Domain Specification
 
-**Bounded Context:** Service Registry
-**Type:** Supporting Subdomain
+**Module:** io.eventbob.spring (Bridge Implementation)
+**Implements:** Service capability registration and discovery infrastructure
+**Type:** Infrastructure layer (Bridge Pattern)
 **Serves:** Event Routing Core Domain
 **Last Updated:** 2026-02-12
 
-## Context Definition
+## Implementation Overview
 
-The Service Registry bounded context is responsible for **discovering, registering, and tracking service capabilities** in EventBob macro-services. It enables capability-based routing by maintaining a live registry of which service instances provide which operations.
+This module is the **Spring Boot implementation of EventBob infrastructure**. It provides concrete implementations of the ports and interfaces defined in `io.eventbob.core`.
 
-**Core responsibility:** Answer the question "Which physical endpoints can handle this capability operation?"
+**Key Point:** This is NOT a bounded context itself. The bounded contexts are defined in `io.eventbob.core`. This module is one IMPLEMENTATION of the infrastructure that supports those contexts.
 
-**Not responsible for:** Event routing logic, request handling, business domain operations (those belong to Event Routing context).
+## What This Implementation Provides
+
+This Spring-based implementation is responsible for:
+- **Discovering and registering service capabilities** via JAR scanning
+- **Tracking service instances and their health**
+- **Managing deployment states** (blue/green deployments)
+- **Persisting capability metadata** to PostgreSQL
+- **Answering:** "Which physical endpoints can handle this capability operation?"
+
+**Not responsible for:** Event routing logic (that's in core domain), request handling (that's in adapters), business domain operations.
 
 ## Bounded Context Relationships
 
@@ -31,23 +41,27 @@ The Service Registry bounded context is responsible for **discovering, registeri
               │ (Anti-Corruption Layer)
               │
 ┌─────────────────────────────┐
-│  Service Registry Context   │  Supporting Subdomain
-│  (io.eventbob.registry)     │
+│  Spring Implementation      │  Infrastructure (Bridge)
+│  (io.eventbob.spring)       │
 │                             │
 │  Implements:                │
 │  - CapabilityResolver port  │
 │    (future)                 │
 │                             │
-│  Owns:                      │
+│  Provides:                  │
 │  - JAR scanning             │
 │  - Capability registration  │
 │  - Instance lifecycle       │
 │  - Deployment states        │
+│  - Spring JDBC persistence  │
 └─────────────────────────────┘
+
+Note: Future implementations (io.eventbob.dropwizard, etc.) will provide
+the same capabilities using different frameworks.
 ```
 
 **Anti-Corruption Layer:**
-The registry translates its internal deployment model to the core's routing model:
+This implementation translates its internal deployment model to the core's routing model:
 - Internal: `DeploymentState` (BLUE, GREEN, GRAY, RETIRED)
 - External: `EndpointState` (BLUE, GREEN) exposed to core via CapabilityResolver
 

@@ -378,3 +378,265 @@ If a test fails, the @DisplayName tells you exactly what scenario broke.
 - Queue client libraries
 
 **Policy:** Keep core dependency-free. Adapters own their transport dependencies.
+
+---
+
+## Bridge Pattern Implementation Guidelines
+
+### Port Design Standards (For Core Developers)
+
+When adding new ports to `io.eventbob.core`:
+
+**1. Interface-Only Contracts**
+```java
+// ✅ GOOD: Pure interface in core
+public interface CapabilityResolver {
+    List<Endpoint> resolveEndpoints(RoutingKey key);
+}
+
+// ❌ BAD: Abstract class with implementation
+public abstract class BaseCapabilityResolver {
+    protected final DataSource dataSource; // Leaks infrastructure!
+}
+```
+
+**2. Framework-Agnostic Types**
+```java
+// ✅ GOOD: Core types only
+public interface CapabilityResolver {
+    List<Endpoint> resolveEndpoints(RoutingKey key);
+}
+
+// ❌ BAD: Framework-specific types
+public interface CapabilityResolver {
+    List<Endpoint> resolveEndpoints(RoutingKey key, JdbcTemplate jdbc); // Spring!
+}
+```
+
+**3. Return Core Types, Not Primitives**
+```java
+// ✅ GOOD: Type-safe, self-documenting
+public interface CapabilityResolver {
+    List<Endpoint> resolveEndpoints(RoutingKey key);
+}
+
+// ❌ BAD: Primitives require documentation to understand
+public interface CapabilityResolver {
+    List<String> resolveEndpoints(String serviceName, String capability, String method, String path);
+}
+```
+
+**4. Design for Multiple Implementations**
+- Assume at least two implementations (Spring, Dropwizard) will exist
+- Don't add Spring-specific assumptions to port contracts
+- If a parameter is Spring-specific, it doesn't belong in the port
+
+### Anti-Corruption Layer Patterns
+
+When implementing core ports in framework-specific modules:
+
+**Pattern 1: Type Translation**
+```java
+// In io.eventbob.spring (implementation)
+@Service
+public class SpringCapabilityResolver implements CapabilityResolver {
+
+    @Override
+    public List<Endpoint> resolveEndpoints(RoutingKey key) {
+        // Query database using Spring JDBC
+        List<EndpointRow> rows = jdbcTemplate.query(...); // Spring type
+
+        // Translate to core types before returning
+        return rows.stream()
+            .map(this::toEndpoint) // ACL translation
+            .collect(Collectors.toList());
+    }
+
+    private Endpoint toEndpoint(EndpointRow row) { // ACL
+        return new Endpoint(
+            row.getUri(),
+            row.getDeploymentVersion(),
+            translateState(row.getDeploymentState()) // State translation
+        );
+    }
+
+    private EndpointState translateState(DeploymentState state) {
+        // Internal states GRAY/RETIRED never cross to core
+        return switch (state) {
+            case BLUE -> EndpointState.BLUE;
+            case GREEN -> EndpointState.GREEN;
+            case GRAY, RETIRED -> null; // Filtered out before this
+        };
+    }
+}
+```
+
+**Pattern 2: State Filtering**
+```java
+// ✅ GOOD: Filter implementation-specific states before ACL
+List<EndpointRow> rows = jdbcTemplate.query(
+    "SELECT * FROM endpoints WHERE state IN ('BLUE', 'GREEN')" // Filter at query
+);
+
+// ❌ BAD: Exposing internal states to core
+List<EndpointRow> rows = jdbcTemplate.query(
+    "SELECT * FROM endpoints" // Gets GRAY/RETIRED too
+);
+return rows.stream()
+    .map(this::toEndpoint) // Now ACL must handle GRAY/RETIRED!
+```
+
+**Pattern 3: Exception Translation**
+```java
+@Override
+public List<Endpoint> resolveEndpoints(RoutingKey key) {
+    try {
+        return jdbcTemplate.query(...);
+    } catch (DataAccessException e) { // Spring exception
+        // Translate to core exception type
+        throw new EndpointResolutionException(
+            "Failed to resolve endpoints for " + key,
+            e // Include cause for debugging
+        );
+    }
+}
+```
+
+### Implementation Quality Standards
+
+**Checklist for New Implementation Modules:**
+
+- [ ] **Zero leakage to core** - Run ArchUnit test to verify core doesn't import from this module
+- [ ] **Implement all required ports** - Every port in core that needs this infra must have impl
+- [ ] **Anti-Corruption Layer for all types** - Framework types translated at boundary
+- [ ] **Tests don't require core changes** - Test with Testcontainers, not mocks in core
+- [ ] **Documentation explains Bridge Pattern** - README clarifies this is an implementation, not the only way
+- [ ] **Follows core naming conventions** - Use core's ubiquitous language in implementation
+- [ ] **Dependency direction correct** - Implementation → Core, never reverse (verify with ArchUnit)
+
+### Forbidden Patterns in Core
+
+**❌ NEVER do these in `io.eventbob.core`:**
+
+**1. Import Framework Types**
+```java
+// ❌ BAD: Framework type in core
+import org.springframework.jdbc.core.JdbcTemplate;
+
+public interface CapabilityResolver {
+    List<Endpoint> resolve(JdbcTemplate jdbc); // NO!
+}
+```
+
+**2. Reference Implementation Modules**
+```java
+// ❌ BAD: Core knows about implementations
+import io.eventbob.spring.SpringCapabilityResolver;
+
+public class SomeCoreConcept {
+    private SpringCapabilityResolver resolver; // NO!
+}
+```
+
+**3. Add Implementation-Specific Logic**
+```java
+// ❌ BAD: Core doing Spring-specific work
+public class Event {
+    @Autowired // Spring annotation in core!
+    private SomeBean bean;
+}
+```
+
+**4. Expose Internal Implementation States**
+```java
+// ❌ BAD: GRAY/RETIRED are Spring implementation details
+public enum EndpointState {
+    GREEN, BLUE, GRAY, RETIRED // Last two don't belong in core
+}
+
+// ✅ GOOD: Only states that routing needs to know about
+public enum EndpointState {
+    GREEN, BLUE // Core only sees production and canary
+}
+```
+
+### Creating a New Implementation Module
+
+**Step-by-step guide for adding io.eventbob.dropwizard:**
+
+1. **Create module structure**
+   ```
+   io.eventbob.dropwizard/
+   ├── pom.xml (depends on io.eventbob.core)
+   ├── src/main/java/io/eventbob/dropwizard/
+   │   ├── DropwizardCapabilityResolver.java
+   │   ├── DropwizardCapabilityRegistrar.java
+   │   ├── DropwizardBootstrap.java
+   │   └── ...
+   ├── docs/
+   │   ├── architecture.md (explain this is Bridge impl)
+   │   ├── domain_spec.md (clarify NOT a bounded context)
+   │   └── implementation_notes.md
+   └── README.md (title: "EventBob Dropwizard Implementation")
+   ```
+
+2. **Implement core ports**
+   - `CapabilityResolver` using JDBI instead of Spring JDBC
+   - Translate JDBI `ResultSet` → core `Endpoint` via ACL
+
+3. **Add Anti-Corruption Layer**
+   - Create `DropwizardTypes → CoreTypes` translation
+   - Filter implementation-specific states before returning to core
+
+4. **Write ArchUnit tests**
+   - Verify `io.eventbob.dropwizard` → `io.eventbob.core` (allowed)
+   - Verify `io.eventbob.core` → `io.eventbob.dropwizard` (forbidden)
+   - Verify `io.eventbob.spring` ↔ `io.eventbob.dropwizard` (forbidden)
+
+5. **Document Bridge Pattern**
+   - README explains: "This is the Dropwizard implementation of EventBob"
+   - Architecture.md explains dependency on core
+   - Not "registry using Dropwizard" but "EventBob implemented using Dropwizard"
+
+6. **Test with Testcontainers**
+   - Don't add mocks to core for testing
+   - Use real PostgreSQL via Testcontainers
+   - Verify capability registration, conflict detection, endpoint resolution
+
+7. **Update top-level docs**
+   - Add Dropwizard to "Choosing an Implementation" section
+   - Update diagrams showing both Spring and Dropwizard implementations
+
+### When to Extract to Core vs Keep in Implementation
+
+**Extract to core when:**
+- The concept is framework-agnostic (Event, EventHandler, Capability)
+- Multiple implementations will use it the same way (RoutingKey structure)
+- It's part of the domain model, not infrastructure (EndpointState.BLUE/GREEN)
+
+**Keep in implementation when:**
+- The concept is framework-specific (JdbcTemplate, JDBI Handle)
+- Different implementations will do it differently (JAR scanning, persistence strategy)
+- It's an infrastructure detail (DeploymentState.GRAY/RETIRED, heartbeat intervals)
+
+**Example:**
+- `Capability.READ/WRITE/ADMIN` → Core (domain concept, all impls use it)
+- `DeploymentState.GRAY/RETIRED` → Implementation (rollout detail, not in routing contract)
+
+### Anti-Pattern Recognition
+
+**Smell 1: "Just add this small Spring thing to core"**
+- Diagnosis: Violates dependency direction
+- Fix: Add to implementation, translate to core types via ACL
+
+**Smell 2: "Core types don't have what I need"**
+- Diagnosis: May indicate missing abstraction OR implementation-specific need
+- Fix: If all implementations need it → add to core. If Spring-specific → keep in Spring.
+
+**Smell 3: "This ACL translation is repetitive"**
+- Diagnosis: Good! ACLs prevent implementation details from leaking
+- Fix: Accept the repetition. It's cheaper than coupling.
+
+**Smell 4: "Tests in implementation require mocking core"**
+- Diagnosis: Testing the wrong boundary
+- Fix: Test the implementation directly with real infrastructure (Testcontainers)
