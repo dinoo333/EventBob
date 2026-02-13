@@ -1,10 +1,18 @@
-# EventBob Registry
+# EventBob Spring Implementation
 
-Service registry for capability-based routing in EventBob macro-services.
+**Spring Boot implementation of EventBob infrastructure** (Bridge Pattern)
 
-## Overview
+## What Is This Module?
 
-The registry enables:
+This is the **Spring-based implementation of EventBob** - the complete macro-service infrastructure using Spring Boot and Spring JDBC.
+
+**Architecture Pattern:** Bridge
+- **Abstraction:** `io.eventbob.core` (domain model, ports, interfaces)
+- **Implementation:** `io.eventbob.spring` (this module - Spring-based concrete implementation)
+
+**Not just a registry:** This module provides the complete EventBob infrastructure including capability scanning, registration, instance tracking, deployment management, and persistence.
+
+## What This Implementation Provides
 - **JAR introspection**: Scan JARs for `@EventHandlerCapability` annotations
 - **Capability registration**: Store what operations each service provides
 - **Instance tracking**: Know which physical instances are running
@@ -176,13 +184,30 @@ Tests cover:
 - Idempotent re-registration
 - Registry version bumping
 
+## Why "Spring" Not "Registry"?
+
+This module is named `io.eventbob.spring` because:
+1. It's the **Spring implementation** of EventBob (Bridge Pattern)
+2. It provides ALL infrastructure capabilities, not just registry
+3. It enables peer implementations like `io.eventbob.dropwizard` to coexist
+4. The domain abstraction lives in `io.eventbob.core`
+
 ## Dependencies
 
-- **Spring Boot**: JDBC, transactions
-- **PostgreSQL**: Registry database
+- **Spring Boot**: JDBC, transactions, dependency injection
+- **PostgreSQL**: Persistence layer
 - **Flyway**: Schema migrations
-- **ClassGraph**: JAR scanning
-- **Testcontainers**: Integration tests
+- **ClassGraph**: JAR scanning for capabilities
+- **Testcontainers**: Integration testing
+
+## Alternative Implementations
+
+The Bridge Pattern enables multiple framework implementations:
+- `io.eventbob.spring` (this module) - Spring Boot + Spring JDBC
+- `io.eventbob.dropwizard` (planned) - Dropwizard + JDBI
+- `io.eventbob.micronaut` (future) - Micronaut + Micronaut Data
+
+All implementations provide the same capabilities, just using different frameworks.
 
 ## Future Enhancements
 
@@ -190,4 +215,4 @@ Tests cover:
 - [ ] Heartbeat monitoring (detect stale instances)
 - [ ] Automatic cleanup (retire gray versions after grace period)
 - [ ] Metrics (registration failures, conflicts, version distribution)
-- [ ] Registry cache (in-memory, version-based invalidation)
+- [ ] In-memory cache (version-based invalidation)

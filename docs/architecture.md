@@ -1,5 +1,91 @@
 # EventBob Architecture
 
+## Bridge Pattern: Core + Implementations
+
+EventBob is built using the **Bridge Pattern** to separate abstraction from implementation:
+
+- **Abstraction:** `io.eventbob.core` - Defines domain model, ports, and interfaces
+- **Implementations:** `io.eventbob.spring`, `io.eventbob.dropwizard` (planned), etc. - Framework-specific implementations of EventBob infrastructure
+
+**Key Insight:** The core defines WHAT (domain concepts, routing logic, port contracts). Implementations define HOW (using Spring Boot, Dropwizard, or other frameworks).
+
+### Multiple Framework Implementations
+
+```
+┌─────────────────────────────────┐
+│   io.eventbob.core              │  Abstraction (domain model + ports)
+│   - Event, EventHandler         │
+│   - CapabilityResolver port     │
+│   - Capability enum (READ/WRITE/ADMIN)
+└─────────────────────────────────┘
+              ↑ implements
+      ┌───────┴────────┐
+      │                │
+┌─────────────┐  ┌─────────────┐
+│ io.eventbob │  │ io.eventbob │  Implementations (framework-specific)
+│   .spring   │  │ .dropwizard │
+│             │  │             │
+│ Spring Boot │  │ Dropwizard  │
+│ Spring JDBC │  │ JDBI        │
+│ PostgreSQL  │  │ PostgreSQL  │
+└─────────────┘  └─────────────┘
+```
+
+**Why this matters:**
+1. **Framework independence** - Core domain is not coupled to Spring, Dropwizard, or any framework
+2. **Multiple implementations can coexist** - Use Spring for one deployment, Dropwizard for another
+3. **Clear dependency direction** - Implementations depend on core, never reverse
+
+### What Belongs Where: Core vs Implementations
+
+| Concern | Belongs in Core | Belongs in Implementation |
+|---------|----------------|---------------------------|
+| Event domain model | ✅ Yes | ❌ No |
+| EventHandler interface | ✅ Yes | ❌ No |
+| CapabilityResolver port | ✅ Yes (interface only) | ✅ Yes (concrete impl) |
+| Capability enum (READ/WRITE/ADMIN) | ✅ Yes | ❌ No |
+| JAR scanning for capabilities | ❌ No | ✅ Yes |
+| Capability persistence (PostgreSQL) | ❌ No | ✅ Yes |
+| Instance tracking and health | ❌ No | ✅ Yes |
+| Deployment state management | ❌ No | ✅ Yes |
+| Bootstrap and configuration | ❌ No | ✅ Yes |
+| Framework types (Spring, Dropwizard) | ❌ No | ✅ Yes |
+
+**Rule of thumb:** If it's about "what routing means" → core. If it's about "how to do routing with framework X" → implementation.
+
+### Dependency Rules (Enforced)
+
+**✅ Allowed:**
+- Implementations → Core (Spring/Dropwizard depend on core interfaces)
+- Adapters → Core (HTTP/gRPC adapters implement EventHandler)
+- Services → Core (business services implement EventHandler)
+
+**❌ Forbidden:**
+- Core → Implementations (core cannot import Spring, Dropwizard, JDBI, etc.)
+- Core → Adapters (core cannot know about HTTP, gRPC)
+- Implementation A → Implementation B (Spring cannot import Dropwizard)
+
+**Enforcement:** ArchUnit tests in each module verify these rules at build time.
+
+### Choosing an Implementation
+
+**Use io.eventbob.spring if:**
+- You're already using Spring Boot in your services
+- You want Spring's dependency injection and transaction management
+- You prefer Spring JDBC for database access
+
+**Use io.eventbob.dropwizard if:**
+- You prefer lightweight frameworks over Spring
+- You want JDBI for database access
+- You're already using Dropwizard in your services
+
+**Both implementations provide identical capabilities:**
+- JAR scanning for `@EventHandlerCapability` annotations
+- Capability registration and conflict detection
+- Instance tracking and health management
+- Blue/green deployment support
+- Implementation of `CapabilityResolver` port
+
 ## Current Implementation Status
 
 **As of 2026-02-11:**

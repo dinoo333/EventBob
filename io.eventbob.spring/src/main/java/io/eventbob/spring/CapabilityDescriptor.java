@@ -1,4 +1,4 @@
-package io.eventbob.registry;
+package io.eventbob.spring;
 
 import io.eventbob.core.endpointresolution.Capability;
 

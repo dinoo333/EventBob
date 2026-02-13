@@ -1,4 +1,4 @@
-package io.eventbob.registry;
+package io.eventbob.spring;
 
 /**
  * Health status of a service instance.

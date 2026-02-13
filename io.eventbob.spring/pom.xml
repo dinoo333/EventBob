@@ -12,11 +12,11 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>io.eventbob.registry</artifactId>
+    <artifactId>io.eventbob.spring</artifactId>
     <packaging>jar</packaging>
 
-    <name>EventBob Registry</name>
-    <description>Service registry for capability-based routing</description>
+    <name>EventBob Spring Implementation</name>
+    <description>Spring Boot implementation of EventBob infrastructure (JAR scanning, capability registration, instance tracking)</description>
 
     <dependencies>
         <!-- EventBob Core -->

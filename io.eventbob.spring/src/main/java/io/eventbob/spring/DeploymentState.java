@@ -1,4 +1,4 @@
-package io.eventbob.registry;
+package io.eventbob.spring;
 
 /**
  * Lifecycle states for deployments in the blue/green deployment model.

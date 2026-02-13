@@ -1,4 +1,4 @@
-package io.eventbob.registry;
+package io.eventbob.spring;
 
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -24,7 +24,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 /**
- * Architecture tests enforcing dependency rules for io.eventbob.registry module.
+ * Architecture tests enforcing dependency rules for io.eventbob.spring module.
  *
  * <p><b>IMPORTANT:</b> This test only analyzes the registry module. Each module should have its own
  * ArchUnit test to prevent hidden drift.
@@ -67,17 +67,17 @@ class RegistryArchitectureTest {
     static void loadClasses() {
         classes = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-            .importPackages("io.eventbob.registry");
+            .importPackages("io.eventbob.spring");
     }
 
     @Test
     @DisplayName("Registry can depend on Core domain model")
     void registryCanDependOnCore() {
         ArchRule rule = classes()
-            .that().resideInAPackage("io.eventbob.registry..")
+            .that().resideInAPackage("io.eventbob.spring..")
             .should().onlyDependOnClassesThat()
                 .resideInAnyPackage(
-                    "io.eventbob.registry..",
+                    "io.eventbob.spring..",
                     "io.eventbob.core..",       // Domain model
                     "org.springframework..",     // Spring Boot infrastructure
                     "org.postgresql..",          // PostgreSQL driver
@@ -98,7 +98,7 @@ class RegistryArchitectureTest {
         // This rule prevents coupling to future implementation modules
         // (e.g., io.eventbob.api, io.eventbob.gateway)
         ArchRule rule = noClasses()
-            .that().resideInAPackage("io.eventbob.registry..")
+            .that().resideInAPackage("io.eventbob.spring..")
             .should().dependOnClassesThat().resideInAnyPackage(
                 "io.eventbob.api..",
                 "io.eventbob.gateway..",
@@ -115,7 +115,7 @@ class RegistryArchitectureTest {
         // Registry currently has a flat package structure (no subpackages)
         // This test will become relevant when subpackages are introduced
         ArchRule rule = slices()
-            .matching("io.eventbob.registry.(*)..")
+            .matching("io.eventbob.spring.(*)..")
             .should().beFreeOfCycles()
             .allowEmptyShould(true);
 
@@ -158,7 +158,7 @@ class RegistryArchitectureTest {
     void generateMermaidDependencyGraph() throws IOException {
         var registryClasses = new ClassFileImporter()
             .withImportOption(DO_NOT_INCLUDE_TESTS)
-            .importPackages("io.eventbob.registry");
+            .importPackages("io.eventbob.spring");
 
         var dependencies = new ArrayList<Dependency>();
 
@@ -166,9 +166,9 @@ class RegistryArchitectureTest {
             .map(JavaClass::getPackage)
             .distinct()
             .forEach(pkg -> {
-                if (pkg.getName().startsWith("io.eventbob.registry")) {
+                if (pkg.getName().startsWith("io.eventbob.spring")) {
                     pkg.getPackageDependenciesFromThisPackage().forEach(dependency -> {
-                        if (dependency.getName().startsWith("io.eventbob.registry")) {
+                        if (dependency.getName().startsWith("io.eventbob.spring")) {
                             dependencies.add(new Dependency(martinMetric(pkg), martinMetric(dependency)));
                         }
                     });
@@ -218,19 +218,19 @@ class RegistryArchitectureTest {
     }
 
     private MartinMetric martinMetric(JavaPackage javaPackage) {
-        String name = javaPackage.getName().substring("io.eventbob.registry.".length());
+        String name = javaPackage.getName().substring("io.eventbob.spring.".length());
         if (name.isEmpty()) {
             name = "registry";
         }
 
         // Efferent coupling (Ce): outgoing dependencies
         double ce = javaPackage.getPackageDependenciesFromThisPackage().stream()
-            .filter(dep -> dep.getName().startsWith("io.eventbob.registry"))
+            .filter(dep -> dep.getName().startsWith("io.eventbob.spring"))
             .count();
 
         // Afferent coupling (Ca): incoming dependencies
         double ca = javaPackage.getClassDependenciesToThisPackage().stream()
-            .filter(dep -> dep.getOriginClass().getPackageName().startsWith("io.eventbob.registry"))
+            .filter(dep -> dep.getOriginClass().getPackageName().startsWith("io.eventbob.spring"))
             .count();
 
         // Instability: I = Ce / (Ca + Ce)
