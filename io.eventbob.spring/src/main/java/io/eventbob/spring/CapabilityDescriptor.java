@@ -16,7 +16,6 @@ public final class CapabilityDescriptor {
     private final int capabilityVersion;
     private final String method;
     private final String pathPattern;
-    private final String handlerClassName;
 
     private CapabilityDescriptor(Builder builder) {
         this.serviceName = Objects.requireNonNull(builder.serviceName, "serviceName");
@@ -24,7 +23,6 @@ public final class CapabilityDescriptor {
         this.capabilityVersion = builder.capabilityVersion;
         this.method = Objects.requireNonNull(builder.method, "method");
         this.pathPattern = Objects.requireNonNull(builder.pathPattern, "pathPattern");
-        this.handlerClassName = Objects.requireNonNull(builder.handlerClassName, "handlerClassName");
 
         if (capabilityVersion <= 0) {
             throw new IllegalArgumentException("capabilityVersion must be positive: " + capabilityVersion);
@@ -55,10 +53,6 @@ public final class CapabilityDescriptor {
 
     public String getPathPattern() {
         return pathPattern;
-    }
-
-    public String getHandlerClassName() {
-        return handlerClassName;
     }
 
     /**
@@ -98,7 +92,6 @@ public final class CapabilityDescriptor {
         private int capabilityVersion;
         private String method;
         private String pathPattern;
-        private String handlerClassName;
 
         private Builder() {}
 
@@ -124,11 +117,6 @@ public final class CapabilityDescriptor {
 
         public Builder pathPattern(String pathPattern) {
             this.pathPattern = pathPattern;
-            return this;
-        }
-
-        public Builder handlerClassName(String handlerClassName) {
-            this.handlerClassName = handlerClassName;
             return this;
         }
 

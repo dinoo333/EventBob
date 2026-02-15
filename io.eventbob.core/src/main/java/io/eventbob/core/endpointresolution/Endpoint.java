@@ -1,11 +1,13 @@
 package io.eventbob.core.endpointresolution;
 
 /**
- * Physical endpoint where events can be sent.
+ * Logical endpoint where events can be sent.
  *
- * <p>An endpoint is simply a network address where a service can receive events.
+ * <p>An endpoint is a logical service URL that cloud infrastructure resolves to physical addresses.
+ * The infrastructure (DNS, service mesh, load balancers) handles the mapping from logical URL to
+ * actual server instances.
  *
- * @param url the endpoint URL (e.g., "http://10.0.1.5:8080")
+ * @param url the logical endpoint URL (e.g., "http://messages-service")
  */
 public record Endpoint(String url) {
     public Endpoint {

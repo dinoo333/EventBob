@@ -34,12 +34,12 @@ This is the **Spring-based implementation of EventBob** - the complete macro-ser
 └────────────────────────┘
             ↓
 ┌────────────────────────┐
-│ instance_capabilities  │  Join: which instances provide which capabilities
+│ macrolith_capabilities  │  Join: which macroliths provide which capabilities
 └────────────────────────┘
             ↓
 ┌────────────────────────┐
-│ service_instances      │  Which physical instances are running
-│  - macro_name          │
+│ service_macroliths      │  Which logical deployment units exist
+│  - macrolith_name          │
 │  - instance_id         │
 │  - endpoint            │
 │  - status, heartbeat   │
@@ -72,13 +72,13 @@ public class GetMessageContentHandler implements EventHandler {
 }
 ```
 
-### 2. Bootstrap Macro-Service
+### 2. Bootstrap Macrolith-Service
 
 ```java
 MacroServiceBootstrap bootstrap = new MacroServiceBootstrap(scanner, registrar, repository);
 
 BootstrapConfig config = new BootstrapConfig(
-  "messages-readonly-macro",     // Macro name
+  "messages-readonly-macrolith",     // Macrolith name
   "pod-1",                        // Instance ID (unique per instance)
   List.of(Path.of("/app/messages-service.jar")),
   "1.2.3",                        // JAR version
@@ -110,7 +110,7 @@ List<CapabilityConflict> conflicts = repository.detectConflicts();
 
 ## Concurrent Registration
 
-Multiple instances of the same macro can register simultaneously. The system handles this via:
+Multiple instances of the same macrolith can register simultaneously. The system handles this via:
 
 1. **Idempotent operations**: `INSERT ... ON CONFLICT DO NOTHING`
 2. **Capability sharing**: Multiple instances link to the same capability record
@@ -129,7 +129,7 @@ T=0: pod-3 starts → same as pod-2
 Result:
   - 1 capability record (cap-123)
   - 3 instance records (pod-1, pod-2, pod-3)
-  - 3 links in instance_capabilities
+  - 3 links in macrolith_capabilities
 ```
 
 ## Conflict Detection
@@ -164,8 +164,8 @@ See `src/main/resources/db/migration/V001__create_service_registry.sql`
 
 Key tables:
 - `service_capabilities`: Capability definitions
-- `service_instances`: Physical instances
-- `instance_capabilities`: Join table
+- `service_macroliths`: Physical instances
+- `macrolith_capabilities`: Join table
 - `deployment_history`: Audit log
 - `registry_version`: Cache invalidation (bumped on every change)
 
