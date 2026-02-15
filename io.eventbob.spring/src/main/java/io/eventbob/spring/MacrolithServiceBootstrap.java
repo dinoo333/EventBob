@@ -5,24 +5,25 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Bootstraps a macro-service by:
+ * Bootstraps a macrolith-service by:
  * <ol>
  *   <li>Scanning JARs for capabilities</li>
- *   <li>Registering capabilities and macro in the registry</li>
+ *   <li>Registering capabilities and macrolith in the registry</li>
  * </ol>
  */
 @Component
-public class MacroServiceBootstrap {
-    private static final Logger log = LoggerFactory.getLogger(MacroServiceBootstrap.class);
+public class MacrolithServiceBootstrap {
+    private static final Logger log = LoggerFactory.getLogger(MacrolithServiceBootstrap.class);
 
     private final CapabilityScanner scanner;
     private final CapabilityRegistrar registrar;
 
-    public MacroServiceBootstrap(
+    public MacrolithServiceBootstrap(
         CapabilityScanner scanner,
         CapabilityRegistrar registrar) {
 
@@ -31,14 +32,14 @@ public class MacroServiceBootstrap {
     }
 
     /**
-     * Bootstrap a macro-service.
+     * Bootstrap a macrolith-service.
      *
      * @param config bootstrap configuration
      * @return bootstrap result
      * @throws BootstrapException if bootstrap fails
      */
     public BootstrapResult bootstrap(BootstrapConfig config) throws BootstrapException {
-        log.info("Bootstrapping macro-service: {}", config.macroName());
+        log.info("Bootstrapping macrolith-service: {}", config.macrolithName());
 
         try {
             // Step 1: Scan JARs for capabilities
@@ -50,32 +51,32 @@ public class MacroServiceBootstrap {
                 throw new BootstrapException("No capabilities found in JARs");
             }
 
-            // Step 2: Determine macro endpoint (default to macro name)
+            // Step 2: Determine macrolith endpoint (default to macrolith name)
             String endpoint = config.endpoint() != null
                 ? config.endpoint()
-                : config.macroName();
+                : config.macrolithName();
 
-            log.info("Macro endpoint: {}", endpoint);
+            log.info("Macrolith endpoint: {}", endpoint);
 
-            // Step 3: Register macro and capabilities
+            // Step 3: Register macrolith and capabilities
             CapabilityRegistrar.RegistrationRequest request = new CapabilityRegistrar.RegistrationRequest(
-                config.macroName(),
+                config.macrolithName(),
                 endpoint,
                 allCapabilities
             );
 
-            CapabilityRegistrar.RegistrationResult registrationResult = registrar.registerMacro(request);
+            CapabilityRegistrar.RegistrationResult registrationResult = registrar.registerMacrolith(request);
 
             if (!registrationResult.isSuccess()) {
                 throw new BootstrapException("Registration failed: no capabilities registered");
             }
 
-            log.info("Bootstrap complete: macro={}, capabilities={}",
-                config.macroName(),
+            log.info("Bootstrap complete: macrolith={}, capabilities={}",
+                config.macrolithName(),
                 registrationResult.capabilityIds().size());
 
             return new BootstrapResult(
-                registrationResult.macroId(),
+                registrationResult.macrolithId(),
                 endpoint,
                 allCapabilities
             );
@@ -92,17 +93,14 @@ public class MacroServiceBootstrap {
      */
     private List<CapabilityDescriptor> scanJars(BootstrapConfig config) throws Exception {
         ClassLoader parentClassLoader = getClass().getClassLoader();
+        List<CapabilityDescriptor> allCapabilities = new ArrayList<>();
 
-        return config.jarPaths().stream()
-            .flatMap(jarPath -> {
-                try {
-                    return scanner.scanJar(jarPath, parentClassLoader).stream();
-                } catch (Exception e) {
-                    log.error("Failed to scan JAR: {}", jarPath, e);
-                    return java.util.stream.Stream.empty();
-                }
-            })
-            .toList();
+        for (Path jarPath : config.jarPaths()) {
+            List<CapabilityDescriptor> jarCapabilities = scanner.scanJar(jarPath, parentClassLoader);
+            allCapabilities.addAll(jarCapabilities);
+        }
+
+        return allCapabilities;
     }
 
 
@@ -110,13 +108,13 @@ public class MacroServiceBootstrap {
      * Bootstrap configuration.
      */
     public record BootstrapConfig(
-        String macroName,
+        String macrolithName,
         List<Path> jarPaths,
-        String endpoint  // null = defaults to macroName
+        String endpoint  // null = defaults to macrolithName
     ) {
         public BootstrapConfig {
-            if (macroName == null || macroName.isBlank()) {
-                throw new IllegalArgumentException("macroName is required");
+            if (macrolithName == null || macrolithName.isBlank()) {
+                throw new IllegalArgumentException("macrolithName is required");
             }
             if (jarPaths == null || jarPaths.isEmpty()) {
                 throw new IllegalArgumentException("jarPaths is required");
@@ -128,7 +126,7 @@ public class MacroServiceBootstrap {
      * Bootstrap result.
      */
     public record BootstrapResult(
-        UUID macroId,
+        UUID macrolithId,
         String endpoint,
         List<CapabilityDescriptor> capabilities
     ) {}

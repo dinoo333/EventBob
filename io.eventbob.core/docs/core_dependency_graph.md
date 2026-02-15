@@ -14,6 +14,6 @@ Ideal packages are either:
 
 ```mermaid
 graph TD
-  eventrouting["eventrouting<br/>D=0.17 (A=0.17, I=1.00)"] --> endpointresolution["endpointresolution<br/>D=0.57 (A=0.43, I=0.00)"]
+  eventrouting["eventrouting<br/>D=0.17 (A=0.17, I=1.00)"] --> endpointresolution["endpointresolution<br/>D=0.60 (A=0.40, I=0.00)"]
 ```
 

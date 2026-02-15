@@ -8,7 +8,13 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Domain event data structure.
+ * Transport envelope for in-process communication between handlers within a macrolith.
+ *
+ * <p><b>Not a domain event.</b> Event is a request/response wrapper containing routing
+ * information (source, target), parameters, metadata, and an optional payload.
+ * It is the message format for EventHandler communication, not a record of a domain occurrence.
+ *
+ * <p>Events are immutable and passed between EventHandler implementations via the EventHandlingRouter.
  */
 public final class Event implements Serializable {
 
@@ -36,12 +42,8 @@ public final class Event implements Serializable {
     Builder b = new Builder();
     b.source = this.source;
     b.target = this.target;
-    if (!this.parameters.isEmpty()) {
-      b.parameters = new LinkedHashMap<>(this.parameters);
-    }
-    if (!this.metadata.isEmpty()) {
-      b.metadata = new LinkedHashMap<>(this.metadata);
-    }
+    b.parameters = Builder.mutable(this.parameters);
+    b.metadata = Builder.mutable(this.metadata);
     b.payload = this.payload;
     return b;
   }
@@ -117,8 +119,7 @@ public final class Event implements Serializable {
     private Serializable payload;
 
     private static Map<String, Serializable> mutable(Map<String, Serializable> m) {
-      if (m == null || m.isEmpty()) return Collections.emptyMap();
-      return new LinkedHashMap<>(m);
+      return m == null ? new LinkedHashMap<>() : new LinkedHashMap<>(m);
     }
 
     public Builder source(String source) {

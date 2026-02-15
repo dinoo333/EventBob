@@ -1,7 +1,6 @@
 io/eventbob/core/endpointresolution/Capability.class
 io/eventbob/core/eventrouting/EventHandler.class
 io/eventbob/core/eventrouting/EventHandlingRouter.class
-io/eventbob/core/endpointresolution/EndpointState.class
 io/eventbob/core/endpointresolution/CapabilityResolver.class
 io/eventbob/core/endpointresolution/Endpoint.class
 io/eventbob/core/eventrouting/EventHandlerCapability.class

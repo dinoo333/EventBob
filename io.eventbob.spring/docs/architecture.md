@@ -6,7 +6,7 @@
 
 ## Bridge Pattern: Core + Spring
 
-This module is the **Spring Boot implementation of EventBob**. It implements the complete macro-service infrastructure using Spring Framework.
+This module is the **Spring Boot implementation of EventBob**. It implements the complete macrolith-service infrastructure using Spring Framework.
 
 **Architecture Pattern:** Bridge Pattern
 - **Abstraction:** `io.eventbob.core` (domain model, ports, interfaces)
@@ -16,9 +16,9 @@ This is NOT "a registry using Spring." This is **EventBob implemented using Spri
 
 ## Module Purpose
 
-This Spring implementation provides the EventBob macro-service infrastructure:
+This Spring implementation provides the EventBob macrolith-service infrastructure:
 - **Capability-based service discovery** (JAR scanning, registration)
-- **Macro tracking** (logical deployment units and their endpoints)
+- **Macrolith tracking** (logical deployment units and their endpoints)
 - **Macro-service bootstrap** (startup orchestration, configuration)
 - **Persistence layer** (Spring JDBC with PostgreSQL)
 
@@ -27,7 +27,7 @@ It sits at the infrastructure layer, implementing ports defined by `io.eventbob.
 **Responsibilities:**
 - Scan JARs for `@EventHandlerCapability` annotations
 - Persist capability metadata to PostgreSQL
-- Track macros (logical deployment units) and their endpoints
+- Track macroliths (logical deployment units) and their endpoints
 - (Future) Implement `CapabilityResolver` port for endpoint resolution
 
 **Not responsible for:**
@@ -55,8 +55,8 @@ It sits at the infrastructure layer, implementing ports defined by `io.eventbob.
 └─────────────────────────────────┘
               ↓
 ┌─────────────────────────────────┐
-│   Database                      │  PostgreSQL (service_capabilities, service_macros,
-│                                 │  macro_capabilities, registry_version)
+│   Database                      │  PostgreSQL (service_capabilities, service_macroliths,
+│                                 │  macrolith_capabilities, registry_version)
 └─────────────────────────────────┘
 ```
 
@@ -106,7 +106,6 @@ public final class CapabilityDescriptor {
     private final int capabilityVersion;
     private final String method;              // HTTP method
     private final String pathPattern;
-    private final String handlerClassName;
 }
 ```
 
@@ -118,7 +117,7 @@ public final class CapabilityDescriptor {
 
 ### CapabilityRegistrar
 
-**Responsibility:** Register macros and their capabilities in the registry.
+**Responsibility:** Register macroliths and their capabilities in the registry.
 
 **Pattern:** Application Service (infrastructure layer)
 
@@ -128,24 +127,24 @@ public final class CapabilityDescriptor {
 **Request/Response:**
 ```java
 public record RegistrationRequest(
-    String macroName,
+    String macrolithName,
     String endpoint,  // Logical name
     List<CapabilityDescriptor> capabilities
 ) {}
 
 public record RegistrationResult(
-    UUID macroId,
+    UUID macrolithId,
     Map<String, UUID> capabilityIds
 ) {
     public boolean isSuccess() {
-        return macroId != null && !capabilityIds.isEmpty();
+        return macrolithId != null && !capabilityIds.isEmpty();
     }
 }
 ```
 
-**Transaction boundary:** Entire registration (macro + capabilities + links) is atomic.
+**Transaction boundary:** Entire registration (macrolith + capabilities + links) is atomic.
 
-**Idempotency:** Re-registering same macro updates endpoint but doesn't create duplicates.
+**Idempotency:** Re-registering same macrolith updates endpoint but doesn't create duplicates.
 
 **Why this design:**
 - Orchestrates repository calls (registerMacro, registerCapability, linkMacroCapability)
@@ -156,26 +155,26 @@ public record RegistrationResult(
 
 ### ServiceRegistryRepository
 
-**Responsibility:** Persistence of macros, capabilities, and their relationships.
+**Responsibility:** Persistence of macroliths, capabilities, and their relationships.
 
 **Pattern:** Repository (Spring JDBC)
 
 **Key operations:**
-- `registerMacro(macroName, endpoint) → UUID`
+- `registerMacro(macrolithName, endpoint) → UUID`
 - `registerCapability(descriptor) → UUID`
-- `linkMacroCapability(macroId, capabilityId) → void`
+- `linkMacroCapability(macrolithId, capabilityId) → void`
 - `getCurrentVersion() → long`
 
 **Database tables:**
-- `service_macros` - logical deployment units
+- `service_macroliths` - logical deployment units
 - `service_capabilities` - capability operations
-- `macro_capabilities` - junction table (which macros provide which capabilities)
+- `macrolith_capabilities` - junction table (which macroliths provide which capabilities)
 - `registry_version` - cache invalidation counter
 
 **Idempotency strategy:**
-- Macros: `ON CONFLICT (macro_name) DO UPDATE SET endpoint = ...`
-- Capabilities: Check existence, return existing UUID
-- Links: `ON CONFLICT DO NOTHING`
+- Macroliths: `ON CONFLICT (macrolith_name) DO UPDATE SET endpoint = ...` (last-wins)
+- Capabilities: `ON CONFLICT DO NOTHING`, query for existing UUID if needed (first-wins)
+- Links: `ON CONFLICT DO NOTHING` (first-wins)
 
 **Why Spring JDBC (not JPA):**
 - Explicit SQL control (no hidden queries)
@@ -184,9 +183,9 @@ public record RegistrationResult(
 
 ---
 
-### MacroServiceBootstrap
+### MacrolithServiceBootstrap
 
-**Responsibility:** Bootstrap a macro-service on startup.
+**Responsibility:** Bootstrap a macrolith-service on startup.
 
 **Pattern:** Application Service (infrastructure layer)
 
@@ -196,9 +195,9 @@ public record RegistrationResult(
 **Configuration:**
 ```java
 public record BootstrapConfig(
-    String macroName,
+    String macrolithName,
     List<Path> jarPaths,
-    String endpoint  // null = defaults to macroName
+    String endpoint  // null = defaults to macrolithName
 ) {}
 ```
 
@@ -206,35 +205,35 @@ public record BootstrapConfig(
 ```
 1. Scan JARs for capabilities (via CapabilityScanner)
 2. Validate at least one capability found
-3. Determine endpoint (explicit or default to macroName)
-4. Register macro + capabilities (via CapabilityRegistrar)
+3. Determine endpoint (explicit or default to macrolithName)
+4. Register macrolith + capabilities (via CapabilityRegistrar)
 5. Return result
 ```
 
 **Why this design:**
 - Separates bootstrap orchestration from registration logic
-- Single entry point for macro-service initialization
+- Single entry point for macrolith-service initialization
 - Explicit configuration record (no hidden defaults)
 
 ---
 
 ## Database Schema
 
-### service_macros
+### service_macroliths
 
 Tracks logical deployment units.
 
 ```sql
-CREATE TABLE service_macros (
+CREATE TABLE service_macroliths (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  macro_name VARCHAR(255) NOT NULL UNIQUE,
+  macrolith_name VARCHAR(255) NOT NULL UNIQUE,
   endpoint VARCHAR(500) NOT NULL,
   registered_at TIMESTAMP NOT NULL DEFAULT NOW(),
   metadata JSONB
 );
 ```
 
-**Key insight:** One record per macro. Endpoint is logical name, resolved by infrastructure.
+**Key insight:** One record per macrolith. Endpoint is logical name, resolved by infrastructure.
 
 ---
 
@@ -262,21 +261,21 @@ CREATE TABLE service_capabilities (
 
 ---
 
-### macro_capabilities
+### macrolith_capabilities
 
-Junction table linking macros to capabilities.
+Junction table linking macroliths to capabilities.
 
 ```sql
-CREATE TABLE macro_capabilities (
-  macro_id UUID NOT NULL REFERENCES service_macros(id) ON DELETE CASCADE,
+CREATE TABLE macrolith_capabilities (
+  macrolith_id UUID NOT NULL REFERENCES service_macroliths(id) ON DELETE CASCADE,
   capability_id UUID NOT NULL REFERENCES service_capabilities(id) ON DELETE CASCADE,
   linked_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
-  PRIMARY KEY (macro_id, capability_id)
+  PRIMARY KEY (macrolith_id, capability_id)
 );
 ```
 
-**Key insight:** Capabilities can be shared across macros. Same capability, multiple macros.
+**Key insight:** Capabilities can be shared across macroliths. Same capability, multiple macroliths.
 
 ---
 
@@ -305,8 +304,8 @@ CREATE TRIGGER trigger_capabilities_version
   AFTER INSERT OR UPDATE OR DELETE ON service_capabilities
   FOR EACH STATEMENT EXECUTE FUNCTION bump_registry_version();
 
-CREATE TRIGGER trigger_macros_version
-  AFTER INSERT OR UPDATE OR DELETE ON service_macros
+CREATE TRIGGER trigger_macroliths_version
+  AFTER INSERT OR UPDATE OR DELETE ON service_macroliths
   FOR EACH STATEMENT EXECUTE FUNCTION bump_registry_version();
 ```
 
@@ -356,8 +355,8 @@ CREATE TRIGGER trigger_macros_version
 - Over-engineered for current needs (no consumers of deployment state data)
 
 **What changed:**
-- `service_instances` → `service_macros` (tracks logical units, not physical instances)
-- `instance_capabilities` → `macro_capabilities`
+- `service_macroliths` → `service_macroliths` (tracks logical units, not physical instances)
+- `instance_capabilities` → `macrolith_capabilities`
 - Endpoint is now logical name (e.g., "messages-service"), not physical URL
 - RegistrationRequest simplified from 7 fields to 3
 - Database schema simplified (removed state columns, deployment history table)
@@ -385,8 +384,8 @@ public interface CapabilityResolver {
 
 **Implementation approach:**
 - Query `service_capabilities` by routing key
-- Join to `macro_capabilities` to get macros
-- Join to `service_macros` to get endpoints
+- Join to `macrolith_capabilities` to get macros
+- Join to `service_macroliths` to get endpoints
 - Return `List<Endpoint>` with logical names
 - Infrastructure (DNS, load balancers) resolves logical → physical
 
@@ -396,12 +395,12 @@ public interface CapabilityResolver {
 
 ### 2. Health-Based Routing (Future)
 
-**Goal:** Exclude unhealthy macros from resolution.
+**Goal:** Exclude unhealthy macroliths from resolution.
 
 **Approach (if needed):**
-- Add health check endpoint to macros
-- Periodically query health, update macro metadata
-- Filter unhealthy macros in resolver query
+- Add health check endpoint to macroliths
+- Periodically query health, update macrolith metadata
+- Filter unhealthy macroliths in resolver query
 
 **Note:** This may not be needed if infrastructure (load balancers, service mesh) already handles health.
 
@@ -412,7 +411,7 @@ public interface CapabilityResolver {
 **Goal:** Replicate capabilities across regions.
 
 **Approach:**
-- Add region column to service_macros
+- Add region column to service_macroliths
 - Replicate capability metadata across regions
 - Resolver queries local region first, falls back to remote
 
@@ -423,7 +422,7 @@ public interface CapabilityResolver {
 This Spring implementation provides a **simple, honest registry** for capability-based routing:
 
 1. **Scan JARs** to discover capabilities
-2. **Register macros** and their capabilities
+2. **Register macroliths** and their capabilities
 3. **Persist to PostgreSQL** with transactional guarantees
 4. **(Future) Resolve routing keys** to endpoints for the router
 

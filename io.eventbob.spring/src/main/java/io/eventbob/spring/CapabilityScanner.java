@@ -62,15 +62,10 @@ public class CapabilityScanner {
             log.debug("Found {} annotated EventHandler classes in {}", handlerClasses.size(), jarPath.getFileName());
 
             for (ClassInfo classInfo : handlerClasses) {
-                try {
-                    List<CapabilityDescriptor> descriptors = parseCapabilityAnnotations(classInfo);
-                    capabilities.addAll(descriptors);
-                    for (CapabilityDescriptor descriptor : descriptors) {
-                        log.debug("  - {}", descriptor);
-                    }
-                } catch (Exception e) {
-                    log.error("Failed to parse capability from class: {}", classInfo.getName(), e);
-                    // Continue scanning despite individual failures
+                List<CapabilityDescriptor> descriptors = parseCapabilityAnnotations(classInfo);
+                capabilities.addAll(descriptors);
+                for (CapabilityDescriptor descriptor : descriptors) {
+                    log.debug("  - {}", descriptor);
                 }
             }
         }
@@ -139,7 +134,6 @@ public class CapabilityScanner {
                 .capabilityVersion(capabilityVersion)
                 .method(method)
                 .pathPattern(pathPattern)
-                .handlerClassName(classInfo.getName())
                 .build());
         }
 
