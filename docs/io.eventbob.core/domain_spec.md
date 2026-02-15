@@ -31,7 +31,7 @@ The universal abstraction for processing events. Single method: `Event handle(Ev
 
 ## Domain Concepts (Future)
 
-### Macro-Service
+### Macrolith-Service
 **Status:** Not yet modeled in code. Deployment concept only.
 
 A process containing multiple services communicating via EventBob.

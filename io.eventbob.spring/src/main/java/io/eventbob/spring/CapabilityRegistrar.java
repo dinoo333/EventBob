@@ -11,9 +11,9 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Service for registering capabilities and macros in the EventBob registry.
+ * Service for registering capabilities and macroliths in the EventBob registry.
  *
- * <p>Handles idempotent registration - macros declare their capabilities.
+ * <p>Handles idempotent registration - macroliths declare their capabilities.
  */
 @Service
 public class CapabilityRegistrar {
@@ -26,7 +26,7 @@ public class CapabilityRegistrar {
     }
 
     /**
-     * Register a macro and its capabilities.
+     * Register a macrolith and its capabilities.
      *
      * <p>This operation is idempotent - re-registering updates the endpoint.
      *
@@ -34,32 +34,32 @@ public class CapabilityRegistrar {
      * @return registration result
      */
     @Transactional
-    public RegistrationResult registerMacro(RegistrationRequest request) {
-        log.info("Registering macro: macro={}, capabilities={}",
-            request.macroName(),
+    public RegistrationResult registerMacrolith(RegistrationRequest request) {
+        log.info("Registering macrolith: macrolith={}, capabilities={}",
+            request.macrolithName(),
             request.capabilities().size());
 
         Map<String, UUID> capabilityIds = new HashMap<>();
 
-        // Step 1: Register this macro
-        UUID macroUuid = repository.registerMacro(
-            request.macroName(),
+        // Step 1: Register this macrolith
+        UUID macrolithUuid = repository.registerMacrolith(
+            request.macrolithName(),
             request.endpoint()
         );
 
-        // Step 2: Register each capability and link to macro
+        // Step 2: Register each capability and link to macrolith
         for (CapabilityDescriptor capability : request.capabilities()) {
             UUID capabilityId = repository.registerCapability(capability);
 
             capabilityIds.put(capability.getRoutingKey(), capabilityId);
-            repository.linkMacroCapability(macroUuid, capabilityId);
+            repository.linkMacrolithCapability(macrolithUuid, capabilityId);
         }
 
-        log.info("Registration complete: macro={}, capabilities={}",
-            request.macroName(),
+        log.info("Registration complete: macrolith={}, capabilities={}",
+            request.macrolithName(),
             capabilityIds.size());
 
-        return new RegistrationResult(macroUuid, capabilityIds);
+        return new RegistrationResult(macrolithUuid, capabilityIds);
     }
 
 
@@ -67,13 +67,13 @@ public class CapabilityRegistrar {
      * Registration request.
      */
     public record RegistrationRequest(
-        String macroName,
+        String macrolithName,
         String endpoint,
         List<CapabilityDescriptor> capabilities
     ) {
         public RegistrationRequest {
-            if (macroName == null || macroName.isBlank()) {
-                throw new IllegalArgumentException("macroName is required");
+            if (macrolithName == null || macrolithName.isBlank()) {
+                throw new IllegalArgumentException("macrolithName is required");
             }
             if (endpoint == null || endpoint.isBlank()) {
                 throw new IllegalArgumentException("endpoint is required");
@@ -88,11 +88,11 @@ public class CapabilityRegistrar {
      * Registration result.
      */
     public record RegistrationResult(
-        UUID macroId,
+        UUID macrolithId,
         Map<String, UUID> capabilityIds
     ) {
         public boolean isSuccess() {
-            return macroId != null && !capabilityIds.isEmpty();
+            return macrolithId != null && !capabilityIds.isEmpty();
         }
     }
 }
