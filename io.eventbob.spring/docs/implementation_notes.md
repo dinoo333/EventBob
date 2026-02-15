@@ -7,38 +7,46 @@
 
 ### Three-Table Model
 
-**Design rationale:** Separate tables for capabilities, macros, and their many-to-many relationship.
+**Design rationale:** Separate tables for capabilities, macroliths, and their many-to-many relationship.
 
 ```sql
-service_capabilities       -- What operations exist (independent of macros)
-macro_capabilities         -- Join table (which macros provide which capabilities)
-service_macros             -- Which logical deployment units exist
+service_capabilities       -- What operations exist (independent of macroliths)
+macrolith_capabilities         -- Join table (which macroliths provide which capabilities)
+service_macroliths             -- Which logical deployment units exist
 ```
 
 **Why not a single table?**
-- Capabilities can exist before macros register (pre-declared capabilities)
-- Macros can provide multiple capabilities (composition)
-- Capabilities can be provided by multiple macros (replication)
+- Capabilities can exist before macroliths register (pre-declared capabilities)
+- Macroliths can provide multiple capabilities (composition)
+- Capabilities can be provided by multiple macroliths (replication)
 
 **Why not denormalize?**
-- Denormalized: `{macro_id, capability_1, capability_2, ...}` creates special cases (NULL capability columns, dynamic schema)
-- Normalized: `macro_capabilities` join table makes multiple macros sharing capabilities natural, not an edge case
+- Denormalized: `{macrolith_id, capability_1, capability_2, ...}` creates special cases (NULL capability columns, dynamic schema)
+- Normalized: `macrolith_capabilities` join table makes multiple macroliths sharing capabilities natural, not an edge case
 
 ### Idempotency via ON CONFLICT
 
-**Pattern:** All inserts use `ON CONFLICT (...) DO UPDATE SET ...` for idempotent registration.
+**Pattern:** Inserts use `ON CONFLICT` patterns for idempotent registration. Different tables use different strategies:
 
-**Example (macro registration):**
+**Macroliths (last-wins):**
 ```sql
-INSERT INTO service_macros (macro_name, endpoint)
+INSERT INTO service_macroliths (macrolith_name, endpoint)
 VALUES (?, ?)
-ON CONFLICT (macro_name)
+ON CONFLICT (macrolith_name)
 DO UPDATE SET endpoint = EXCLUDED.endpoint;
 ```
 
+**Capabilities (first-wins):**
+```sql
+INSERT INTO service_capabilities (...)
+VALUES (...)
+ON CONFLICT DO NOTHING;
+-- Query for existing UUID if needed
+```
+
 **Rationale:**
-- Macros may restart and re-register (Kubernetes pod restarts, rolling updates)
-- Re-registration should update endpoint, not create duplicates
+- Macroliths use `DO UPDATE` (last registration wins) - restarting macroliths update their endpoint
+- Capabilities use `DO NOTHING` (first registration wins) - capability definitions are immutable once registered
 - Idempotency makes retry logic simple (just re-register)
 
 **Trade-off:** `ON CONFLICT` is PostgreSQL-specific. Portability to MySQL requires `ON DUPLICATE KEY UPDATE`. Portability to H2 requires `MERGE`.
@@ -103,28 +111,28 @@ try (ScanResult result = new ClassGraph()
 
 ### Bootstrap Transaction
 
-**Scope:** Entire registration (macro + capabilities + links) is atomic.
+**Scope:** Entire registration (macrolith + capabilities + links) is atomic.
 
 ```java
 @Transactional
 public RegistrationResult registerMacro(RegistrationRequest request) {
-    UUID macroId = repository.registerMacro(request.macroName(), request.endpoint());
+    UUID macrolithId = repository.registerMacro(request.macrolithName(), request.endpoint());
 
     for (CapabilityDescriptor cap : request.capabilities()) {
         UUID capId = repository.registerCapability(cap);
-        repository.linkMacroCapability(macroId, capId);
+        repository.linkMacroCapability(macrolithId, capId);
     }
 
-    return new RegistrationResult(macroId, capabilityIds);
+    return new RegistrationResult(macrolithId, capabilityIds);
 }
 ```
 
 **Why atomic?**
-- Partial registration (macro exists but capabilities missing) creates inconsistent state
+- Partial registration (macrolith exists but capabilities missing) creates inconsistent state
 - Rollback on failure ensures all-or-nothing semantics
 - Retry after failure is safe (idempotent operations)
 
-**Transaction isolation:** `READ COMMITTED` (Spring default). Higher isolation not needed (no concurrent modifications to same macro during bootstrap).
+**Transaction isolation:** `READ COMMITTED` (Spring default). Higher isolation not needed (no concurrent modifications to same macrolith during bootstrap).
 
 ### Repository Methods
 
@@ -148,8 +156,8 @@ CREATE TRIGGER trigger_capabilities_version
   AFTER INSERT OR UPDATE OR DELETE ON service_capabilities
   FOR EACH STATEMENT EXECUTE FUNCTION bump_registry_version();
 
-CREATE TRIGGER trigger_macros_version
-  AFTER INSERT OR UPDATE OR DELETE ON service_macros
+CREATE TRIGGER trigger_macroliths_version
+  AFTER INSERT OR UPDATE OR DELETE ON service_macroliths
   FOR EACH STATEMENT EXECUTE FUNCTION bump_registry_version();
 ```
 
@@ -193,10 +201,10 @@ if (repository.getCurrentVersion() != currentVersion) {
 **Pattern:** Lambda-based row mapper for each query.
 
 ```java
-UUID macroId = jdbc.queryForObject(
-    "SELECT id FROM service_macros WHERE macro_name = ?",
+UUID macrolithId = jdbc.queryForObject(
+    "SELECT id FROM service_macroliths WHERE macrolith_name = ?",
     (rs, rowNum) -> (UUID) rs.getObject("id"),
-    macroName
+    macrolithName
 );
 ```
 
@@ -226,7 +234,7 @@ static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-
 ```java
 @BeforeEach
 void cleanDatabase() {
-    jdbc.execute("TRUNCATE service_capabilities, service_macros, macro_capabilities CASCADE");
+    jdbc.execute("TRUNCATE service_capabilities, service_macroliths, macrolith_capabilities CASCADE");
     jdbc.execute("UPDATE registry_version SET version = 1");
 }
 ```
@@ -236,10 +244,10 @@ void cleanDatabase() {
 ### Test Coverage
 
 **What's tested:**
-- Macro registration (create, update)
+- Macrolith registration (create, update)
 - Capability registration (create, idempotency)
 - Macro-capability linkage
-- Multiple macros sharing same capabilities
+- Multiple macroliths sharing same capabilities
 - Registry version bumping
 
 **What's NOT tested:**
@@ -312,7 +320,7 @@ public class BadResolver {
 - `deployment_state` enum
 - `instance_status` enum
 - Deployment state columns from `service_capabilities`
-- Instance tracking columns from `service_instances` (renamed to `service_macros`)
+- Instance tracking columns from `service_instances` (renamed to `service_macroliths`)
 - `deployment_history` table
 - `capability_conflicts` view
 - Conflict detection logic in application code
@@ -345,12 +353,12 @@ public class BadResolver {
 
 ### Query Performance
 
-**Expected load:** Low. Queries happen during bootstrap (once per macro startup), not per-request.
+**Expected load:** Low. Queries happen during bootstrap (once per macrolith startup), not per-request.
 
 **Indexes:**
-- `service_macros.macro_name` (unique index) - O(log N) lookup
+- `service_macroliths.macrolith_name` (unique index) - O(log N) lookup
 - `service_capabilities` routing key (unique index) - O(log N) lookup
-- `macro_capabilities` foreign keys (indexed) - O(log N) join
+- `macrolith_capabilities` foreign keys (indexed) - O(log N) join
 
 **No full table scans** in critical paths.
 
@@ -361,7 +369,7 @@ public class BadResolver {
 ### Builder Pattern (CapabilityDescriptor)
 
 **Why builder?**
-- 6 required fields (serviceName, capability, version, method, path, handlerClass)
+- 5 required fields (serviceName, capability, version, method, path)
 - Validation at construction (fail-fast)
 - Immutable result (thread-safe)
 
@@ -373,7 +381,6 @@ CapabilityDescriptor descriptor = CapabilityDescriptor.builder()
     .capabilityVersion(1)
     .method("GET")
     .pathPattern("/content")
-    .handlerClassName("com.example.GetContentHandler")
     .build();
 ```
 
@@ -388,13 +395,13 @@ CapabilityDescriptor descriptor = CapabilityDescriptor.builder()
 **Usage:**
 ```java
 public record RegistrationRequest(
-    String macroName,
+    String macrolithName,
     String endpoint,
     List<CapabilityDescriptor> capabilities
 ) {
     public RegistrationRequest {
-        if (macroName == null || macroName.isBlank()) {
-            throw new IllegalArgumentException("macroName is required");
+        if (macrolithName == null || macrolithName.isBlank()) {
+            throw new IllegalArgumentException("macrolithName is required");
         }
         // ... more validation
     }
@@ -418,8 +425,8 @@ public class SpringCapabilityResolver implements CapabilityResolver {
     @Override
     public List<Endpoint> resolve(String routingKey) {
         // Query service_capabilities by routing key
-        // Join to macro_capabilities
-        // Join to service_macros
+        // Join to macrolith_capabilities
+        // Join to service_macroliths
         // Return List<Endpoint> with logical names
     }
 }
@@ -431,12 +438,12 @@ public class SpringCapabilityResolver implements CapabilityResolver {
 
 ### 2. Health-Based Routing (If Needed)
 
-**Goal:** Exclude unhealthy macros from resolution.
+**Goal:** Exclude unhealthy macroliths from resolution.
 
 **Approach:**
-- Add `health_status` column to `service_macros` (HEALTHY, UNHEALTHY)
-- Periodically query macro health endpoints, update status
-- Filter out UNHEALTHY macros in resolver query
+- Add `health_status` column to `service_macroliths` (HEALTHY, UNHEALTHY)
+- Periodically query macrolith health endpoints, update status
+- Filter out UNHEALTHY macroliths in resolver query
 
 **Note:** May not be needed if infrastructure (load balancers, service mesh) handles health checking.
 
@@ -444,13 +451,13 @@ public class SpringCapabilityResolver implements CapabilityResolver {
 
 ### 3. Batch Registration
 
-**Goal:** Register multiple macros in single API call.
+**Goal:** Register multiple macroliths in single API call.
 
 **Use case:** Bulk import of capabilities from configuration file.
 
 **Implementation:**
 ```java
-public List<RegistrationResult> registerMacros(List<RegistrationRequest> requests) {
+public List<RegistrationResult> registerMacroliths(List<RegistrationRequest> requests) {
     return requests.stream()
         .map(this::registerMacro)
         .collect(Collectors.toList());
@@ -465,7 +472,7 @@ public List<RegistrationResult> registerMacros(List<RegistrationRequest> request
 
 This implementation provides a **simple, transactional registry** for capability-based routing:
 
-- **Three tables** (macros, capabilities, junction table)
+- **Three tables** (macroliths, capabilities, junction table)
 - **Idempotent operations** (ON CONFLICT clauses)
 - **Spring JDBC** for explicit SQL control
 - **TestContainers** for integration testing with real PostgreSQL

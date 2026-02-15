@@ -1,150 +1,136 @@
 # EventBob Domain Specification
 
-## Core Domain: Event Routing
+## What EventBob Is
 
-EventBob is a **distributed event routing fabric** that enables microservices to be deployed together (in-process routing) or separately (network routing via adapters), with deployment topology determined by configuration rather than code changes.
+EventBob is a **framework for bundling multiple microservices into a macrolith (macro-service)** to solve the chatty-application anti-pattern.
 
-### Ubiquitous Language
+### The Problem It Solves
 
-#### Event
-A routable message containing source, target, routing semantics, payload, and trace context. Events flow between services through the EventBob routing layer.
+When too many microservices make excessive network calls to each other:
+- Network becomes saturated
+- Performance is dismal
+- Engineers "did a shit job at architecting a system"
 
-#### Routing Semantics
-The information required to route an event to its destination:
-- **target** - Service identifier (e.g., "user-service", "inventory-service")
-- **method** - Operation type (POST, GET, UpdateInventory, OrderCreated)
-- **path** - Resource path template (e.g., "users/{id}", "orders/{orderId}/items/{itemId}")
-- **correlation-id** - UUID for tracking request/response pairs across macro boundaries
-- **reply-to** - Address where response should be sent
+**First rule of distributed systems:** Don't distribute if you don't have to. This rule gets broken often. EventBob fixes the mess.
 
-#### Trace Context
-Observability identifiers propagated through the event chain:
-- **trace-id** - Distributed trace identifier (OpenTelemetry compatible)
-- **span-id** - Span identifier for this event within the trace
+### How It Works
 
-#### Macro-Service
-A deployment unit containing multiple microservices that communicate in-process via EventBob routing. The same microservice can participate in multiple macro-services.
+1. EventBob server loads multiple JARs containing microservice code
+2. Exposes them as a single monolithic service (the macrolith)
+3. Inside the macrolith: services communicate in-process (fast, no network overhead)
+4. Outside: the macrolith acts like a regular microservice (discovered via service registry)
 
-#### Adapter
-A translation layer between the EventBob routing fabric and external transports (HTTP, gRPC, message queues). Adapters implement EventHandler to participate in routing.
+**Key insight:** EventBob is still a server acting as a microservice. Just bigger and less chatty.
 
-#### Service
-An independently versioned component loaded via isolated classloader that implements EventHandler to process events.
+### Architecture Compliance
 
-### Bounded Contexts
+EventBob remains **compliant with microservice architecture**. It just allows engineers to bundle things together in a more performant way—fewer network calls, faster execution.
 
-#### Event Routing Context (Core)
-**Responsibility:** Route events between services based on target, method, and path. Resolve service capabilities to physical endpoints for progressive deployment. Manage request/response correlation. Propagate trace context.
+---
 
-**Subdomains:**
-- **Event Routing** (`eventrouting` package) — Route events by target to handlers. Handle event lifecycle, decoration, and failure modes.
-- **Endpoint Resolution** (`endpointresolution` package) — Resolve service capabilities (READ/WRITE/ADMIN operations) to endpoint addresses for routing decisions.
+## Ubiquitous Language
 
-**Vocabulary:**
-- Event Routing: Event, EventHandler, EventHandlingRouter, DecoratedEventHandler, routing semantics (target, method, path, correlation-id, reply-to), trace context (trace-id, span-id), exceptions (EventHandlingException, HandlerNotFoundException)
-- Endpoint Resolution: Capability (READ/WRITE/ADMIN), CapabilityResolver (port/interface), RoutingKey (service + capability + method + path), Endpoint (logical address)
+### Macrolith
+A deployment unit containing multiple microservice capabilities bundled together. A macrolith is a single server process that loads multiple JARs and exposes their combined functionality.
 
-**Boundaries:** Does NOT know about specific transports (HTTP, gRPC, queues). Does NOT know about persistence (registry database). Does NOT know about business domains (users, orders, inventory).
+**Informal terms:** Sometimes called "macro" or "macro-service" in casual conversation, but "macrolith" is the formal ubiquitous language term.
 
-#### Transport Adapter Context
-**Responsibility:** Translate between transport-specific protocols (HTTP requests, gRPC calls, queue messages) and EventBob events.
+**Example:** The "messages-service" macrolith bundles message-reading, message-writing, and message-deletion capabilities into one process.
 
-**Vocabulary:** Transport-specific (http.status, http.content-type, grpc.service, queue.topic). Each adapter defines its own namespace.
+### Capability
+A routable operation that a service provides. Each capability is identified by:
+- Service name (e.g., "messages")
+- Capability type (READ, WRITE, ADMIN)
+- Version (e.g., 1, 2)
+- HTTP method (GET, POST, DELETE)
+- Path pattern (e.g., "/content", "/content/{id}")
 
-**Boundaries:** Depends on Event Routing Context. Implements EventHandler. Does NOT leak transport concepts into core.
+**Example:** The READ capability for messages might be `GET /content` handled by `MessagesReadHandler.class`.
 
-#### Bridge Pattern: Framework Implementations (NOT Bounded Contexts)
+### Service
+An independently versioned component loaded via JAR that provides one or more capabilities.
 
-**Important:** Framework implementations like `io.eventbob.spring` and `io.eventbob.dropwizard` are **NOT bounded contexts**. They are infrastructure-layer implementations of the ports defined in the Event Routing bounded context.
+### Event
+A transport envelope for in-process communication between handlers within a macrolith. **Not a domain event.** An Event contains routing information (source, target), parameters, metadata, and an optional payload. Events are immutable messages passed between EventHandler implementations via the EventHandlingRouter.
 
-**Why this distinction matters:**
-1. **Implementations don't define domain concepts** - They use the domain concepts from core
-2. **No ubiquitous language of their own** - They translate framework types to core types via Anti-Corruption Layers
-3. **Bounded contexts are about domain boundaries** - Implementations are about technical boundaries
+**Important distinction:** "Event" in EventBob refers to the message envelope, not to domain events in the Event Sourcing sense. Think of it as a request/response wrapper, not an occurrence that happened in the domain.
 
-**What implementations provide:**
-- Concrete realization of `CapabilityResolver` port (defined in Endpoint Resolution subdomain)
-- Infrastructure capabilities: JAR scanning, persistence, instance tracking, deployment management
-- Framework-specific bootstrapping and configuration
-- Anti-Corruption Layer between framework types and core types
+### Endpoint
+A logical service URL where a macrolith can be reached. Not an IP address—a logical URL like "http://messages-service" that infrastructure resolves to physical addresses.
 
-**Example: io.eventbob.spring**
+**Infrastructure handles resolution:** DNS, service mesh, or load balancers resolve "http://messages-service" → actual IPs (10.0.1.5:8080, 10.0.1.6:8080, etc.)
 
-**Type:** Infrastructure Implementation (Bridge Pattern)
+**Comparison:** Same pattern as Docker Swarm—services are resolved by name, not IP.
 
-**Provides:**
-- Implementation of `CapabilityResolver` port using Spring JDBC + PostgreSQL
-- JAR scanning for `@EventHandlerCapability` annotations using ClassGraph
-- Capability registration for macro-services
-- Macro tracking (logical deployment units and their endpoints)
-- Persistence of capability metadata to PostgreSQL
+### Registry
+Tracks which macroliths exist and what capabilities they provide. Does NOT track physical instances—that's infrastructure's job.
 
-**Anti-Corruption Layer:** Translates Spring-specific types (JdbcTemplate, ResultSet) to core types (Capability, Endpoint). Infrastructure persistence never crosses to core. Endpoint is stored as logical name, resolved by infrastructure (DNS, service mesh, load balancers) to physical addresses.
+**What registry tracks:**
+- Macrolith: "messages-service" → Endpoint: "messages-service"
+  - Capability: READ /content
+  - Capability: WRITE /content
+  - Capability: DELETE /content/{id}
 
-**Boundaries:** Depends on Event Routing Context (imports Capability enum, EventHandler interface, EventHandlerCapability annotation). Does NOT leak infrastructure concerns (PostgreSQL, Spring Boot, ClassGraph) into core.
+**What infrastructure tracks:**
+- "messages-service" → [10.0.1.5:8080, 10.0.1.6:8080, 10.0.1.7:8080]
 
-**Vocabulary (Implementation-Specific, Not Domain):**
-- Macro or Macro-Service - logical deployment unit bundling multiple service JARs (e.g., "messages-service")
-- Endpoint - logical address where a macro can receive events (resolved by infrastructure to physical address)
-- Capability Registration - discovery via JAR scanning and persistence to registry
-- Routing Key - composite identifier (serviceName:capability:method:pathPattern)
-- Bootstrap - macro-service startup process (scan JARs → register → start router)
+---
 
-#### Service Domain Context
-**Responsibility:** Business logic processing. Interprets events using routing semantics (method, path) and parameters to perform domain operations.
+## Open Questions
 
-**Vocabulary:** Domain-specific (User, Order, Inventory, etc.). Uses Event as the communication envelope.
+1. **Transport abstraction:** How do external clients invoke capabilities? HTTP? gRPC? Message queues? The core is transport-agnostic, but no transport layer is implemented yet.
+2. **Deployment model:** When should engineers bundle services into a macrolith vs keeping them separate? What are the decision criteria?
 
-**Boundaries:** Depends on Event Routing Context. Implements EventHandler. Does NOT know about other services' internal domain models.
+---
 
-### Anti-Corruption Layers
+## Bounded Context
 
-**Transport → Event Routing:** Adapters translate transport requests into Events, ensuring transport-specific concerns (HTTP status codes, gRPC metadata) remain in adapter metadata namespace, not core routing metadata.
+EventBob is **one bounded context** with a single ubiquitous language.
 
-**Service Registry → Event Routing:** Registry translates its internal deployment model (DeploymentState: BLUE/GREEN/GRAY/RETIRED) to core's routing model (EndpointState: BLUE/GREEN). The registry's infrastructure model (PostgreSQL schema, Spring Boot, ClassGraph) never crosses to core. Core sees only Endpoint + EndpointState via CapabilityResolver port.
+### Core Domain Model (io.eventbob.core)
 
-**Event Routing → Service Domain:** Services interpret routing semantics (method, path) in domain-specific ways. A POST to "orders" might mean CreateOrder in one service, different operation in another.
+The core defines domain concepts and port interfaces:
 
-### Domain Invariants
+**Domain Concepts:**
+- Macrolith: Logical deployment unit bundling multiple capabilities
+- Capability: Routable operation identified by (service, capability, version, method, path)
+- Endpoint: Logical service URL where a macrolith can be reached
+- Event: Message envelope for in-process communication (source, target, parameters, metadata, payload)
+- EventHandler: Handler interface with single `handle(Event)` method
 
-1. **Events are immutable** - Once created, an event's content cannot change. Transformations create new events.
+**Ports (interfaces for infrastructure to implement):**
+- CapabilityResolver: Resolves routing keys to endpoints
+- EventHandlingRouter: Routes events to handlers based on target string
 
-2. **Target identifies service, not operation** - The target field specifies which service handles the event. The service interprets method/path to determine the specific operation.
+**Boundaries:**
+- Core has NO framework dependencies (no Spring, no database libraries)
+- Core does NOT know about HTTP, gRPC, PostgreSQL, or infrastructure details
+- Core defines WHAT (domain model), not HOW (implementation)
 
-3. **Correlation flows forward** - correlation-id is generated by the initiating adapter and propagated through all subsequent events in the chain.
+### Infrastructure Implementations
 
-4. **Trace context is passive** - trace-id and span-id are annotations for observability. They do NOT affect routing decisions.
+**io.eventbob.spring** implements core ports using Spring Boot:
+- ServiceRegistryRepository: Capability persistence (PostgreSQL via Spring JDBC)
+- MacroServiceBootstrap: JAR scanning and registration orchestration
+- CapabilityScanner: Annotation-based capability discovery (ClassGraph library)
 
-5. **Metadata vs Parameters boundary** - Metadata carries routing and infrastructure concerns. Parameters carry business data and path parameter values.
+**Bridge Pattern:** Infrastructure depends on core, never reverse. Spring types stay in infrastructure layer, core types stay in core.
 
-### Current Architecture Decisions
+**Not a separate bounded context:** io.eventbob.spring uses the SAME ubiquitous language as core. It's an adapter, not a different semantic model.
 
-**AD-001: Synchronous EventHandler Interface**
-- Decision: EventHandler.handle(Event) returns Event synchronously
-- Rationale: Start simple. Async patterns (queues, fire-and-forget) can be layered on top via adapters
-- Status: Active
+---
 
-**AD-002: String-Based Metadata Keys**
-- Decision: Metadata is Map<String, Serializable> with string keys
-- Rationale: Flexible, transport-agnostic, allows adapters to extend without core changes
-- Status: Active
+## Domain Invariants
 
-**AD-003: Core Does Not Define Transport Namespaces**
-- Decision: Removed HTTP_PREFIX, GRPC_PREFIX, QUEUE_PREFIX from core
-- Rationale: Transport concerns belong in adapter layer. Core defines universal routing vocabulary only.
-- Status: Active (resolved in MetadataKeys refactoring)
+1. **Macroliths are logical, not physical** — Registry tracks macrolith names, not instance IPs
+2. **Infrastructure resolves endpoints** — Endpoint is a logical URL; infrastructure translates to physical addresses
+3. **Capabilities are unique** — Each routing key (service + capability + version + method + path) must be unique
+4. **Idempotent registration** — Macroliths can re-register safely (e.g., pod restarts, rolling updates across instances)
 
-**AD-004: Target is Service-Level, Not Operation-Level**
-- Decision: Target identifies a service. Method/path identify the operation within the service.
-- Rationale: Enables hierarchical routing. Services control their own internal dispatch logic.
-- Status: Planned (not yet implemented)
+---
 
-### Evolution & Future Directions
+## What EventBob Is NOT
 
-**Implemented:** Service Registry Context (2026-02-12) - JAR scanning, capability registration, instance tracking, deployment state management. Future: implement CapabilityResolver port for endpoint resolution.
-
-**Next Bounded Context:** HTTP Adapter Context - when first HTTP adapter is built, will establish patterns for transport translation and metadata namespacing.
-
-**Deferred Decision:** Whether METHOD and PATH are abstract routing concepts or HTTP-specific concepts that other transports translate. Will be clarified when gRPC adapter is built.
-
-**Open Question:** Should routing metadata and observability metadata be separate enums/types, or remain unified under MetadataKeys? Currently unified; may split if pain is felt.
+- **NOT bidirectional** — Not "deploy together OR separately"
+- **NOT about deployment flexibility** — It's specifically for fixing over-distributed architectures
+- **NOT a general-purpose tool** — It's a solution to a specific problem (too many microservices)

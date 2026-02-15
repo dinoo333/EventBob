@@ -16,7 +16,7 @@ This module is the **Spring Boot implementation of EventBob infrastructure**. It
 
 This Spring-based implementation is responsible for:
 - **Discovering and registering service capabilities** via JAR scanning
-- **Tracking macros (logical deployment units)** and their endpoints
+- **Tracking macroliths (logical deployment units)** and their endpoints
 - **Persisting capability metadata** to PostgreSQL
 - **Answering:** "Which endpoints can handle this capability operation?"
 
@@ -51,7 +51,7 @@ This Spring-based implementation is responsible for:
 │  Provides:                  │
 │  - JAR scanning             │
 │  - Capability registration  │
-│  - Macro tracking           │
+│  - Macrolith tracking           │
 │  - Spring JDBC persistence  │
 └─────────────────────────────┘
 
@@ -61,23 +61,23 @@ the same capabilities using different frameworks.
 
 ## Domain Concepts
 
-### Macro-Service (Macro)
+### Macrolith-Service (Macro)
 
-A **macro** is a logical deployment unit that bundles multiple service JARs into a single runtime process.
+A **macrolith** is a logical deployment unit that bundles multiple service JARs into a single runtime process.
 
 **Properties:**
 - Has a unique name (e.g., "messages-service")
 - Contains one or more service JARs (e.g., messages.jar, notifications.jar)
-- Has a logical endpoint (typically the macro name itself, resolved by infrastructure)
+- Has a logical endpoint (typically the macrolith name itself, resolved by infrastructure)
 - Owns a set of declared capabilities (discovered via JAR scanning)
 
 **Relationship to services:**
-- A macro contains services (composition)
+- A macrolith contains services (composition)
 - A service declares capabilities (annotation)
 - A capability is an operation (method + path + capability type)
 
 **Infrastructure Resolution:**
-Macros are resolved to physical addresses by infrastructure (DNS, service mesh, load balancers). The registry stores logical macro names (e.g., "messages-service"), not physical URLs.
+Macroliths are resolved to physical addresses by infrastructure (DNS, service mesh, load balancers). The registry stores logical macrolith names (e.g., "messages-service"), not physical URLs.
 
 ### Capability
 
@@ -127,14 +127,16 @@ A **logical address** where events can be routed.
 
 ### 1. Idempotent Registration
 
-**Rule:** Registering the same macro with the same capabilities multiple times has no side effects.
+**Rule:** Registering the same macrolith with the same capabilities multiple times has no side effects.
 
 **Implementation:**
-- Macro registration uses `ON CONFLICT (macro_name) DO UPDATE`
-- Capability registration uses `ON CONFLICT (routing_key) DO UPDATE`
-- Re-registration updates endpoint but does not create duplicates
+- Macrolith registration uses `ON CONFLICT (macrolith_name) DO UPDATE` (last-wins)
+- Capability registration uses `ON CONFLICT DO NOTHING` (first-wins)
+- Link registration uses `ON CONFLICT DO NOTHING` (first-wins)
+- Re-registration of macroliths updates endpoint but does not create duplicates
+- Re-registration of capabilities reuses existing capability UUID
 
-**Rationale:** Macros may restart and re-register. The registry must not accumulate garbage.
+**Rationale:** Macroliths may restart and re-register (endpoints may change). Capabilities are immutable once registered (first registration wins). The registry must not accumulate garbage.
 
 ### 2. Unique Capability Routing Key
 
@@ -146,11 +148,11 @@ A **logical address** where events can be routed.
 
 ### 3. Macro-Capability Linkage
 
-**Rule:** A macro can only be linked to capabilities it actually provides.
+**Rule:** A macrolith can only be linked to capabilities it actually provides.
 
-**Validation:** During registration, only capabilities discovered via JAR scanning for that macro are linked to that macro.
+**Validation:** During registration, only capabilities discovered via JAR scanning for that macrolith are linked to that macrolith.
 
-**Enforcement:** Application logic in `CapabilityRegistrar` (not database constraint, since capabilities can outlive macros).
+**Enforcement:** Application logic in `CapabilityRegistrar` (not database constraint, since capabilities can outlive macroliths).
 
 ## Ubiquitous Language
 
@@ -182,14 +184,14 @@ A **logical address** where events can be routed.
 
 ### CapabilityRegistrar
 
-**Responsibility:** Register macros and their capabilities.
+**Responsibility:** Register macroliths and their capabilities.
 
 **Operations:**
-- `registerMacro(request)` - Persist macro and link to capabilities
+- `registerMacrolith(request)` - Persist macrolith and link to capabilities
 
 **Domain logic:**
 - Idempotent registration (updates on conflict)
-- Transactional (macro + capabilities + linkage)
+- Transactional (macrolith + capabilities + linkage)
 
 **Not responsible for:** JAR scanning (that's the scanner's job), routing (that's core's job), deployment orchestration (that's infrastructure's job).
 
@@ -199,12 +201,12 @@ A **logical address** where events can be routed.
 
 **Operations:**
 - Scan JARs for capabilities
-- Register macro and capabilities
+- Register macrolith and capabilities
 - Return bootstrap result
 
 **Domain logic:**
 - Validates that JARs contain at least one capability
-- Defaults endpoint to macro name if not specified
+- Defaults endpoint to macrolith name if not specified
 
 ## Context Boundary Contract
 
@@ -226,14 +228,14 @@ A **logical address** where events can be routed.
 
 **Planned extensions:**
 1. Implement `CapabilityResolver` port (provide endpoint resolution to core)
-2. Health-based routing (exclude unhealthy macros from resolution)
+2. Health-based routing (exclude unhealthy macroliths from resolution)
 3. Multi-region registry (capability replication across data centers)
 
 ## Summary
 
 The Service Registry is a **supporting subdomain** that enables capability-based routing by:
 1. Discovering capabilities via JAR scanning
-2. Registering macros and linking them to capabilities
+2. Registering macroliths and linking them to capabilities
 3. Providing endpoint resolution to the Event Routing core
 
-**Key insight:** The registry owns the "what and where" (which macros provide which capabilities), not the "how" (routing logic) or deployment orchestration (infrastructure concern). It translates capability declarations into routing decisions for the core domain.
+**Key insight:** The registry owns the "what and where" (which macroliths provide which capabilities), not the "how" (routing logic) or deployment orchestration (infrastructure concern). It translates capability declarations into routing decisions for the core domain.
