@@ -12,6 +12,8 @@
     <modules>
         <module>io.eventbob.core</module>
         <module>io.eventbob.spring</module>
+        <module>io.eventbob.example.lower</module>
+        <module>io.eventbob.example.echo</module>
     </modules>
 
     <properties>
