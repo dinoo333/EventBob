@@ -9,8 +9,8 @@ The core domain module defining event routing abstractions and primitives. This 
 **Implemented:**
 - Event data structure (immutable value object)
 - EventHandler interface (universal contract)
-- EventBob (string-based routing)
-- DecoratedEventHandler (cross-cutting concerns via decoration)
+- EventBob (string-based routing, implements AutoCloseable)
+- Dispatcher interface (event dispatch contract)
 - Exception hierarchy
 - MetadataKeys vocabulary
 
@@ -26,8 +26,8 @@ The core domain module defining event routing abstractions and primitives. This 
 io.eventbob.core
 ├── Event                      (domain model)
 ├── EventHandler               (core abstraction)
-├── EventBob        (routing implementation)
-├── DecoratedEventHandler      (decorator pattern)
+├── EventBob                   (routing implementation)
+├── Dispatcher                 (dispatch abstraction)
 ├── MetadataKeys              (vocabulary)
 └── exceptions/
     ├── EventHandlingException
@@ -43,11 +43,11 @@ The universal contract for event processing:
 
 ```java
 public interface EventHandler {
-  Event handle(Event event) throws EventHandlingException;
+  Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException;
 }
 ```
 
-**Design:** Synchronous request-response. Single method. Composable (routers and decorators implement this).
+**Design:** Synchronous request-response. Single method. Composable. Handlers receive a Dispatcher to enable event delegation during processing.
 
 ### Event Structure
 
@@ -62,20 +62,11 @@ Immutable value object with builder:
 
 ### EventBob
 
-Routes events by exact target match to registered handlers.
+Routes events by exact target match to registered handlers. Implements AutoCloseable for resource cleanup (shuts down background executor).
 
 **Current limitation:** No hierarchical routing, no wildcards. Flat string lookup.
 
-**Extension point:** Implements EventHandler, enabling router nesting.
-
-### DecoratedEventHandler
-
-Wraps any EventHandler with optional hooks:
-- `before` - Executed before delegation
-- `afterSuccess` - Executed after successful handling
-- `onError` - Error recovery/transformation
-
-**Use cases:** Logging, metrics, retry logic, auth checks.
+**Design:** EventBob does NOT implement EventHandler. It exposes `processEvent()` which returns `CompletableFuture<Event>` for async processing. Handlers are executed on virtual threads.
 
 ### MetadataKeys
 

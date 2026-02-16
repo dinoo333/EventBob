@@ -74,6 +74,11 @@ Tracks which macroliths exist and what capabilities they provide. Does NOT track
 **What infrastructure tracks:**
 - "messages-service" → [10.0.1.5:8080, 10.0.1.6:8080, 10.0.1.7:8080]
 
+### Dispatcher
+A facility provided to EventHandlers in order to send events to other micro-services in the same or other macroliths. The Dispatcher abstracts away the underlying transport mechanism and provides a simple API for outbound event emission from within a handler.
+
+**Distinction from Router:** The Router routes inbound events to the correct handler within EventBob. The Dispatcher sends outbound events from within a handler to other services (whether co-located in the same macrolith or remote).
+
 ---
 
 ## Open Questions
@@ -96,7 +101,8 @@ The core defines domain concepts and port interfaces:
 - Capability: Routable operation identified by (service, capability, version, method, path)
 - Endpoint: Logical service URL where a macrolith can be reached
 - Event: Message envelope for in-process communication (source, target, parameters, metadata, payload)
-- EventHandler: Handler interface with single `handle(Event)` method
+- EventHandler: Handler interface with single `handle(Event, Dispatcher)` method
+- Dispatcher: Facility provided to EventHandlers for sending events to other micro-services in the same or other macroliths
 
 **Ports (interfaces for infrastructure to implement):**
 - CapabilityResolver: Resolves routing keys to endpoints
