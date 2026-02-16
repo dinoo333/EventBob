@@ -11,7 +11,7 @@ import java.util.function.BiFunction;
 /**
  * Delegating event handler that routes events to a target-specific {@link EventHandler}.
  */
-public class EventBob {
+public class EventBob implements AutoCloseable {
   private final ExecutorService backgroundExecutor;
   private final Dispatcher dispatcher;
   private final Map<String, EventHandler> handlers;
@@ -59,11 +59,32 @@ public class EventBob {
     return delegate;
   }
 
+  @Override
+  public void close() {
+    backgroundExecutor.shutdown();
+  }
+
   /**
    * Builder for {@link EventBob}.
    */
   public static final class Builder {
     private final Map<String, EventHandler> handlers = new LinkedHashMap<>();
+
+    /**
+     * Register a handler for the given target string.
+     *
+     * @param target The target identifier (must be non-blank).
+     * @param handler The handler to register (must be non-null).
+     * @return This builder for fluent chaining.
+     */
+    public Builder handler(String target, EventHandler handler) {
+      if (target == null || target.isBlank()) {
+        throw new IllegalArgumentException("target must not be blank");
+      }
+      Objects.requireNonNull(handler, "handler");
+      this.handlers.put(target, handler);
+      return this;
+    }
 
     /**
      * Build the EventRouter with an unmodifiable handler map.

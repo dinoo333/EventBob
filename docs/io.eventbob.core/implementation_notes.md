@@ -13,25 +13,48 @@
 - `toBuilder()` for copy-on-write transformations
 - Static factory `builder()` for construction
 
-### Constants Class
-
-**Applied in:** MetadataKeys
-
-**Pattern:**
-- `public static final String` constants
-- `private` constructor throwing `AssertionError`
-- Grouped by concern (routing, observability)
-- Comprehensive JavaDoc with examples
-
 ### Composable Handlers
 
-**Applied in:** EventHandler, EventBob, DecoratedEventHandler
+**Applied in:** EventHandler, EventBob
 
 **Pattern:**
-- Single interface: `Event handle(Event)`
-- Router implements EventHandler (enables nesting)
-- Decorator implements EventHandler (enables wrapping)
+- Single interface: `Event handle(Event event, Dispatcher dispatcher)`
+- EventBob routes events to target-specific handlers
+- Handlers registered via `EventBob.Builder.handler(String target, EventHandler handler)`
 - No handler subclasses - pure composition
+
+### Handler Registration Pattern
+
+**Applied in:** EventBob.Builder
+
+**Pattern:**
+```java
+EventBob router = EventBob.builder()
+    .handler("echo", new EchoHandler())
+    .handler("lowercase", new LowercaseHandler())
+    .build();
+```
+
+- Target string identifies the handler (stored in Event.target field)
+- Handlers are immutably registered at build time
+- Map is defensively copied and made unmodifiable
+- HandlerNotFoundException thrown if target not found
+
+### Async Execution Model
+
+**Applied in:** EventBob, Dispatcher
+
+**Pattern:**
+- All event processing returns `CompletableFuture<Event>`
+- EventBob uses virtual threads via `Executors.newVirtualThreadPerTaskExecutor()`
+- Handler invocation happens asynchronously on virtual thread pool
+- Error handling via `exceptionally()` with BiFunction error callback
+- Default error event created if callback returns null
+
+**Key characteristics:**
+- Non-blocking: Callers receive CompletableFuture immediately
+- Virtual threads: High concurrency without thread pool tuning
+- Error recovery: Errors converted to error events, not propagated as exceptions
 
 ## Testing Conventions (This Module)
 
@@ -47,8 +70,9 @@ void testMethodName() {
 **Examples:**
 - EventTest - tests Event immutability, builder, defensive copying
 - EventBobTest - tests routing by target, error cases
-- DecoratedEventHandlerTest - tests before/after/error hooks
-- MetadataKeysTest - tests constant usage with Event
+- HandlerNotFoundExceptionTest - tests exception when handler not found
+- CapabilityTest - tests capability annotations
+- DefaultErrorEventTest - tests error event creation
 
 **Stub pattern:**
 ```java
@@ -57,7 +81,7 @@ class RecordingHandler implements EventHandler {
   Event toReturn;
 
   @Override
-  public Event handle(Event event) {
+  public Event handle(Event event, Dispatcher dispatcher) {
     this.received = event;
     return toReturn != null ? toReturn : event;
   }

@@ -15,9 +15,16 @@ A routable message carrying source, target, routing metadata, parameters, and pa
 - Events can be transformed via toBuilder() (copy-on-write)
 
 ### EventHandler
-The universal abstraction for processing events. Single method: `Event handle(Event)`.
+The universal abstraction for processing events. Single method: `Event handle(Event, Dispatcher)`.
 
-**Contract:** Synchronous, throws EventHandlingException on failure, returns Event response.
+**Contract:** Synchronous, throws EventHandlingException on failure, returns Event response. The Dispatcher is provided so handlers can send events to other micro-services in the same or other macroliths.
+
+### Dispatcher
+A facility provided to EventHandlers in order to send events to other micro-services in the same or other macroliths. The Dispatcher abstracts away the underlying transport mechanism (HTTP, gRPC, message queues) and provides a simple API for outbound event emission.
+
+**Contract:** `CompletableFuture<Event> send(Event, BiFunction<Throwable, Event, Event> onError)` -- asynchronous send with error handling callback.
+
+**Distinction from Router:** The Router routes inbound events to the correct handler within EventBob. The Dispatcher sends outbound events from within a handler to other services (whether co-located in the same macrolith or remote).
 
 ### Routing Semantics (MetadataKeys)
 - **correlation-id** - UUID tracking request/response across boundaries
@@ -50,7 +57,8 @@ Translation layer between EventBob and external transports (HTTP, gRPC, queues).
 
 - **Event** - not "message", not "request" (the vocabulary is intentionally event-based)
 - **Handler** - not "processor", not "service" (the pattern name)
-- **Router** - not "dispatcher", not "gateway"
+- **Router** - routes inbound events to the correct handler within EventBob; not "gateway"
+- **Dispatcher** - provided to EventHandlers for sending events to other micro-services in the same or other macroliths; not "emitter", not "sender"
 - **Metadata** - infrastructure concerns (routing, observability)
 - **Parameters** - business data
 
