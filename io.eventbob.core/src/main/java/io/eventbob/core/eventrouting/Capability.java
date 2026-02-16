@@ -1,0 +1,40 @@
+package io.eventbob.core.eventrouting;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * Annotation to declare a capability provided by an EventHandler.
+ *
+ * <pre>
+ * @Capabilities({
+ *  @Capability("get-message-content"),
+ *  @Capability("create-message", version = 1)
+ *  @Capability("create-message", version = 2)
+ * })
+ * public class MessageContentResource implements EventHandler {
+ *   @Override
+ *   public Event handle(Event event) {
+ *     // Implementation
+ *   }
+ * }
+ * }</pre>
+ */
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Capability {
+    /**
+     * Capability this handler provides.
+     */
+    String value();
+
+    /**
+     * Version of this capability contract.
+     *
+     * <p>Increment when operation signatures change (new fields, different semantics).
+     * Must be positive integer.
+     */
+    int version() default 1;
+}

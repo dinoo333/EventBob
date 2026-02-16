@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Transport envelope for in-process communication between handlers within a macrolith.
@@ -14,10 +15,10 @@ import java.util.Objects;
  * information (source, target), parameters, metadata, and an optional payload.
  * It is the message format for EventHandler communication, not a record of a domain occurrence.
  *
- * <p>Events are immutable and passed between EventHandler implementations via the EventHandlingRouter.
+ * <p>Events are immutable and passed between EventHandler implementations via EventBob.
+ * An event may carry an error to indicate processing failure.
  */
 public final class Event implements Serializable {
-
   @Serial
   private static final long serialVersionUID = 1L;
 
@@ -103,7 +104,6 @@ public final class Event implements Serializable {
         "target='" + target + '\'' +
         ", parameters=" + parameters +
         ", metadata=" + metadata +
-        ", payload=" + payload +
         '}';
   }
 

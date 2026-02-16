@@ -27,7 +27,7 @@ This module is the **abstraction** in the Bridge Pattern. It defines WHAT EventB
 - `EventHandler` - Implemented by services, routers, decorators, adapters
 
 **Routing Logic:**
-- `EventHandlingRouter` - Routes events by target to handlers
+- `EventBob` - Routes events by target to handlers
 - `DecoratedEventHandler` - Wraps handlers with cross-cutting concerns
 
 ### What Core Does NOT Provide
@@ -201,7 +201,7 @@ io.eventbob.core
 ├── eventrouting/                      # Event Routing Subdomain
 │   ├── Event.java
 │   ├── EventHandler.java
-│   ├── EventHandlingRouter.java
+│   ├── EventBob.java
 │   ├── DecoratedEventHandler.java
 │   ├── EventHandlerCapability.java
 │   ├── MetadataKeys.java
@@ -226,7 +226,7 @@ io.eventbob.core
 **Key Types:**
 - **Event** — Immutable event data structure (source, target, metadata, parameters, payload)
 - **EventHandler** — Universal interface for event processing
-- **EventHandlingRouter** — Routes events by target string to specific handlers
+- **EventBob** — Routes events by target string to specific handlers
 - **DecoratedEventHandler** — Wraps handlers with cross-cutting concerns (logging, metrics, error handling)
 - **MetadataKeys** — Standard metadata vocabulary (correlation-id, method, path, trace-id, etc.)
 - **Exception hierarchy** — EventHandlingException, HandlerNotFoundException, UnexpectedEventHandlingException
@@ -363,7 +363,7 @@ The `EventHandlerCapability` annotation (in eventrouting) references `Capability
 io.eventbob.core/
   Event.java
   EventHandler.java
-  EventHandlingRouter.java
+  EventBob.java
   ...
   exceptions/
     EventHandlingException.java
@@ -376,7 +376,7 @@ io.eventbob.core/
   eventrouting/
     Event.java
     EventHandler.java
-    EventHandlingRouter.java
+    EventBob.java
     EventHandlingException.java     # Flattened
     HandlerNotFoundException.java   # Flattened
   endpointresolution/
@@ -418,7 +418,7 @@ io.eventbob.core/
 
 **Coverage:**
 - Event creation, validation, immutability
-- EventHandlingRouter dispatching and error handling
+- EventBob dispatching and error handling
 - DecoratedEventHandler hook execution
 - MetadataKeys usage patterns
 

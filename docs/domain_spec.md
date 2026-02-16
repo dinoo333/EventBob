@@ -51,7 +51,7 @@ A routable operation that a service provides. Each capability is identified by:
 An independently versioned component loaded via JAR that provides one or more capabilities.
 
 ### Event
-A transport envelope for in-process communication between handlers within a macrolith. **Not a domain event.** An Event contains routing information (source, target), parameters, metadata, and an optional payload. Events are immutable messages passed between EventHandler implementations via the EventHandlingRouter.
+A transport envelope for in-process communication between handlers within a macrolith. **Not a domain event.** An Event contains routing information (source, target), parameters, metadata, and an optional payload. Events are immutable messages passed between EventHandler implementations via the EventBob.
 
 **Important distinction:** "Event" in EventBob refers to the message envelope, not to domain events in the Event Sourcing sense. Think of it as a request/response wrapper, not an occurrence that happened in the domain.
 
@@ -100,7 +100,7 @@ The core defines domain concepts and port interfaces:
 
 **Ports (interfaces for infrastructure to implement):**
 - CapabilityResolver: Resolves routing keys to endpoints
-- EventHandlingRouter: Routes events to handlers based on target string
+- EventBob: Routes events to handlers based on target string
 
 **Boundaries:**
 - Core has NO framework dependencies (no Spring, no database libraries)
