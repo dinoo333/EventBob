@@ -103,42 +103,9 @@ macrolith_capabilities    -- Which macroliths provide which capabilities (many-t
 
 ### What It Provides
 
-- **JAR scanning:** ClassGraph library finds `@EventHandlerCapability` annotations
-- **Capability registration:** Persists capabilities to PostgreSQL
-- **Macrolith tracking:** Records which macroliths exist and their logical endpoints
-- **CapabilityResolver implementation:** Resolves routing keys to endpoints
-- **Bootstrap:** Scans JARs on startup, registers capabilities
+Spring Boot integration layer for EventBob server deployment. Provides transport adapters and infrastructure wiring.
 
-### Database Schema
-
-```sql
--- Which macroliths exist
-CREATE TABLE service_macroliths (
-    id UUID PRIMARY KEY,
-    macrolith_name TEXT UNIQUE NOT NULL,
-    endpoint TEXT NOT NULL
-);
-
--- Which capabilities exist
-CREATE TABLE service_capabilities (
-    id UUID PRIMARY KEY,
-    service_name TEXT NOT NULL,
-    capability TEXT NOT NULL,  -- READ/WRITE/ADMIN
-    capability_version INT NOT NULL,
-    method TEXT NOT NULL,      -- GET/POST/DELETE
-    path_pattern TEXT NOT NULL,
-    handler_class TEXT NOT NULL,
-    CONSTRAINT uq_capability_routing_key
-      UNIQUE(service_name, capability, capability_version, method, path_pattern)
-);
-
--- Which macroliths provide which capabilities
-CREATE TABLE macrolith_capabilities (
-    macrolith_id UUID REFERENCES service_macroliths(id),
-    capability_id UUID REFERENCES service_capabilities(id),
-    PRIMARY KEY (macrolith_id, capability_id)
-);
-```
+**Implementation is work-in-progress** and evolving as requirements clarify.
 
 
 ---
