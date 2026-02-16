@@ -83,7 +83,7 @@ A facility provided to EventHandlers in order to send events to other micro-serv
 
 ## Open Questions
 
-1. **Transport abstraction:** How do external clients invoke capabilities? HTTP? gRPC? Message queues? The core is transport-agnostic, but no transport layer is implemented yet.
+1. **Transport abstraction:** How do external clients invoke capabilities? HTTP? gRPC? Message queues? The core is transport-agnostic. Transport adapters are work-in-progress.
 2. **Deployment model:** When should engineers bundle services into a macrolith vs keeping them separate? What are the decision criteria?
 
 ---
@@ -115,10 +115,7 @@ The core defines domain concepts and port interfaces:
 
 ### Infrastructure Implementations
 
-**io.eventbob.spring** implements core ports using Spring Boot:
-- ServiceRegistryRepository: Capability persistence (PostgreSQL via Spring JDBC)
-- MacroServiceBootstrap: JAR scanning and registration orchestration
-- CapabilityScanner: Annotation-based capability discovery (ClassGraph library)
+**io.eventbob.spring** provides Spring Boot integration for EventBob server deployment. Implementation is work-in-progress and evolving.
 
 **Bridge Pattern:** Infrastructure depends on core, never reverse. Spring types stay in infrastructure layer, core types stay in core.
 
