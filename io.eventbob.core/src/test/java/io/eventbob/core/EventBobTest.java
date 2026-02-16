@@ -10,7 +10,6 @@ import io.eventbob.core.eventrouting.HandlerNotFoundException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -70,7 +69,7 @@ class EventBobTest {
 
     assertThat(errorResult).isNotNull();
     @SuppressWarnings("unchecked")
-    Map<String, Serializable> errorPayload = (Map<String, Serializable>) errorResult.getPayload();
+    Map<String, Object> errorPayload = (Map<String, Object>) errorResult.getPayload();
     assertThat(errorPayload.get("errorType"))
         .asString()
         .contains("CompletionException");
@@ -196,7 +195,7 @@ class EventBobTest {
     assertThat(errorResult.getTarget()).isEqualTo("fail");
 
     @SuppressWarnings("unchecked")
-    Map<String, Serializable> errorPayload = (Map<String, Serializable>) errorResult.getPayload();
+    Map<String, Object> errorPayload = (Map<String, Object>) errorResult.getPayload();
 
     assertThat(errorPayload).containsKeys("errorMessage", "errorType", "originalEvent");
     assertThat(errorPayload.get("errorMessage"))
@@ -413,7 +412,7 @@ class EventBobTest {
 
     assertThat(errorResult).isNotNull();
     @SuppressWarnings("unchecked")
-    Map<String, Serializable> errorPayload = (Map<String, Serializable>) errorResult.getPayload();
+    Map<String, Object> errorPayload = (Map<String, Object>) errorResult.getPayload();
     assertThat(errorPayload.get("errorType"))
         .asString()
         .contains("CompletionException");

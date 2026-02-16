@@ -6,7 +6,6 @@ import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -15,11 +14,11 @@ class EventTest {
 
   @Test
   void buildAndAccessors() {
-    Map<String, Serializable> path = new LinkedHashMap<>();
+    Map<String, Object> path = new LinkedHashMap<>();
     path.put("id", "123");
-    Map<String, Serializable> params = new LinkedHashMap<>();
+    Map<String, Object> params = new LinkedHashMap<>();
     params.put("q", "search");
-    Map<String, Serializable> meta = new LinkedHashMap<>();
+    Map<String, Object> meta = new LinkedHashMap<>();
     meta.put("traceId", "abc");
 
     Event e = Event.builder()
@@ -52,9 +51,9 @@ class EventTest {
 
   @Test
   void mapsAreDefensivelyCopiedAndImmutable() {
-    Map<String, Serializable> path = new LinkedHashMap<>();
+    Map<String, Object> path = new LinkedHashMap<>();
     path.put("id", "1");
-    Map<String, Serializable> params = new LinkedHashMap<>();
+    Map<String, Object> params = new LinkedHashMap<>();
     params.put("p", "v");
 
     Event e = Event.builder()
@@ -97,7 +96,7 @@ class EventTest {
         .build();
 
     Event modified = original.toBuilder()
-        .metadata(new LinkedHashMap<>(Map.of("traceId", (Serializable) "t2")))
+        .metadata(new LinkedHashMap<>(Map.of("traceId", "t2")))
         .payload("new-data")
         .build();
     assertThat(original.getMetadata()).containsExactly(entry("traceId", "t1"));

@@ -1,6 +1,5 @@
 package io.eventbob.core.eventrouting;
 
-import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -10,13 +9,13 @@ import java.util.Map;
 class DefaultErrorEvent {
 
   static Event create(Throwable error, Event originalEvent) {
-    Map<String, Serializable> errorPayload = new LinkedHashMap<>();
+    Map<String, Object> errorPayload = new LinkedHashMap<>();
     errorPayload.put("errorMessage", error.getMessage() != null ? error.getMessage() : "null");
     errorPayload.put("errorType", error.getClass().getName());
     errorPayload.put("originalEvent", originalEvent);
 
     return originalEvent.toBuilder()
-        .payload((Serializable) errorPayload)
+        .payload(errorPayload)
         .build();
   }
 

@@ -3,7 +3,6 @@ package io.eventbob.core.eventrouting;
 import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -20,7 +19,7 @@ class DefaultErrorEventTest {
 
     Event errorEvent = DefaultErrorEvent.create(error, original);
 
-    Map<String, Serializable> payload = (Map<String, Serializable>) errorEvent.getPayload();
+    Map<String, Object> payload = (Map<String, Object>) errorEvent.getPayload();
     assertThat(payload).containsKey("errorMessage");
     assertThat(payload).containsKey("errorType");
     assertThat(payload).containsKey("originalEvent");
@@ -32,9 +31,9 @@ class DefaultErrorEventTest {
 
   @Test
   void preservesOriginalEventFields() {
-    Map<String, Serializable> params = new LinkedHashMap<>();
+    Map<String, Object> params = new LinkedHashMap<>();
     params.put("retryCount", "3");
-    Map<String, Serializable> meta = new LinkedHashMap<>();
+    Map<String, Object> meta = new LinkedHashMap<>();
     meta.put("traceId", "trace-123");
 
     Event original = Event.builder()
@@ -68,7 +67,7 @@ class DefaultErrorEventTest {
     assertThat(errorEvent.getPayload()).isNotEqualTo("original-payload-data");
     assertThat(errorEvent.getPayload()).isInstanceOf(Map.class);
 
-    Map<String, Serializable> payload = (Map<String, Serializable>) errorEvent.getPayload();
+    Map<String, Object> payload = (Map<String, Object>) errorEvent.getPayload();
     assertThat(payload).containsKeys("errorMessage", "errorType", "originalEvent");
   }
 
@@ -82,7 +81,7 @@ class DefaultErrorEventTest {
     Throwable error = new IllegalStateException("Service unavailable");
     Event errorEvent = DefaultErrorEvent.create(error, original);
 
-    Map<String, Serializable> payload = (Map<String, Serializable>) errorEvent.getPayload();
+    Map<String, Object> payload = (Map<String, Object>) errorEvent.getPayload();
 
     assertThat(payload.get("errorMessage"))
         .isInstanceOf(String.class)
@@ -109,7 +108,7 @@ class DefaultErrorEventTest {
     // Null-safe: error.getMessage() can return null, should handle gracefully
     Event errorEvent = DefaultErrorEvent.create(error, original);
 
-    Map<String, Serializable> payload = (Map<String, Serializable>) errorEvent.getPayload();
+    Map<String, Object> payload = (Map<String, Object>) errorEvent.getPayload();
     assertThat(payload.get("errorMessage")).isEqualTo("null");
     assertThat(payload.get("errorType")).isEqualTo("java.lang.RuntimeException");
     assertThat(payload.get("originalEvent")).isEqualTo(original);
@@ -131,7 +130,7 @@ class DefaultErrorEventTest {
 
   @Test
   void errorEventIsIndependentOfOriginal() {
-    Map<String, Serializable> params = new LinkedHashMap<>();
+    Map<String, Object> params = new LinkedHashMap<>();
     params.put("key", "value");
 
     Event original = Event.builder()
