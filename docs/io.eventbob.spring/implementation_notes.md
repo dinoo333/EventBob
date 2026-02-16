@@ -17,6 +17,22 @@
 - Annotated with `@Capability("target-name")`
 - Registered with EventBob at configuration time
 
+### REST Adapter Pattern
+
+**Applied in:** EventController
+
+**Pattern:**
+- Exposes POST /events endpoint for HTTP event submission
+- EventDto serves as boundary object (prevents Jackson annotations in domain)
+- Maps EventDto ↔ Event with direct field assignment (no type conversion)
+- Returns `CompletableFuture<EventDto>` for non-blocking HTTP responses
+- Spring MVC handles async suspension automatically
+
+**Mapping strategy:**
+- EventDto and Event use identical `Object` types for parameters/metadata/payload
+- No type conversion helpers needed (direct pass-through)
+- Transformation: `Event → EventBob.processEvent() → thenApply(Event → EventDto)`
+
 ## Testing Conventions
 
 ### Unit Tests

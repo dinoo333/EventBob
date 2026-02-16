@@ -13,6 +13,11 @@
 - `toBuilder()` for copy-on-write transformations
 - Static factory `builder()` for construction
 
+**Type flexibility:**
+- Event uses `Object` types for parameters, metadata, and payload fields
+- Reflects JSON-compatible values without artificial `Serializable` constraint
+- Honesty over false type safety: any Java object accepted, serialization concerns handled at boundaries
+
 ### Composable Handlers
 
 **Applied in:** EventHandler, EventBob

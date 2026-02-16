@@ -6,10 +6,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.Serializable;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -53,9 +49,6 @@ public class EventController {
   /**
    * Map EventDto to domain Event.
    *
-   * <p>Converts DTO fields (Object types) to Event fields (Serializable types).
-   * Handles null-safe conversions for maps.
-   *
    * @param dto The event DTO to map.
    * @return The domain Event built from the DTO.
    */
@@ -63,17 +56,14 @@ public class EventController {
     return Event.builder()
         .source(dto.getSource())
         .target(dto.getTarget())
-        .parameters(toSerializableMap(dto.getParameters()))
-        .metadata(toSerializableMap(dto.getMetadata()))
-        .payload(toSerializable(dto.getPayload()))
+        .parameters(dto.getParameters())
+        .metadata(dto.getMetadata())
+        .payload(dto.getPayload())
         .build();
   }
 
   /**
    * Map domain Event to EventDto.
-   *
-   * <p>Converts Event fields (Serializable types) to DTO fields (Object types)
-   * for JSON serialization.
    *
    * @param event The domain Event to map.
    * @return The event DTO.
@@ -82,47 +72,9 @@ public class EventController {
     return new EventDto(
         event.getSource(),
         event.getTarget(),
-        toObjectMap(event.getParameters()),
-        toObjectMap(event.getMetadata()),
+        event.getParameters(),
+        event.getMetadata(),
         event.getPayload()
     );
-  }
-
-  /**
-   * Convert Map<String, Object> to Map<String, Serializable>.
-   * Null-safe: returns empty map if input is null.
-   */
-  private Map<String, Serializable> toSerializableMap(Map<String, Object> in) {
-    if (in == null || in.isEmpty()) {
-      return Collections.emptyMap();
-    }
-    Map<String, Serializable> out = new HashMap<>();
-    for (Map.Entry<String, Object> entry : in.entrySet()) {
-      out.put(entry.getKey(), toSerializable(entry.getValue()));
-    }
-    return out;
-  }
-
-  /**
-   * Convert Map<String, Serializable> to Map<String, Object>.
-   * Null-safe: returns empty map if input is null.
-   */
-  private Map<String, Object> toObjectMap(Map<String, Serializable> in) {
-    if (in == null || in.isEmpty()) {
-      return Collections.emptyMap();
-    }
-    return new HashMap<>(in);
-  }
-
-  /**
-   * Cast Object to Serializable if non-null.
-   * If the object is already Serializable, it is cast directly.
-   * If not, this will fail at runtime (expected behavior for API contract violations).
-   */
-  private Serializable toSerializable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    return (Serializable) value;
   }
 }

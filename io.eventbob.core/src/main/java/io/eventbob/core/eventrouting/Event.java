@@ -1,7 +1,5 @@
 package io.eventbob.core.eventrouting;
 
-import java.io.Serial;
-import java.io.Serializable;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -18,15 +16,12 @@ import java.util.Optional;
  * <p>Events are immutable and passed between EventHandler implementations via EventBob.
  * An event may carry an error to indicate processing failure.
  */
-public final class Event implements Serializable {
-  @Serial
-  private static final long serialVersionUID = 1L;
-
+public final class Event {
   private final String source;
   private final String target;
-  private final Map<String, Serializable> parameters;
-  private final Map<String, Serializable> metadata;
-  private final Serializable payload;
+  private final Map<String, Object> parameters;
+  private final Map<String, Object> metadata;
+  private final Object payload;
 
   private Event(Builder builder) {
     this.source = reqNonBlank(builder.source, "source");
@@ -56,7 +51,7 @@ public final class Event implements Serializable {
     return v;
   }
 
-  private static Map<String, Serializable> copy(Map<String, Serializable> in) {
+  private static Map<String, Object> copy(Map<String, Object> in) {
     if (in == null || in.isEmpty()) return Collections.emptyMap();
     return Collections.unmodifiableMap(new LinkedHashMap<>(in));
   }
@@ -69,15 +64,15 @@ public final class Event implements Serializable {
     return target;
   }
 
-  public Map<String, Serializable> getParameters() {
+  public Map<String, Object> getParameters() {
     return parameters;
   }
 
-  public Map<String, Serializable> getMetadata() {
+  public Map<String, Object> getMetadata() {
     return metadata;
   }
 
-  public Serializable getPayload() {
+  public Object getPayload() {
     return payload;
   }
 
@@ -101,9 +96,10 @@ public final class Event implements Serializable {
   public String toString() {
     return "Event{" +
         "source='" + source + '\'' +
-        "target='" + target + '\'' +
+        ", target='" + target + '\'' +
         ", parameters=" + parameters +
         ", metadata=" + metadata +
+        ", payload=" + payload +
         '}';
   }
 
@@ -114,11 +110,11 @@ public final class Event implements Serializable {
   public static final class Builder {
     private String source;
     private String target;
-    private Map<String, Serializable> parameters = Collections.emptyMap();
-    private Map<String, Serializable> metadata = Collections.emptyMap();
-    private Serializable payload;
+    private Map<String, Object> parameters = Collections.emptyMap();
+    private Map<String, Object> metadata = Collections.emptyMap();
+    private Object payload;
 
-    private static Map<String, Serializable> mutable(Map<String, Serializable> m) {
+    private static Map<String, Object> mutable(Map<String, Object> m) {
       return m == null ? new LinkedHashMap<>() : new LinkedHashMap<>(m);
     }
 
@@ -132,17 +128,17 @@ public final class Event implements Serializable {
       return this;
     }
 
-    public Builder parameters(Map<String, Serializable> parameters) {
+    public Builder parameters(Map<String, Object> parameters) {
       this.parameters = mutable(parameters);
       return this;
     }
 
-    public Builder metadata(Map<String, Serializable> metadata) {
+    public Builder metadata(Map<String, Object> metadata) {
       this.metadata = mutable(metadata);
       return this;
     }
 
-    public Builder payload(Serializable payload) {
+    public Builder payload(Object payload) {
       this.payload = payload;
       return this;
     }
