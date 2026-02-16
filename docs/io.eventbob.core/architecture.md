@@ -9,7 +9,7 @@ The core domain module defining event routing abstractions and primitives. This 
 **Implemented:**
 - Event data structure (immutable value object)
 - EventHandler interface (universal contract)
-- EventHandlingRouter (string-based routing)
+- EventBob (string-based routing)
 - DecoratedEventHandler (cross-cutting concerns via decoration)
 - Exception hierarchy
 - MetadataKeys vocabulary
@@ -26,7 +26,7 @@ The core domain module defining event routing abstractions and primitives. This 
 io.eventbob.core
 ├── Event                      (domain model)
 ├── EventHandler               (core abstraction)
-├── EventHandlingRouter        (routing implementation)
+├── EventBob        (routing implementation)
 ├── DecoratedEventHandler      (decorator pattern)
 ├── MetadataKeys              (vocabulary)
 └── exceptions/
@@ -60,7 +60,7 @@ Immutable value object with builder:
 
 **Key invariant:** Metadata carries infrastructure concerns (correlation-id, method, path). Parameters carry business data.
 
-### EventHandlingRouter
+### EventBob
 
 Routes events by exact target match to registered handlers.
 

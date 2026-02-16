@@ -35,7 +35,7 @@ classDiagram
     class UnexpectedEventHandlingException {
     }
 
-    class EventHandlingRouter {
+    class EventBob {
         -Map~String,EventHandler~ handlers
         +Event handle(Event)
         +static Builder builder()
@@ -64,8 +64,8 @@ classDiagram
     RuntimeException <|-- EventHandlingException
     EventHandlingException <|-- HandlerNotFoundException
     EventHandlingException <|-- UnexpectedEventHandlingException
-    EventHandler <|.. EventHandlingRouter: implements
+    EventHandler <|.. EventBob: implements
     EventHandler <|.. DecoratedEventHandler: implements
-    EventHandlingRouter o--> EventHandler: delegates handling
+    EventBob o--> EventHandler: delegates handling
     DecoratedEventHandler o--> EventHandler: wraps delegate
     Event ..> MetadataKeys: uses keys from

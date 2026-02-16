@@ -214,7 +214,7 @@ A **logical address** where events can be routed.
 - `io.eventbob.core.endpointresolution.Capability` (enum)
 - `io.eventbob.core.endpointresolution.Endpoint` (value object)
 - `io.eventbob.core.eventrouting.EventHandler` (interface)
-- `io.eventbob.core.eventrouting.EventHandlerCapability` (annotation)
+- `io.eventbob.core.eventrouting.Capability` (annotation)
 
 **Exports to Event Routing Context (future):**
 - Implementation of `CapabilityResolver` port (not yet implemented)

@@ -25,7 +25,7 @@
 
 ### Composable Handlers
 
-**Applied in:** EventHandler, EventHandlingRouter, DecoratedEventHandler
+**Applied in:** EventHandler, EventBob, DecoratedEventHandler
 
 **Pattern:**
 - Single interface: `Event handle(Event)`
@@ -46,7 +46,7 @@ void testMethodName() {
 
 **Examples:**
 - EventTest - tests Event immutability, builder, defensive copying
-- EventHandlingRouterTest - tests routing by target, error cases
+- EventBobTest - tests routing by target, error cases
 - DecoratedEventHandlerTest - tests before/after/error hooks
 - MetadataKeysTest - tests constant usage with Event
 
