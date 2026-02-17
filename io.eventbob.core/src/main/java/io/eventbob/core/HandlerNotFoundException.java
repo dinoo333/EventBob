@@ -1,4 +1,4 @@
-package io.eventbob.core.eventrouting;
+package io.eventbob.core;
 
 public class HandlerNotFoundException extends RuntimeException {
   public HandlerNotFoundException(String target) {

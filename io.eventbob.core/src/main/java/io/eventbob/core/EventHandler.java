@@ -1,10 +1,10 @@
-package io.eventbob.core.eventrouting;
+package io.eventbob.core;
 
 /**
  * EventHandler is the core interface for processing incoming events in EventBob. EventHandlers are
  * loaded dynamically from configured JARs and registered in the routing registry based on their
- * associated capabilities. (Each jar implements exactly one EventHandler, but it can support
- * multiple capabilities and operations.)
+ * associated capabilities. (A JAR may contain one or more EventHandler implementations, each
+ * supporting different capabilities and operations.)
  *
  * <p>Implementations of this interface contain the business logic for handling specific types of events.
  * Each handler is associated with a capability that defines what operations it supports.

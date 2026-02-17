@@ -1,11 +1,11 @@
 package io.eventbob.core;
 
-import io.eventbob.core.eventrouting.Dispatcher;
-import io.eventbob.core.eventrouting.Event;
-import io.eventbob.core.eventrouting.EventBob;
-import io.eventbob.core.eventrouting.EventHandler;
-import io.eventbob.core.eventrouting.EventHandlingException;
-import io.eventbob.core.eventrouting.HandlerNotFoundException;
+import io.eventbob.core.Dispatcher;
+import io.eventbob.core.Event;
+import io.eventbob.core.EventBob;
+import io.eventbob.core.EventHandler;
+import io.eventbob.core.EventHandlingException;
+import io.eventbob.core.HandlerNotFoundException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

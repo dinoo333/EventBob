@@ -1,4 +1,4 @@
-package io.eventbob.core.eventrouting;
+package io.eventbob.core;
 
 /**
  * Annotation to declare the capabilities of an EventHandler.

@@ -56,6 +56,50 @@
 - Configuration patterns evolving
 - Integration test strategy to be determined
 
+## JAR Loading Integration
+
+### EventBobConfig Bean Configuration
+
+**Applied in:** EventBobConfig
+
+**Pattern:**
+- Uses `HandlerLoader.jarLoader()` to obtain default loader implementation
+- Loads handlers at Spring context initialization (eager loading)
+- Registers loaded handlers via `EventBob.Builder.handler(String, EventHandler)`
+- Includes hard-coded healthcheck handler alongside JAR-loaded handlers
+
+**JAR Path Configuration:**
+- Currently hard-coded in `loadHandlersFromJars()` method
+- Paths: relative to working directory (project root)
+  - `io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar`
+  - `io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar`
+- **Technical debt:** Should be externalized to `application.properties` for production use
+
+**Working Directory Dependency:**
+- JAR paths are relative to project root
+- Application must be started from project root directory
+- **Limitation:** Breaks if started from different working directory
+- **Future:** Externalize to configuration with absolute paths or classpath-relative resolution
+
+**Error Handling:**
+- `IOException` from loader wrapped in `IllegalStateException` (fails application startup)
+- Logged at ERROR level via SLF4J
+- Fail-fast approach: Better to fail at startup than serve with missing capabilities
+
+**Logging:**
+- Success: INFO log with count of registered handlers from JARs
+- Failure: ERROR log with exception details, then throws `IllegalStateException`
+
+**Design Decisions:**
+- Eager loading: Handlers loaded at context init (fast failure, predictable startup)
+- Mixed registration: Hard-coded and JAR-based handlers coexist (healthcheck stays hard-coded)
+- Fail-fast: Missing/malformed JARs prevent application startup (better than partial functionality)
+
+**Known Technical Debt:**
+- Hard-coded JAR paths (should be `spring.eventbob.handler-jars` in application.properties)
+- Working directory dependency (should be absolute paths or classpath-relative)
+- No JAR path validation before attempting load (should check existence earlier)
+
 ## Work-in-Progress
 
 This module is under active development. Patterns and implementation details are subject to change as requirements clarify and the system evolves.
