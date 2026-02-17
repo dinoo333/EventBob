@@ -4,7 +4,7 @@
 
 Spring Boot infrastructure library providing server deployment, handler wiring, and transport adapters for EventBob.
 
-**This is a library module.** It has no main class, no hard-coded configuration. Concrete macrolith applications import this library and provide configuration via constructor injection.
+**This is a library module.** It has no main class, no hard-coded configuration. Concrete microlith applications import this library and provide configuration via constructor injection.
 
 ---
 
@@ -13,12 +13,12 @@ Spring Boot infrastructure library providing server deployment, handler wiring, 
 This module is in the **infrastructure library layer** (middle):
 - Depends on `io.eventbob.core` (domain abstractions)
 - Provides framework-specific implementations
-- Imported by macrolith application modules (outermost layer)
+- Imported by microlith application modules (outermost layer)
 - Core never depends on this module (dependency inversion)
 
 **Dependency direction:**
 ```
-io.eventbob.example.macrolith.*  →  io.eventbob.spring  →  io.eventbob.core
+io.eventbob.example.microlith.*  →  io.eventbob.spring  →  io.eventbob.core
 (applications)                       (infrastructure)      (domain)
 ```
 
@@ -65,7 +65,7 @@ public class EventBobConfig {
 }
 ```
 
-**Key design decision:** JAR paths are injected via constructor, not hard-coded. This makes the library reusable across different macrolith deployments. Applications decide which handlers to load.
+**Key design decision:** JAR paths are injected via constructor, not hard-coded. This makes the library reusable across different microlith deployments. Applications decide which handlers to load.
 
 **HandlerLoader dependency:**
 Spring depends only on `HandlerLoader` interface (public API), never on `JarHandlerLoader` (package-private implementation). This is Dependency Inversion Principle in action.
@@ -168,9 +168,9 @@ Applications import this library and provide:
 ```java
 @SpringBootApplication
 @Import(EventBobConfig.class)
-public class MyMacrolithApplication {
+public class MyMicrolithApplication {
   public static void main(String[] args) {
-    SpringApplication.run(MyMacrolithApplication.class, args);
+    SpringApplication.run(MyMicrolithApplication.class, args);
   }
   
   @Bean
@@ -247,7 +247,7 @@ public class MyMacrolithApplication {
 4. **Public API only** - Spring depends only on core's public interfaces
 5. **Library status** - No main class, no hard-coded configuration
 
-**Enforcement:** ArchUnit tests verify these invariants on every build.
+**Enforcement:** Maven module boundaries provide structural enforcement. Automated tests planned.
 
 ---
 
@@ -290,11 +290,11 @@ Each adapter converts its protocol to Event, routes through EventBob, converts E
 
 ---
 
-## Example Macrolith Applications
+## Example Microlith Applications
 
-See `io.eventbob.example.macrolith.echo` for a working example of how to use this library.
+See `io.eventbob.example.microlith.spring.echo` for a working example of how to use this library.
 
-Other macrolith applications follow the same pattern:
+Other microlith applications follow the same pattern:
 - Import io.eventbob.spring
 - Provide @Bean for List<Path> handlerJarPaths
 - Create Spring Boot main class

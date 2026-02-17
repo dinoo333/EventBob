@@ -2,7 +2,7 @@
 
 ## System Purpose
 
-EventBob bundles multiple microservices into a macrolith to solve the chatty-application anti-pattern. When too many microservices cause network saturation and poor performance, EventBob loads their JARs into a single server for in-process communication.
+EventBob bundles multiple microservices into a microlith to solve the chatty-application anti-pattern. When too many microservices cause network saturation and poor performance, EventBob loads their JARs into a single server for in-process communication.
 
 ---
 
@@ -32,11 +32,11 @@ EventBob follows Clean Architecture with three layers:
               ↑ imports & configures
               │
 ┌──────────────────────────────────────┐
-│   io.eventbob.example.macrolith.*   │  Application Layer (Outermost)
+│   io.eventbob.example.microlith.*   │  Application Layer (Outermost)
 │   - Spring Boot main class           │
 │   - Concrete JAR path configuration  │
 │   - Deployment-specific wiring       │
-│   - Example: macrolith.echo          │
+│   - Example: microlith.echo          │
 └──────────────────────────────────────┘
 ```
 
@@ -45,7 +45,7 @@ EventBob follows Clean Architecture with three layers:
 **Why three layers:**
 - **Core:** Framework-agnostic domain logic (what EventBob IS)
 - **Spring library:** Reusable infrastructure (how to deploy with Spring Boot)
-- **Macrolith applications:** Concrete configurations (which handlers to load)
+- **Microlith applications:** Concrete configurations (which handlers to load)
 
 ---
 
@@ -99,7 +99,7 @@ public EventBobConfig(List<Path> handlerJarPaths) {
 Application provides concrete configuration:
 
 ```java
-// In EchoMacrolithApplication (io.eventbob.example.macrolith.echo) - concrete app
+// In EchoApplication (io.eventbob.example.microlith.spring.echo) - concrete app
 @Bean
 public List<Path> handlerJarPaths() {
     return List.of(
@@ -154,33 +154,14 @@ io.eventbob.spring
 
 **No main class.** This is a library module. Applications import and configure it.
 
-### Macrolith Applications (Example: Echo)
+### Microlith Applications (Example: Echo with Spring)
 
 ```
-io.eventbob.example.macrolith.echo
-└── EchoMacrolithApplication       (Spring Boot main class + JAR path config)
+io.eventbob.example.microlith.spring.echo
+└── EchoApplication                 (Spring Boot main class + JAR path config)
 ```
 
-More macrolith applications will follow this pattern (e.g., `io.eventbob.example.macrolith.upper` for testing remote invocation).
-
----
-
-## JAR Loading Strategy
-
-HandlerLoader uses isolated class loaders:
-
-**Pattern:** One URLClassLoader per JAR
-- **Parent delegation:** Core EventBob classes shared across all handlers
-- **JAR isolation:** Each JAR's dependencies isolated from others
-- **Discovery:** Scans for classes annotated with @Capability that implement EventHandler
-- **Instantiation:** Reflective invocation of no-args constructor
-
-**Error handling:**
-- Missing JAR: IOException (fail fast)
-- Malformed JAR: Warning logged, JAR skipped
-- Duplicate capabilities: IllegalStateException (fail fast)
-- Class loading failures: Fine-level log, class skipped
-- Instantiation failures: IllegalStateException (fail fast)
+More microlith applications will follow this pattern (e.g., `io.eventbob.example.microlith.spring.upper` for testing remote invocation, or `io.eventbob.example.microlith.dropwizard.echo` for alternative framework).
 
 ---
 
@@ -188,8 +169,8 @@ HandlerLoader uses isolated class loaders:
 
 ```
 ┌─────────────────────────────────────────┐
-│  Macrolith Process                      │
-│  (e.g., echo-macrolith)                 │
+│  Microlith Process                      │
+│  (e.g., echo-microlith)                 │
 │                                         │
 │  ┌────────────────────────────────┐    │
 │  │  EventBob Server (Spring)      │    │
@@ -204,56 +185,16 @@ HandlerLoader uses isolated class loaders:
 │  └────────────────────────────────┘    │
 │                                         │
 │  Configured in:                         │
-│  EchoMacrolithApplication               │
+│  EchoApplication                        │
 └─────────────────────────────────────────┘
-             ↑
-             │ (future: service discovery)
-             │
-     ┌───────────────┐
-     │  Registry     │
-     │  (PostgreSQL) │
-     └───────────────┘
 ```
 
 ---
 
-## Macrolith-Based Registration Model
-
-### What Registry Tracks
-
-```
-Macrolith: "echo-macrolith"
-├─ Endpoint: "http://echo-macrolith" (logical URL, not IP)
-├─ Capability: echo /events (POST)
-└─ Capability: lower /events (POST)
-```
-
-Infrastructure resolves "http://echo-macrolith" → physical instances:
-- 10.0.1.5:8080
-- 10.0.1.6:8080
-- 10.0.1.7:8080
-
-**Key insight:** Registry sees macroliths (logical units), not instances (physical servers).
-
-### Three-Table Model
-
-```sql
-service_macroliths       -- Which macroliths exist
-service_capabilities     -- Which capabilities exist
-macrolith_capabilities   -- Which macroliths provide which capabilities (many-to-many)
-```
-
-**Rationale:**
-- Capabilities can exist before macroliths register
-- Macroliths can provide multiple capabilities (composition)
-- Capabilities can be provided by multiple macroliths (replication)
-
----
-
-## Dependency Rules (Enforced by ArchUnit)
+## Dependency Rules
 
 **✅ Allowed:**
-- `io.eventbob.example.macrolith.*` → `io.eventbob.spring`
+- `io.eventbob.example.microlith.*` → `io.eventbob.spring`
 - `io.eventbob.spring` → `io.eventbob.core`
 - Applications → Library → Domain
 
@@ -263,7 +204,7 @@ macrolith_capabilities   -- Which macroliths provide which capabilities (many-to
 - Domain → Infrastructure
 - Library → Applications
 
-**Enforcement mechanism:** ArchUnit tests in both modules verify dependency direction.
+**Enforcement mechanism:** Maven module boundaries provide structural enforcement. Automated tests planned.
 
 ---
 
@@ -282,7 +223,7 @@ macrolith_capabilities   -- Which macroliths provide which capabilities (many-to
 - Framework-specific code (Spring Boot, Spring Web)
 - **NO main class, NO hard-coded paths**
 
-### Macrolith Applications (`io.eventbob.example.macrolith.*`)
+### Microlith Applications (`io.eventbob.example.microlith.*`)
 - Spring Boot main class
 - Concrete JAR path configuration
 - Deployment-specific wiring
@@ -293,9 +234,9 @@ Core defines WHAT (domain model + abstractions). Infrastructure library defines 
 
 ---
 
-## Multiple Macrolith Deployments
+## Multiple Microlith Deployments
 
-The three-layer architecture enables multiple concrete macrolith deployments from a single infrastructure library:
+The three-layer architecture enables multiple concrete microlith deployments from a single infrastructure library:
 
 ```
                 io.eventbob.core
@@ -305,11 +246,11 @@ The three-layer architecture enables multiple concrete macrolith deployments fro
                        ↑
          ┌─────────────┼─────────────┐
          │             │             │
-   macrolith.echo  macrolith.upper  macrolith.messages
+   microlith.echo  microlith.upper  microlith.messages
    (lower + echo)  (upper + ...)   (read + write + ...)
 ```
 
-Each macrolith:
+Each microlith:
 - Imports io.eventbob.spring library
 - Provides @Bean for List<Path> handlerJarPaths
 - Has its own Spring Boot main class

@@ -17,16 +17,16 @@ A routable message carrying source, target, routing metadata, parameters, and pa
 ### EventHandler
 The integration contract that microservices must implement to integrate with EventBob. Single method: `Event handle(Event, Dispatcher)`.
 
-**Contract:** Synchronous, throws EventHandlingException on failure, returns Event response. The Dispatcher is provided so handlers can send events to other micro-services in the same or other macroliths.
+**Contract:** Synchronous, throws EventHandlingException on failure, returns Event response. The Dispatcher is provided so handlers can send events to other micro-services in the same or other microliths.
 
 **Discovery:** EventBob discovers EventHandler implementations via @Capability annotations declared on the implementation class.
 
 ### Dispatcher
-A facility provided to EventHandlers in order to send events to other micro-services in the same or other macroliths. The Dispatcher abstracts away the underlying transport mechanism (HTTP, gRPC, message queues) and provides a simple API for outbound event emission.
+A facility provided to EventHandlers in order to send events to other micro-services in the same or other microliths. The Dispatcher abstracts away the underlying transport mechanism (HTTP, gRPC, message queues) and provides a simple API for outbound event emission.
 
 **Contract:** `CompletableFuture<Event> send(Event, BiFunction<Throwable, Event, Event> onError)` -- asynchronous send with error handling callback.
 
-**Distinction from Router:** The Router routes inbound events to the correct handler within EventBob. The Dispatcher sends outbound events from within a handler to other services (whether co-located in the same macrolith or remote).
+**Distinction from Router:** The Router routes inbound events to the correct handler within EventBob. The Dispatcher sends outbound events from within a handler to other services (whether co-located in the same microlith or remote).
 
 ### Capability (Annotation)
 Metadata annotation that microservices use to declare what they provide.
@@ -73,7 +73,7 @@ Code packaged in a JAR that integrates with EventBob by implementing EventHandle
 
 ## Domain Concepts (Future)
 
-### Macrolith-Service
+### Microlith-Service
 **Status:** Not yet modeled in code. Deployment concept only.
 
 A process containing multiple microservices communicating via EventBob.
@@ -91,7 +91,7 @@ Translation layer between EventBob and external transports (HTTP, gRPC, queues).
 - **HandlerLoader** - loads microservices from JARs (not "ServiceLoader", not "JarLoader")
 - **Event** - not "message", not "request" (the vocabulary is intentionally event-based)
 - **Router** - routes inbound events to the correct handler within EventBob; not "gateway"
-- **Dispatcher** - provided to EventHandlers for sending events to other micro-services in the same or other macroliths; not "emitter", not "sender"
+- **Dispatcher** - provided to EventHandlers for sending events to other micro-services in the same or other microliths; not "emitter", not "sender"
 - **Metadata** - infrastructure concerns (routing, observability)
 - **Parameters** - business data
 

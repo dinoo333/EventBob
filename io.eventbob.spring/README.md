@@ -1,218 +1,151 @@
 # EventBob Spring Implementation
 
-**Spring Boot implementation of EventBob infrastructure** (Bridge Pattern)
+**Spring Boot implementation of EventBob** (Bridge Pattern)
 
 ## What Is This Module?
 
-This is the **Spring-based implementation of EventBob** - the complete macro-service infrastructure using Spring Boot and Spring JDBC.
+This is the **Spring-based implementation of EventBob** - a Spring Boot adapter that provides HTTP REST endpoints for event processing.
 
 **Architecture Pattern:** Bridge
-- **Abstraction:** `io.eventbob.core` (domain model, ports, interfaces)
-- **Implementation:** `io.eventbob.spring` (this module - Spring-based concrete implementation)
-
-**Not just a registry:** This module provides the complete EventBob infrastructure including capability scanning, registration, instance tracking, deployment management, and persistence.
+- **Abstraction:** `io.eventbob.core` (domain model, EventBob, EventHandler)
+- **Implementation:** `io.eventbob.spring` (this module - Spring-based REST adapter)
 
 ## What This Implementation Provides
-- **JAR introspection**: Scan JARs for `@EventHandlerCapability` annotations
-- **Capability registration**: Store what operations each service provides
-- **Instance tracking**: Know which physical instances are running
-- **Blue/green deployments**: Progressive traffic shifting with rollback
-- **Conflict detection**: Warn when capability versions mismatch
+
+- **Spring configuration** (`EventBobConfig`) that loads handlers from JAR files
+- **REST endpoint** (`EventController`) for HTTP event processing
+- **JSON serialization** (`EventDto`) for Event messages
+- **Built-in healthcheck handler** for system health monitoring
 
 ## Architecture
 
-### Three-Table Model
-
 ```
-┌────────────────────────┐
-│ service_capabilities   │  What operations exist
-│  - service_name        │
-│  - capability (R/W/A)  │
-│  - capability_version  │
-│  - method, path        │
-│  - deployment_state    │
-└────────────────────────┘
+┌─────────────────────────┐
+│   EventController       │  POST /events endpoint
+│   (Spring REST)         │
+└─────────────────────────┘
             ↓
-┌────────────────────────┐
-│ macrolith_capabilities  │  Join: which macroliths provide which capabilities
-└────────────────────────┘
+┌─────────────────────────┐
+│   EventBob              │  Core event processor
+│   (io.eventbob.core)    │
+└─────────────────────────┘
             ↓
-┌────────────────────────┐
-│ service_macroliths      │  Which logical deployment units exist
-│  - macrolith_name          │
-│  - instance_id         │
-│  - endpoint            │
-│  - status, heartbeat   │
-└────────────────────────┘
+┌─────────────────────────┐
+│   EventHandler          │  Handlers loaded from JARs
+│   (via HandlerLoader)   │  + HealthcheckHandler
+└─────────────────────────┘
 ```
-
-### Deployment States
-
-- **BLUE**: New version being rolled out (0% → 100% traffic)
-- **GREEN**: Stable production version (100% traffic)
-- **GRAY**: Rolled back or superseded (0% traffic, available for emergency rollback)
-- **RETIRED**: Decommissioned (JARs unloaded, instances terminated)
 
 ## Usage
 
-### 1. Annotate Event Handlers
+### 1. Configure Handler JAR Paths
+
+Provide a bean specifying which handler JARs to load:
 
 ```java
-@EventHandlerCapability(
-  service = "messages",
-  capability = "READ",
-  capabilityVersion = 1,
-  operations = {"GET /content", "GET /bulk-content"}
-)
-public class GetMessageContentHandler implements EventHandler {
-  @Override
-  public Event handle(Event event) {
-    // Implementation
+@Configuration
+public class MyAppConfig {
+  @Bean
+  public List<Path> handlerJarPaths() {
+    return List.of(
+      Path.of("/app/handlers/echo-handler.jar"),
+      Path.of("/app/handlers/lower-handler.jar")
+    );
   }
 }
 ```
 
-### 2. Bootstrap Macrolith-Service
+### 2. Implement Event Handlers
+
+Create handlers that implement `EventHandler` and annotate with `@Capability`:
 
 ```java
-MacroServiceBootstrap bootstrap = new MacroServiceBootstrap(scanner, registrar, repository);
-
-BootstrapConfig config = new BootstrapConfig(
-  "messages-readonly-macrolith",     // Macrolith name
-  "pod-1",                        // Instance ID (unique per instance)
-  List.of(Path.of("/app/messages-service.jar")),
-  "1.2.3",                        // JAR version
-  DeploymentState.BLUE,           // Initial state (blue = new rollout)
-  null,                           // Deployment version (null = auto-increment)
-  null,                           // Endpoint (null = auto-detect)
-  8080                            // Port
-);
-
-BootstrapResult result = bootstrap.bootstrap(config);
-
-System.out.println("Registered " + result.capabilities().size() + " capabilities");
+@Capability("echo")
+public class EchoHandler implements EventHandler {
+  @Override
+  public Event handle(Event event, Dispatcher dispatcher) {
+    return event.toBuilder()
+        .payload(event.getPayload())
+        .build();
+  }
+}
 ```
 
-### 3. Query Registry
+### 3. Send Events via HTTP
 
-```java
-// Find all capabilities for a service
-List<CapabilityRecord> capabilities = repository.findAllCapabilitiesByRoutingKey(
-  "messages",
-  Capability.READ,
-  "GET",
-  "/content"
-);
-
-// Detect conflicts
-List<CapabilityConflict> conflicts = repository.detectConflicts();
+```bash
+curl -X POST http://localhost:8080/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "client",
+    "target": "echo",
+    "payload": "hello world"
+  }'
 ```
 
-## Concurrent Registration
-
-Multiple instances of the same macrolith can register simultaneously. The system handles this via:
-
-1. **Idempotent operations**: `INSERT ... ON CONFLICT DO NOTHING`
-2. **Capability sharing**: Multiple instances link to the same capability record
-3. **Instance isolation**: Each instance gets its own UUID
-
-### Example: Scaling from 1 → 3 instances
-
+Response:
+```json
+{
+  "source": "client",
+  "target": "echo",
+  "payload": "hello world"
+}
 ```
-T=0: pod-1 starts → registers capabilities (id=cap-123)
-T=0: pod-2 starts → tries to register same capabilities
-       → ON CONFLICT: uses existing cap-123
-       → creates new instance record
-       → links instance to cap-123
-T=0: pod-3 starts → same as pod-2
-
-Result:
-  - 1 capability record (cap-123)
-  - 3 instance records (pod-1, pod-2, pod-3)
-  - 3 links in macrolith_capabilities
-```
-
-## Conflict Detection
-
-The system detects when the same routing key has different capability versions:
-
-```java
-// v1 deployed
-@EventHandlerCapability(
-  service = "messages",
-  capability = "READ",
-  capabilityVersion = 1,
-  operations = {"GET /content"}
-)
-
-// v2 deployed (same routing key, different version)
-@EventHandlerCapability(
-  service = "messages",
-  capability = "READ",
-  capabilityVersion = 2,  // Conflict!
-  operations = {"GET /content"}
-)
-```
-
-**Result**: Registration of v2 is skipped, warning emitted.
-
-**Why?** This indicates a misconfiguration - two active deployments with incompatible capability contracts.
-
-## Database Schema
-
-See `src/main/resources/db/migration/V001__create_service_registry.sql`
-
-Key tables:
-- `service_capabilities`: Capability definitions
-- `service_macroliths`: Physical instances
-- `macrolith_capabilities`: Join table
-- `deployment_history`: Audit log
-- `registry_version`: Cache invalidation (bumped on every change)
 
 ## Testing
 
-Integration tests use Testcontainers for real PostgreSQL:
+Run tests:
 
 ```bash
 mvn test
 ```
 
-Tests cover:
-- Capability registration
-- Multiple instances with same capabilities
-- Conflict detection
-- Idempotent re-registration
-- Registry version bumping
-
-## Why "Spring" Not "Registry"?
+## Why "Spring" Not "REST" or "HTTP"?
 
 This module is named `io.eventbob.spring` because:
-1. It's the **Spring implementation** of EventBob (Bridge Pattern)
-2. It provides ALL infrastructure capabilities, not just registry
+1. It's the **Spring Boot implementation** of EventBob (Bridge Pattern)
+2. It uses Spring's framework capabilities (DI, REST, JSON serialization)
 3. It enables peer implementations like `io.eventbob.dropwizard` to coexist
 4. The domain abstraction lives in `io.eventbob.core`
 
+## Components
+
+### EventBobConfig
+Spring configuration that:
+- Loads handlers from JAR files via `HandlerLoader`
+- Registers handlers with `EventBob` by capability name
+- Provides hard-coded `HealthcheckHandler` for system monitoring
+
+### EventController
+Spring REST controller that:
+- Exposes `POST /events` endpoint
+- Accepts `EventDto` JSON in request body
+- Routes events through `EventBob` to appropriate handlers
+- Returns result as `EventDto` JSON
+- Non-blocking via `CompletableFuture`
+
+### EventDto
+Data Transfer Object that:
+- Maps between JSON and domain `Event` objects
+- Keeps Jackson annotations out of domain model
+- Provides plain JavaBean getters/setters for Spring MVC
+
+### HealthcheckHandler
+Built-in handler that:
+- Responds to "healthcheck" capability
+- Returns `payload=true` to indicate service is alive
+- Used by monitoring systems and load balancers
+
 ## Dependencies
 
-- **Spring Boot**: JDBC, transactions, dependency injection
-- **PostgreSQL**: Persistence layer
-- **Flyway**: Schema migrations
-- **ClassGraph**: JAR scanning for capabilities
-- **Testcontainers**: Integration testing
+- **Spring Boot**: REST endpoints, dependency injection, JSON serialization
+- **EventBob Core**: Domain model and event processing logic
 
 ## Alternative Implementations
 
 The Bridge Pattern enables multiple framework implementations:
-- `io.eventbob.spring` (this module) - Spring Boot + Spring JDBC
-- `io.eventbob.dropwizard` (planned) - Dropwizard + JDBI
-- `io.eventbob.micronaut` (future) - Micronaut + Micronaut Data
+- `io.eventbob.spring` (this module) - Spring Boot + Spring MVC
+- `io.eventbob.dropwizard` (planned) - Dropwizard + Jersey
+- `io.eventbob.micronaut` (future) - Micronaut
 
-All implementations provide the same capabilities, just using different frameworks.
-
-## Future Enhancements
-
-- [ ] Health checking (mark instances unhealthy)
-- [ ] Heartbeat monitoring (detect stale instances)
-- [ ] Automatic cleanup (retire gray versions after grace period)
-- [ ] Metrics (registration failures, conflicts, version distribution)
-- [ ] In-memory cache (version-based invalidation)
+All implementations provide HTTP REST endpoints for event processing using different frameworks.

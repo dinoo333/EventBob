@@ -1,241 +1,114 @@
 # EventBob Spring Implementation - Domain Specification
 
 **Module:** io.eventbob.spring (Bridge Implementation)
-**Implements:** Service capability registration and discovery infrastructure
+**Implements:** HTTP REST adapter for EventBob
 **Type:** Infrastructure layer (Bridge Pattern)
-**Serves:** Event Routing Core Domain
-**Last Updated:** 2026-02-12
+**Serves:** Event processing via HTTP
+**Last Updated:** 2026-02-16
 
 ## Implementation Overview
 
-This module is the **Spring Boot implementation of EventBob infrastructure**. It provides concrete implementations of the ports and interfaces defined in `io.eventbob.core`.
+This module is the **Spring Boot implementation of EventBob infrastructure**. It provides an HTTP REST interface for event processing.
 
-**Key Point:** This is NOT a bounded context itself. The bounded contexts are defined in `io.eventbob.core`. This module is one IMPLEMENTATION of the infrastructure that supports those contexts.
+**Key Point:** This is NOT a bounded context itself. The bounded contexts are defined in `io.eventbob.core`. This module is one IMPLEMENTATION of an HTTP adapter for the core event processing system.
 
 ## What This Implementation Provides
 
 This Spring-based implementation is responsible for:
-- **Discovering and registering service capabilities** via JAR scanning
-- **Tracking macroliths (logical deployment units)** and their endpoints
-- **Persisting capability metadata** to PostgreSQL
-- **Answering:** "Which endpoints can handle this capability operation?"
+- **Exposing HTTP REST endpoint** for event processing
+- **JSON serialization** for Event messages
+- **Spring configuration** that loads handlers from JARs and wires EventBob
+- **Built-in healthcheck handler** for system monitoring
 
-**Not responsible for:** Event routing logic (that's in core domain), request handling (that's in adapters), business domain operations, deployment orchestration (that's infrastructure concern).
-
-## Bounded Context Relationships
-
-```
-┌─────────────────────────────┐
-│   Event Routing Context     │  Core Domain
-│   (io.eventbob.core)        │
-│                             │
-│  Defines ports:             │
-│  - EventHandler             │
-│  - EventHandlerCapability   │
-│  - Capability enum          │
-│  - CapabilityResolver       │
-│  - Endpoint                 │
-└─────────────────────────────┘
-              ↑
-              │ implements ports
-              │ (Anti-Corruption Layer)
-              │
-┌─────────────────────────────┐
-│  Spring Implementation      │  Infrastructure (Bridge)
-│  (io.eventbob.spring)       │
-│                             │
-│  Implements:                │
-│  - CapabilityResolver port  │
-│    (future)                 │
-│                             │
-│  Provides:                  │
-│  - JAR scanning             │
-│  - Capability registration  │
-│  - Macrolith tracking           │
-│  - Spring JDBC persistence  │
-└─────────────────────────────┘
-
-Note: Future implementations (io.eventbob.dropwizard, etc.) will provide
-the same capabilities using different frameworks.
-```
+**Not responsible for:** Event routing logic (that's in core domain), handler implementation (handlers are in separate JARs), handler discovery/registration system (not implemented).
 
 ## Domain Concepts
 
-### Macrolith-Service (Macro)
+### Event (from core)
 
-A **macrolith** is a logical deployment unit that bundles multiple service JARs into a single runtime process.
+An **Event** is a message containing source, target, parameters, metadata, and payload.
 
-**Properties:**
-- Has a unique name (e.g., "messages-service")
-- Contains one or more service JARs (e.g., messages.jar, notifications.jar)
-- Has a logical endpoint (typically the macrolith name itself, resolved by infrastructure)
-- Owns a set of declared capabilities (discovered via JAR scanning)
-
-**Relationship to services:**
-- A macrolith contains services (composition)
-- A service declares capabilities (annotation)
-- A capability is an operation (method + path + capability type)
-
-**Infrastructure Resolution:**
-Macroliths are resolved to physical addresses by infrastructure (DNS, service mesh, load balancers). The registry stores logical macrolith names (e.g., "messages-service"), not physical URLs.
-
-### Capability
-
-A **capability** is a typed operation that a service can perform.
-
-**Type hierarchy (from Event Routing context):**
-- `READ` - Query operations (GET, safe and idempotent)
-- `WRITE` - Mutation operations (POST, PUT, DELETE)
-- `ADMIN` - Administrative operations (privileged access)
-
-**Capability operation identity:**
-```
-routingKey = serviceName:capability:method:pathPattern
-Example: "messages:READ:GET:/content"
+**Structure (from io.eventbob.core):**
+```java
+public class Event {
+    private final String source;
+    private final String target;
+    private final Map<String, Object> parameters;
+    private final Map<String, Object> metadata;
+    private final Object payload;
+}
 ```
 
-**Versioning:**
-Each capability has a `capabilityVersion` (integer). When the contract changes (request/response schema, semantics), the version increments.
+**JSON representation (via EventDto):**
+```json
+{
+  "source": "client",
+  "target": "echo",
+  "parameters": {},
+  "metadata": {},
+  "payload": "hello world"
+}
+```
 
-### Capability Descriptor
+### EventHandler (from core)
 
-An **in-memory representation** of a discovered capability operation.
+An **EventHandler** processes events for a specific capability.
 
-**Source:** Parsed from `@EventHandlerCapability` annotation during JAR scanning
+**Interface (from io.eventbob.core):**
+```java
+public interface EventHandler {
+    Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException;
+}
+```
 
-**Contents:**
-- Service name (which service provides this)
-- Capability type (READ/WRITE/ADMIN)
-- Capability version (contract version)
-- HTTP method (GET, POST, etc.)
-- Path pattern (routing template)
-- Handler class name (which Java class implements this)
+**Capability annotation:**
+```java
+@Capability("echo")
+public class EchoHandler implements EventHandler { ... }
+```
 
-**Lifecycle:** Created during bootstrap → validated → persisted → discarded (ephemeral)
+### EventDto (REST layer)
 
-### Endpoint
+An **EventDto** is a Data Transfer Object for JSON serialization of Event messages.
 
-A **logical address** where events can be routed.
+**Purpose:** Keeps Jackson annotations and REST concerns out of domain Event class.
 
-**Model:** Simple string wrapper (e.g., "messages-service")
-
-**Resolution:** Infrastructure (DNS, service mesh, load balancers) resolves logical names to physical addresses. The routing layer doesn't need to know about IPs, ports, or protocols.
-
-**Transport-agnostic:** Endpoint names don't specify protocol (http, grpc, etc.). Infrastructure handles protocol selection.
-
-## Domain Invariants
-
-### 1. Idempotent Registration
-
-**Rule:** Registering the same macrolith with the same capabilities multiple times has no side effects.
-
-**Implementation:**
-- Macrolith registration uses `ON CONFLICT (macrolith_name) DO UPDATE` (last-wins)
-- Capability registration uses `ON CONFLICT DO NOTHING` (first-wins)
-- Link registration uses `ON CONFLICT DO NOTHING` (first-wins)
-- Re-registration of macroliths updates endpoint but does not create duplicates
-- Re-registration of capabilities reuses existing capability UUID
-
-**Rationale:** Macroliths may restart and re-register (endpoints may change). Capabilities are immutable once registered (first registration wins). The registry must not accumulate garbage.
-
-### 2. Unique Capability Routing Key
-
-**Rule:** Each capability operation is uniquely identified by its routing key (service + capability + method + path + version).
-
-**Enforcement:** PostgreSQL unique constraint on `(service_name, capability, capability_version, method, path_pattern)`
-
-**Rationale:** Routing keys must be unambiguous. Two different capabilities cannot have the same routing key.
-
-### 3. Macro-Capability Linkage
-
-**Rule:** A macrolith can only be linked to capabilities it actually provides.
-
-**Validation:** During registration, only capabilities discovered via JAR scanning for that macrolith are linked to that macrolith.
-
-**Enforcement:** Application logic in `CapabilityRegistrar` (not database constraint, since capabilities can outlive macroliths).
+**Mapping:** EventController translates EventDto ↔ Event at the REST boundary.
 
 ## Ubiquitous Language
 
 | Term | Meaning | Example |
 |------|---------|---------|
-| **Macro** or **Macro-service** | Logical deployment unit bundling multiple service JARs | "messages-service" |
-| **Endpoint** | Logical address where events can be routed | "messages-service" (resolved by infrastructure) |
-| **Capability** | Typed operation a service can perform | READ, WRITE, ADMIN |
-| **Routing Key** | Unique identifier for a capability operation | "messages:READ:GET:/content" |
-| **Capability Version** | Contract version for an operation | v1, v2, v3 |
-| **Capability Descriptor** | Discovered handler metadata | Parsed from @EventHandlerCapability |
-| **JAR Scanning** | Capability discovery mechanism | ClassGraph reads annotations |
-| **Bootstrap** | Macro-service startup process | Scan JARs → register → start router |
-
-## Domain Services
-
-### CapabilityScanner
-
-**Responsibility:** Discover capability metadata from JARs.
-
-**Operation:** Reads `@EventHandlerCapability` annotations via ClassGraph, parses into `CapabilityDescriptor` objects.
-
-**Domain logic:**
-- Validates annotation fields (service name, capability, operations)
-- Parses operation strings (format: "METHOD /path")
-- Creates one descriptor per operation
-
-**Not responsible for:** Persistence (that's the repository's job).
-
-### CapabilityRegistrar
-
-**Responsibility:** Register macroliths and their capabilities.
-
-**Operations:**
-- `registerMacrolith(request)` - Persist macrolith and link to capabilities
-
-**Domain logic:**
-- Idempotent registration (updates on conflict)
-- Transactional (macrolith + capabilities + linkage)
-
-**Not responsible for:** JAR scanning (that's the scanner's job), routing (that's core's job), deployment orchestration (that's infrastructure's job).
-
-### MacroServiceBootstrap
-
-**Responsibility:** Bootstrap a macro-service on startup.
-
-**Operations:**
-- Scan JARs for capabilities
-- Register macrolith and capabilities
-- Return bootstrap result
-
-**Domain logic:**
-- Validates that JARs contain at least one capability
-- Defaults endpoint to macrolith name if not specified
+| **Event** | Message containing source, target, payload | `{ "target": "echo", "payload": "hello" }` |
+| **EventHandler** | Processes events for a specific capability | `EchoHandler`, `LowerHandler` |
+| **Capability** | Name identifying what an EventHandler does | "echo", "lower", "healthcheck" |
+| **EventDto** | JSON representation of Event for HTTP | Serialized Event for REST API |
+| **Microlith** | Runtime that bundles multiple handlers | Single process with echo + lower handlers |
 
 ## Context Boundary Contract
 
-**Imports from Event Routing Context:**
-- `io.eventbob.core.endpointresolution.Capability` (enum)
-- `io.eventbob.core.endpointresolution.Endpoint` (value object)
-- `io.eventbob.core.eventrouting.EventHandler` (interface)
-- `io.eventbob.core.eventrouting.Capability` (annotation)
+**Imports from Event Processing Context:**
+- `io.eventbob.core.Event` (domain model)
+- `io.eventbob.core.EventHandler` (handler interface)
+- `io.eventbob.core.EventBob` (event processor)
+- `io.eventbob.core.Capability` (annotation)
+- `io.eventbob.core.Dispatcher` (handler coordination)
 
-**Exports to Event Routing Context (future):**
-- Implementation of `CapabilityResolver` port (not yet implemented)
-- Returns `List<Endpoint>` for a given routing key
+**Exports to HTTP clients:**
+- REST API: `POST /events` accepting/returning EventDto JSON
+- Healthcheck: `POST /events` with `target=healthcheck` returns `payload=true`
 
 **Boundary crossing rules:**
-- Registry can import from core (outer depends on inner)
-- Core cannot import from registry (inner never depends on outer)
-
-## Future Evolution
-
-**Planned extensions:**
-1. Implement `CapabilityResolver` port (provide endpoint resolution to core)
-2. Health-based routing (exclude unhealthy macroliths from resolution)
-3. Multi-region registry (capability replication across data centers)
+- Spring module can import from core (outer depends on inner)
+- Core cannot import from Spring module (inner never depends on outer)
+- EventDto translates at REST boundary (Event never exposed directly via HTTP)
 
 ## Summary
 
-The Service Registry is a **supporting subdomain** that enables capability-based routing by:
-1. Discovering capabilities via JAR scanning
-2. Registering macroliths and linking them to capabilities
-3. Providing endpoint resolution to the Event Routing core
+The Spring implementation is a **REST adapter** that enables HTTP-based event processing:
+1. Exposes REST endpoint for event submission
+2. Loads handlers from JAR files
+3. Routes events through EventBob to appropriate handlers
+4. Returns handler results as JSON
 
-**Key insight:** The registry owns the "what and where" (which macroliths provide which capabilities), not the "how" (routing logic) or deployment orchestration (infrastructure concern). It translates capability declarations into routing decisions for the core domain.
+**Key insight:** This module owns the "HTTP interface" (REST endpoint, JSON serialization), not the "event processing logic" (that's in core). It translates HTTP requests into domain Events, invokes core processing, and translates domain Events back to HTTP responses.

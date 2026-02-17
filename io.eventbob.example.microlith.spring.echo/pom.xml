@@ -12,11 +12,11 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>io.eventbob.example.macrolith.echo</artifactId>
+    <artifactId>io.eventbob.example.microlith.spring.echo</artifactId>
     <packaging>jar</packaging>
 
-    <name>EventBob Echo Macrolith</name>
-    <description>Concrete macrolith application with echo and lower capabilities</description>
+    <name>EventBob Echo Microlith (Spring)</name>
+    <description>Spring Boot microlith application with echo and lower capabilities</description>
 
     <dependencies>
         <!-- Spring Boot infrastructure -->
@@ -79,7 +79,7 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <mainClass>io.eventbob.example.macrolith.echo.EchoMacrolithApplication</mainClass>
+                    <mainClass>io.eventbob.example.microlith.spring.echo.EchoApplication</mainClass>
                 </configuration>
             </plugin>
         </plugins>
