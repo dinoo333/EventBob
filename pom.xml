@@ -14,6 +14,7 @@
         <module>io.eventbob.spring</module>
         <module>io.eventbob.example.lower</module>
         <module>io.eventbob.example.echo</module>
+        <module>io.eventbob.example.macrolith.echo</module>
     </modules>
 
     <properties>

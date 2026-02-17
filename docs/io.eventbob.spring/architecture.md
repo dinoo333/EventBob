@@ -2,70 +2,73 @@
 
 ## Module Purpose
 
-Spring Boot infrastructure layer providing server deployment, handler wiring, and transport adapters for EventBob.
+Spring Boot infrastructure library providing server deployment, handler wiring, and transport adapters for EventBob.
+
+**This is a library module.** It has no main class, no hard-coded configuration. Concrete macrolith applications import this library and provide configuration via constructor injection.
 
 ---
 
 ## Layer Assignment
 
-This module is in the **infrastructure layer** (outermost):
+This module is in the **infrastructure library layer** (middle):
 - Depends on `io.eventbob.core` (domain abstractions)
 - Provides framework-specific implementations
+- Imported by macrolith application modules (outermost layer)
 - Core never depends on this module (dependency inversion)
 
 **Dependency direction:**
 ```
-io.eventbob.spring → io.eventbob.core
-(infrastructure)    (domain)
+io.eventbob.example.macrolith.*  →  io.eventbob.spring  →  io.eventbob.core
+(applications)                       (infrastructure)      (domain)
 ```
 
 ---
 
 ## Key Components
 
-### Application Bootstrap
-
-**EventBobApplication:**
-- Spring Boot application entry point
-- Server startup and lifecycle management
-- Launches embedded servlet container (Tomcat/Jetty)
-
 ### Configuration
 
 **EventBobConfig:**
 - Spring dependency injection wiring
 - EventBob instance configuration with handlers
-- JAR path configuration (currently hard-coded)
+- **Constructor injection:** Accepts `List<Path> handlerJarPaths` from application layer
 
-**HandlerLoader dependency:**
+**Constructor injection pattern:**
 ```java
 @Configuration
 public class EventBobConfig {
-    private Map<String, EventHandler> loadHandlersFromJars() throws IOException {
-        HandlerLoader loader = HandlerLoader.jarLoader();  // Factory method
-        
-        List<Path> jarPaths = List.of(
-            Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar"),
-            Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar")
-        );
-        
-        return loader.loadHandlers(jarPaths);
-    }
+  private final List<Path> handlerJarPaths;
+
+  /**
+   * Create EventBob configuration with specified handler JAR paths.
+   * Applications must provide a List<Path> handlerJarPaths bean.
+   */
+  public EventBobConfig(List<Path> handlerJarPaths) {
+    this.handlerJarPaths = handlerJarPaths;
+  }
+
+  @Bean
+  public EventBob eventBob(HealthcheckHandler healthcheckHandler) {
+    EventBob.Builder builder = EventBob.builder();
+    builder.handler("healthcheck", healthcheckHandler);
     
-    @Bean
-    public EventBob eventBob(HealthcheckHandler healthcheckHandler) {
-        EventBob.Builder builder = EventBob.builder();
-        builder.handler("healthcheck", healthcheckHandler);
-        
-        Map<String, EventHandler> handlers = loadHandlersFromJars();
-        handlers.forEach(builder::handler);
-        
-        return builder.build();
-    }
+    Map<String, EventHandler> handlers = loadHandlersFromJars();
+    handlers.forEach(builder::handler);
+    
+    return builder.build();
+  }
+
+  private Map<String, EventHandler> loadHandlersFromJars() throws IOException {
+    HandlerLoader loader = HandlerLoader.jarLoader();
+    return loader.loadHandlers(handlerJarPaths);
+  }
 }
 ```
 
-**Key insight:** Spring depends only on `HandlerLoader` interface (public API), never on `JarHandlerLoader` (package-private implementation). This is Dependency Inversion Principle in action.
+**Key design decision:** JAR paths are injected via constructor, not hard-coded. This makes the library reusable across different macrolith deployments. Applications decide which handlers to load.
+
+**HandlerLoader dependency:**
+Spring depends only on `HandlerLoader` interface (public API), never on `JarHandlerLoader` (package-private implementation). This is Dependency Inversion Principle in action.
 
 ### Handlers
 
@@ -79,9 +82,31 @@ public class EventBobConfig {
 
 ### Transport Adapters
 
-**Status:** Work-in-progress
+**EventController:**
+- REST endpoint adapter
+- Bridges HTTP requests to Event model
+- Routes to EventBob
+- Converts Event responses back to HTTP
 
-**Future:** HTTP adapter will bridge HTTP requests to Event model, route to EventBob, and convert Event responses back to HTTP.
+**EventDto:**
+- HTTP/Event boundary DTO
+- Isolates HTTP representation from domain Event
+- Prevents framework types from leaking into core
+
+**Pattern:**
+```java
+@RestController
+public class EventController {
+    private final EventBob eventBob;
+    
+    @PostMapping("/events")
+    public ResponseEntity<EventDto> handleEvent(@RequestBody EventDto request) {
+        Event event = request.toEvent();
+        CompletableFuture<Event> response = eventBob.processEvent(event);
+        return ResponseEntity.ok(EventDto.fromEvent(response.get()));
+    }
+}
+```
 
 ---
 
@@ -111,16 +136,54 @@ Spring Config → HandlerLoader (interface) ← JarHandlerLoader (hidden)
 
 The factory method pattern (`HandlerLoader.jarLoader()`) hides the concrete implementation from Spring. Spring never imports JarHandlerLoader.
 
-### JAR Path Configuration
+### Library Module Pattern
 
-**Current state:** Hard-coded paths to example JARs
+This module is a **library**, not an application:
+- No `main()` method
+- No hard-coded configuration
+- No Spring Boot Application class
+- No `spring-boot-maven-plugin` in pom.xml
 
-**Future evolution:**
-- Configuration file (application.yml) with JAR paths
-- JAR directory scanning
-- Dynamic JAR reloading (hot deployment)
+Applications import this library and provide:
+- Spring Boot main class (`@SpringBootApplication`)
+- Configuration beans (`List<Path> handlerJarPaths`)
+- Deployment properties (`application.properties`)
 
-**Restraint:** Configuration mechanism deferred until requirements clarify. Hard-coded paths work for current testing needs.
+---
+
+## How Applications Use This Library
+
+**Step 1:** Application depends on io.eventbob.spring in pom.xml:
+
+```xml
+<dependency>
+    <groupId>io.eventbob</groupId>
+    <artifactId>io.eventbob.spring</artifactId>
+    <version>${project.version}</version>
+</dependency>
+```
+
+**Step 2:** Application creates Spring Boot main class and imports EventBobConfig:
+
+```java
+@SpringBootApplication
+@Import(EventBobConfig.class)
+public class MyMacrolithApplication {
+  public static void main(String[] args) {
+    SpringApplication.run(MyMacrolithApplication.class, args);
+  }
+  
+  @Bean
+  public List<Path> handlerJarPaths() {
+    return List.of(
+        Paths.get("handler1.jar"),
+        Paths.get("handler2.jar")
+    );
+  }
+}
+```
+
+**Step 3:** Application runs. EventBobConfig receives injected JAR paths, loads handlers, wires EventBob.
 
 ---
 
@@ -131,12 +194,14 @@ The factory method pattern (`HandlerLoader.jarLoader()`) hides the concrete impl
 - Pass Spring types into core (e.g., passing ApplicationContext to EventHandler)
 - Put domain logic in Spring handlers (domain logic belongs in core)
 - Make core depend on Spring (dependency must point inward)
+- Hard-code configuration in this library (applications provide configuration)
 
 **✅ Correct patterns:**
 - Use `HandlerLoader.jarLoader()` factory method
 - Convert Spring types to core types at the boundary (e.g., HTTP request → Event)
 - Keep Spring handlers thin (adapters only, no business logic)
 - Spring depends on core interfaces, core defines contracts
+- Accept configuration via constructor injection
 
 ---
 
@@ -161,7 +226,7 @@ The factory method pattern (`HandlerLoader.jarLoader()`) hides the concrete impl
 
 **Unit tests:**
 - Test handlers in isolation (mock Event inputs, assert Event outputs)
-- Test configuration (verify beans are wired correctly)
+- Test configuration (verify beans are wired correctly with injected paths)
 
 **Integration tests:**
 - Test full EventBob wiring (load JARs, route events, verify responses)
@@ -174,52 +239,41 @@ The factory method pattern (`HandlerLoader.jarLoader()`) hides the concrete impl
 
 ---
 
-## Future Evolution
+## Architectural Invariants (Must Never Violate)
 
-### When HTTP Adapter Is Added
+1. **Dependency direction** - Spring → Core, never Core → Spring
+2. **No framework leakage** - Spring types never cross into core
+3. **Thin adapters** - No business logic in infrastructure layer
+4. **Public API only** - Spring depends only on core's public interfaces
+5. **Library status** - No main class, no hard-coded configuration
 
-**HttpEventAdapter:**
-- Converts HttpServletRequest → Event
-- Routes Event through EventBob
-- Converts Event response → HttpServletResponse
+**Enforcement:** ArchUnit tests verify these invariants on every build.
 
-**Boundary conversion:**
-```java
-@RestController
-public class HttpEventAdapter {
-    private final EventBob eventBob;
-    
-    @PostMapping("/{capability}")
-    public ResponseEntity<Map<String, Object>> handleEvent(
-        @PathVariable String capability,
-        @RequestBody Map<String, Object> body,
-        HttpServletRequest request
-    ) {
-        Event event = buildEventFromHttp(capability, body, request);
-        CompletableFuture<Event> response = eventBob.processEvent(event);
-        return buildHttpResponseFromEvent(response.get());
-    }
-}
-```
+---
 
-### When Configuration Becomes Dynamic
+## Evolution Path
 
-**application.yml:**
-```yaml
-eventbob:
-  handlers:
-    jarDirectory: /opt/eventbob/handlers
-    scanInterval: 30s
-```
+### Current State
+- Constructor injection for JAR paths
+- REST endpoint adapter (POST /events)
+- HealthcheckHandler built-in
+- Library module (no main class)
 
-**EventBobConfig evolution:**
-- Read JAR paths from configuration
-- Watch directory for new JARs
-- Reload handlers dynamically
+### Future Enhancements
 
-### When Multiple Transports Are Needed
+**Configuration evolution:**
+- Accept configuration object (not just List<Path>)
+- Configuration object may include:
+  - JAR paths
+  - Remote capability routing (which capabilities are remote)
+  - Service discovery endpoints
+  - Metrics/observability settings
 
-**Module structure:**
+**Transport evolution:**
+- Additional adapters (gRPC, WebSocket, message queues)
+- All adapters follow same pattern: protocol → Event → EventBob → Event → protocol
+
+**Module structure (when multiple transports exist):**
 ```
 io.eventbob.spring
 ├── config/
@@ -236,22 +290,13 @@ Each adapter converts its protocol to Event, routes through EventBob, converts E
 
 ---
 
-## Architectural Invariants (Must Never Violate)
+## Example Macrolith Applications
 
-1. **Dependency direction** - Spring → Core, never Core → Spring
-2. **No framework leakage** - Spring types never cross into core
-3. **Thin adapters** - No business logic in infrastructure layer
-4. **Public API only** - Spring depends only on core's public interfaces
+See `io.eventbob.example.macrolith.echo` for a working example of how to use this library.
 
-**Enforcement:** ArchUnit tests verify these invariants on every build.
+Other macrolith applications follow the same pattern:
+- Import io.eventbob.spring
+- Provide @Bean for List<Path> handlerJarPaths
+- Create Spring Boot main class
 
----
-
-## Work-in-Progress
-
-This module is under active development. Components and structure are evolving as requirements clarify.
-
-**Next steps:**
-- Implement HTTP adapter (convert HTTP ↔ Event)
-- Make JAR paths configurable (application.yml)
-- Add observability (metrics, tracing)
+The library handles the rest.

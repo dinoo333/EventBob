@@ -10,7 +10,8 @@ Implementation patterns and conventions for EventBob modules. For domain underst
 
 See module-level implementation_notes.md files for detailed patterns:
 - `io.eventbob.core/implementation_notes.md` - Core framework patterns, JAR loading implementation
-- `io.eventbob.spring/implementation_notes.md` - Spring Boot integration patterns (work-in-progress)
+- `io.eventbob.spring/implementation_notes.md` - Spring Boot library integration patterns
+- `io.eventbob.example.macrolith.echo/implementation_notes.md` - Example macrolith application demonstrating Spring Boot + JAR loading
 
 ---
 
@@ -70,6 +71,6 @@ EventBob follows a **simple, focused design:**
 
 ## Open Questions
 
-1. **Transport layer:** How do external clients invoke capabilities? HTTP adapter? gRPC? Message queue listener? (Work-in-progress)
-2. **JAR path configuration:** Hard-coded paths in EventBobConfig should be externalized to application.properties (technical debt)
-3. **Error handling:** Standardized error event format? Custom error handlers per transport? (To be determined)
+1. **Transport layer:** How do external clients invoke capabilities? HTTP adapter? gRPC? Message queue listener? (Partially resolved: HTTP REST adapter implemented in io.eventbob.spring)
+2. **Error handling:** Standardized error event format? Custom error handlers per transport? (To be determined)
+3. **Remote invocation:** How do macroliths invoke capabilities on other macroliths? (To be determined)
