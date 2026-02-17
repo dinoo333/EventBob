@@ -16,9 +16,9 @@ When too many microservices make excessive network calls to each other:
 ### How It Works
 
 1. EventBob server loads multiple JARs containing microservice code
-2. Exposes them as a single monolithic service (the macrolith)
-3. Inside the macrolith: services communicate in-process (fast, no network overhead)
-4. Outside: the macrolith acts like a regular microservice (discovered via service registry)
+2. Microservices integrate with EventBob by implementing EventHandler interface(s) annotated with @Capability
+3. EventBob discovers handlers and routes events to them in-process (fast, no network overhead)
+4. Outside: the macrolith exposes all bundled capabilities as a single monolithic service
 
 **Key insight:** EventBob is still a server acting as a microservice. Just bigger and less chatty.
 
@@ -37,18 +37,37 @@ A deployment unit containing multiple microservice capabilities bundled together
 
 **Example:** The "messages-service" macrolith bundles message-reading, message-writing, and message-deletion capabilities into one process.
 
+### Microservice
+Code packaged in a JAR that integrates with EventBob by implementing EventHandler interface(s). Each microservice is independently developed and versioned.
+
+**Deployment:** Microservices are packaged as JARs. EventBob loads these JARs at startup using isolated class loaders.
+
+**Integration contract:** Microservices must implement at least one EventHandler annotated with @Capability to be discoverable.
+
+### EventHandler
+The integration contract that microservices must implement to integrate with EventBob. Single method: `Event handle(Event, Dispatcher)`.
+
+**Discovery:** EventBob discovers EventHandler implementations via @Capability annotations.
+
+**Example:** A message-reading microservice provides `MessagesReadHandler implements EventHandler`.
+
 ### Capability
-A routable operation that a service provides. Each capability is identified by:
-- Service name (e.g., "messages")
-- Capability type (READ, WRITE, ADMIN)
-- Version (e.g., 1, 2)
-- HTTP method (GET, POST, DELETE)
-- Path pattern (e.g., "/content", "/content/{id}")
+What a microservice provides. A capability is declared via the @Capability annotation on an EventHandler implementation.
 
-**Example:** The READ capability for messages might be `GET /content` handled by `MessagesReadHandler.class`.
+**Current annotation structure:**
+- value: String - the capability identifier (e.g., "get-message-content", "create-message")
+- version: int - version of the capability contract (default: 1)
 
-### Service
-An independently versioned component loaded via JAR that provides one or more capabilities.
+**Declaration:** Microservices declare capabilities via @Capability annotation on EventHandler implementations.
+
+**Example:** A message-reading capability might be declared as `@Capability(value="get-message-content", version=1)` or simply `@Capability("get-message-content")` (version defaults to 1).
+
+**Note:** Future enhancements may add routing metadata (HTTP method, path, service grouping) to the annotation. Current implementation uses simple string identifiers.
+
+### HandlerLoader
+The mechanism for loading microservices from JARs. Discovers EventHandler implementations and registers them with EventBob.
+
+**Implementation detail:** Uses isolated class loaders to load each JAR separately, preventing classpath conflicts.
 
 ### Event
 A transport envelope for in-process communication between handlers within a macrolith. **Not a domain event.** An Event contains routing information (source, target), parameters, metadata, and an optional payload. Events are immutable messages passed between EventHandler implementations via the EventBob.
@@ -98,10 +117,12 @@ The core defines domain concepts and port interfaces:
 
 **Domain Concepts:**
 - Macrolith: Logical deployment unit bundling multiple capabilities
-- Capability: Routable operation identified by (service, capability, version, method, path)
-- Endpoint: Logical service URL where a macrolith can be reached
+- Microservice: Code in a JAR that integrates with EventBob via EventHandler implementations
+- EventHandler: Integration contract that microservices implement (single method: `handle(Event, Dispatcher)`)
+- Capability: Identifier (string + version) declared via @Capability annotation
+- HandlerLoader: Mechanism for loading microservices from JARs
 - Event: Message envelope for in-process communication (source, target, parameters, metadata, payload)
-- EventHandler: Handler interface with single `handle(Event, Dispatcher)` method
+- Endpoint: Logical service URL where a macrolith can be reached
 - Dispatcher: Facility provided to EventHandlers for sending events to other micro-services in the same or other macroliths
 
 **Ports (interfaces for infrastructure to implement):**
@@ -115,7 +136,11 @@ The core defines domain concepts and port interfaces:
 
 ### Infrastructure Implementations
 
-**io.eventbob.spring** provides Spring Boot integration for EventBob server deployment. Implementation is work-in-progress and evolving.
+**io.eventbob.spring** provides Spring Boot integration for EventBob server deployment. Responsible for:
+- Loading microservices from JAR files at startup
+- Discovering EventHandler implementations via @Capability annotations
+- Registering handlers with EventBob router
+- Exposing macrolith capabilities via HTTP (work-in-progress)
 
 **Bridge Pattern:** Infrastructure depends on core, never reverse. Spring types stay in infrastructure layer, core types stay in core.
 
@@ -127,8 +152,9 @@ The core defines domain concepts and port interfaces:
 
 1. **Macroliths are logical, not physical** — Registry tracks macrolith names, not instance IPs
 2. **Infrastructure resolves endpoints** — Endpoint is a logical URL; infrastructure translates to physical addresses
-3. **Capabilities are unique** — Each routing key (service + capability + version + method + path) must be unique
+3. **Capabilities are unique** — Each capability identifier (value + version) must be unique within a macrolith
 4. **Idempotent registration** — Macroliths can re-register safely (e.g., pod restarts, rolling updates across instances)
+5. **Microservices must implement EventHandler** — Integration with EventBob requires one or more EventHandler implementations (each with a unique @Capability value) annotated with @Capability
 
 ---
 

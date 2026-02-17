@@ -1,4 +1,4 @@
-package io.eventbob.core.eventrouting;
+package io.eventbob.core;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

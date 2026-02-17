@@ -1,4 +1,4 @@
-package io.eventbob.core.eventrouting;
+package io.eventbob.core;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;

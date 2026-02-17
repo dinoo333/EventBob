@@ -1,7 +1,7 @@
 package io.eventbob.core;
 
-import io.eventbob.core.eventrouting.Event;
-import io.eventbob.core.eventrouting.HandlerNotFoundException;
+import io.eventbob.core.Event;
+import io.eventbob.core.HandlerNotFoundException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

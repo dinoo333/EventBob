@@ -1,4 +1,4 @@
-package io.eventbob.core.eventrouting;
+package io.eventbob.core;
 
 import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;

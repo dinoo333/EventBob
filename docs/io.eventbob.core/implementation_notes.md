@@ -106,10 +106,74 @@ Simple stubs over mocks - verify behavior via recorded state.
 
 **No technical debt in this module.**
 
+## JAR Loading Implementation
+
+### HandlerLoader Interface
+
+**Applied in:** HandlerLoader, JarHandlerLoader
+
+**Pattern:**
+- Public interface with single method: `Map<String, EventHandler> loadHandlers(Collection<Path> jarPaths)`
+- Factory method: `HandlerLoader.jarLoader()` returns default implementation
+- Returns map of capability names to instantiated handlers
+- Throws `IOException` for unreadable JARs, `IllegalStateException` for duplicate capabilities or instantiation failures
+
+### JarHandlerLoader Implementation
+
+**Location:** `io.eventbob.core` package (package-private visibility)
+
+**URLClassLoader Strategy:**
+- Creates one URLClassLoader per JAR file
+- Parent class loader: `EventHandler.class.getClassLoader()` (ensures core types are shared)
+- Each JAR is isolated from other JARs (prevents dependency version conflicts)
+- URLClassLoader is closed via try-with-resources (resource management)
+
+**Discovery Phase:**
+- Scans each JAR using `JarFile.stream()` to iterate entries
+- Filters for `.class` files (excludes directories)
+- Converts entry names to fully qualified class names: `com/example/Handler.class` → `com.example.Handler`
+- Loads each class using the JAR's URLClassLoader
+- Checks if class implements `EventHandler` and is annotated with `@Capability`
+- Extracts capability name from annotation
+- Detects duplicate capability names across all JARs (fails fast)
+- Returns `List<DiscoveredHandler>` (internal data structure)
+
+**Instantiation Phase:**
+- Iterates discovered handlers
+- Instantiates each via reflection: `handlerClass.getDeclaredConstructor().newInstance()`
+- Requires no-args constructor (fails if missing)
+- Returns `Map<String, EventHandler>` ready for registration
+
+**Error Handling:**
+- Missing JAR files: throws `IOException` immediately (fail fast)
+- Malformed JAR files: catches `ZipException`, logs warning, skips JAR (resilient)
+- Class loading failures: logs at FINE level, skips class (expected for non-handler classes)
+- Instantiation failures: throws `IllegalStateException` with cause (fail fast)
+- Duplicate capabilities: throws `IllegalStateException` immediately (fail fast)
+
+**DiscoveredHandler Record:**
+- Internal data structure (package-private)
+- Fields: `String capability`, `Class<? extends EventHandler> handlerClass`
+- Compact constructor validates non-null, non-blank capability
+- Used to separate discovery phase from instantiation phase
+
+**Design Decisions:**
+- Package-private visibility: Implementation detail, not part of public API
+- Factory method pattern: `HandlerLoader.jarLoader()` decouples interface from concrete class
+- Two-phase design: Discovery separated from instantiation (easier to test, clearer logic flow)
+- Reflection vs ServiceLoader: Reflection chosen for simplicity and explicit control over class loading
+
+**Known Limitations:**
+- Requires no-args constructor (no dependency injection within handlers)
+- Working directory dependency (JAR paths must be relative to cwd or absolute)
+- No hot-reloading (handlers loaded once at bootstrap)
+
 ## Performance Characteristics
 
 **Router:** O(1) map lookup by target string
 **Event construction:** Defensive copy of metadata/parameters maps
 **Memory:** Each Event allocates immutable copies of collections
+**JAR loading:** One-time bootstrap cost (not performance-critical)
+**Class loading:** Per-JAR URLClassLoader (acceptable overhead for isolation)
 
 **Not optimized for high throughput yet.** Baseline implementation prioritizes correctness and clarity.

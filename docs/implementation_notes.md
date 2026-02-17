@@ -9,7 +9,7 @@ Implementation patterns and conventions for EventBob modules. For domain underst
 ## Module-Specific Notes
 
 See module-level implementation_notes.md files for detailed patterns:
-- `io.eventbob.core/implementation_notes.md` - Core framework patterns
+- `io.eventbob.core/implementation_notes.md` - Core framework patterns, JAR loading implementation
 - `io.eventbob.spring/implementation_notes.md` - Spring Boot integration patterns (work-in-progress)
 
 ---
@@ -48,8 +48,28 @@ EventBob follows a **simple, focused design:**
 
 ---
 
+## JAR Loading Implementation
+
+**Resolved approach:** Dynamic JAR scanning using URLClassLoader (one per JAR).
+
+**Pattern:**
+- `HandlerLoader` interface with factory method `HandlerLoader.jarLoader()`
+- `JarHandlerLoader` implementation (package-private)
+- Separate URLClassLoader per JAR, parent = `EventHandler.class.getClassLoader()`
+- Reflection-based handler instantiation via no-args constructor
+- Malformed JARs logged as warnings and skipped (ZipException detection)
+- Resource management: URLClassLoader in try-with-resources
+
+**Trade-offs:**
+- Isolation: Each JAR gets its own class loader (prevents dependency conflicts)
+- Shared core: EventHandler and core classes visible to all handlers via parent delegation
+- Reflection cost: Instantiation uses `getDeclaredConstructor().newInstance()` (acceptable for bootstrap)
+- Working directory dependency: JAR paths currently relative to project root (needs externalization)
+
+---
+
 ## Open Questions
 
 1. **Transport layer:** How do external clients invoke capabilities? HTTP adapter? gRPC? Message queue listener? (Work-in-progress)
-2. **Capability discovery:** Dynamic JAR scanning vs static configuration? (To be determined)
+2. **JAR path configuration:** Hard-coded paths in EventBobConfig should be externalized to application.properties (technical debt)
 3. **Error handling:** Standardized error event format? Custom error handlers per transport? (To be determined)

@@ -1,10 +1,10 @@
 package io.eventbob.example.lower;
 
-import io.eventbob.core.eventrouting.Capability;
-import io.eventbob.core.eventrouting.Dispatcher;
-import io.eventbob.core.eventrouting.Event;
-import io.eventbob.core.eventrouting.EventHandler;
-import io.eventbob.core.eventrouting.EventHandlingException;
+import io.eventbob.core.Capability;
+import io.eventbob.core.Dispatcher;
+import io.eventbob.core.Event;
+import io.eventbob.core.EventHandler;
+import io.eventbob.core.EventHandlingException;
 
 @Capability("lower")
 public class LowerHandler implements EventHandler {

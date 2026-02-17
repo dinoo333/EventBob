@@ -1,8 +1,8 @@
 package io.eventbob.example.echo;
 
-import io.eventbob.core.eventrouting.Dispatcher;
-import io.eventbob.core.eventrouting.Event;
-import io.eventbob.core.eventrouting.EventHandlingException;
+import io.eventbob.core.Dispatcher;
+import io.eventbob.core.Event;
+import io.eventbob.core.EventHandlingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

@@ -6,30 +6,155 @@ EventBob bundles multiple microservices into a macrolith to solve the chatty-app
 
 ---
 
-## Bridge Pattern: Core + Implementations
+## Two-Layer Architecture
 
-EventBob separates abstraction from implementation:
+EventBob follows Clean Architecture with two layers:
 
 ```
 ┌─────────────────────────────────┐
-│   io.eventbob.core              │  Abstraction (domain model + ports)
-│   - Domain concepts             │
-│   - Port interfaces             │
-│   - No framework dependencies   │
+│   io.eventbob.core              │  Domain Layer (Innermost)
+│   - Domain model (Event)        │
+│   - Abstractions (EventHandler) │
+│   - JAR loading (HandlerLoader) │
+│   - Routing (EventBob)          │
+│   - NO framework dependencies   │
 └─────────────────────────────────┘
               ↑ implements
-      ┌───────┴────────┐
-      │                │
-┌─────────────┐  ┌─────────────┐
-│ io.eventbob │  │ io.eventbob │  Implementations (framework-specific)
-│   .spring   │  │ .dropwizard │
-│             │  │   (future)  │
-│ Spring Boot │  │ Dropwizard  │
-│ Spring JDBC │  │ JDBI        │
-└─────────────┘  └─────────────┘
+              │
+┌─────────────────────────────────┐
+│   io.eventbob.spring            │  Infrastructure Layer (Outermost)
+│   - Spring Boot wiring          │
+│   - HTTP transport adapters     │
+│   - Concrete handlers           │
+│   - Framework-specific code     │
+└─────────────────────────────────┘
 ```
 
-**Dependency Rule:** Implementations depend on core, never reverse.
+**Dependency Rule:** Infrastructure depends on core. Core depends on nothing (except JDK).
+
+**Why loader is in core:** JAR loading and ClassLoader manipulation are Java domain concepts, not infrastructure concerns. The HandlerLoader abstraction belongs in the domain because it defines WHAT handler loading means. The implementation (JarHandlerLoader) uses only JDK classes (URLClassLoader, JarFile) - no framework dependencies.
+
+---
+
+## Dependency Inversion at the Boundary
+
+Core defines the HandlerLoader interface with a factory method:
+
+```java
+public interface HandlerLoader {
+    Map<String, EventHandler> loadHandlers(Collection<Path> jarPaths) throws IOException;
+    
+    static HandlerLoader jarLoader() {
+        return new JarHandlerLoader();  // package-private implementation
+    }
+}
+```
+
+Spring infrastructure depends only on the interface:
+
+```java
+@Configuration
+public class EventBobConfig {
+    private Map<String, EventHandler> loadHandlersFromJars() throws IOException {
+        HandlerLoader loader = HandlerLoader.jarLoader();  // Factory method
+        return loader.loadHandlers(jarPaths);
+    }
+}
+```
+
+**Key insight:** Spring never sees JarHandlerLoader (package-private). It depends only on the public HandlerLoader interface. This is Dependency Inversion Principle in practice.
+
+---
+
+## Package Structure
+
+### Core (Flat Structure)
+
+All classes live in `io.eventbob.core` - no subpackages:
+
+```
+io.eventbob.core
+├── Event                          (public - domain model)
+├── EventHandler                   (public - core abstraction)
+├── EventBob                       (public - router)
+├── Dispatcher                     (public - dispatch contract)
+├── HandlerLoader                  (public - loading abstraction)
+├── JarHandlerLoader              (package-private - loading implementation)
+├── DiscoveredHandler             (package-private - internal structure)
+├── DefaultErrorEvent             (package-private - error handling)
+├── Capability                     (public - annotation)
+├── Capabilities                   (public - vocabulary)
+├── EventHandlingException         (public - checked exception)
+└── HandlerNotFoundException       (public - runtime exception)
+```
+
+**Visibility boundaries:**
+- **Public API:** Event, EventHandler, EventBob, Dispatcher, HandlerLoader, Capability, Capabilities, exceptions
+- **Package-private internals:** JarHandlerLoader, DiscoveredHandler, DefaultErrorEvent
+
+**Rationale for flat structure:** Core is small and cohesive. All classes operate at the same abstraction level (domain primitives and routing). Subpackages would add complexity without clarity gains.
+
+### Spring (Adapter Structure)
+
+```
+io.eventbob.spring
+├── EventBobConfig                 (Spring configuration)
+├── EventBobApplication            (Spring Boot entry point)
+└── handlers/
+    └── HealthcheckHandler         (Built-in system handler)
+```
+
+---
+
+## JAR Loading Strategy
+
+HandlerLoader uses isolated class loaders:
+
+**Pattern:** One URLClassLoader per JAR
+- **Parent delegation:** Core EventBob classes shared across all handlers
+- **JAR isolation:** Each JAR's dependencies isolated from others
+- **Discovery:** Scans for classes annotated with @Capability that implement EventHandler
+- **Instantiation:** Reflective invocation of no-args constructor
+
+**Error handling:**
+- Missing JAR: IOException (fail fast)
+- Malformed JAR: Warning logged, JAR skipped
+- Duplicate capabilities: IllegalStateException (fail fast)
+- Class loading failures: Fine-level log, class skipped
+- Instantiation failures: IllegalStateException (fail fast)
+
+---
+
+## Component Diagram
+
+```
+┌─────────────────────────────────────────┐
+│  Macrolith Process                      │
+│  (e.g., "messages-service")             │
+│                                         │
+│  ┌────────────────────────────────┐    │
+│  │  EventBob Server (Spring)      │    │
+│  │                                │    │
+│  │  [HandlerLoader]               │    │
+│  │     ↓                          │    │
+│  │  messages-read.jar             │    │
+│  │  messages-write.jar            │    │
+│  │  messages-delete.jar           │    │
+│  │     ↓                          │    │
+│  │  [EventBob Router]             │    │
+│  │     → in-process calls         │    │
+│  └────────────────────────────────┘    │
+│                                         │
+│  Exposed as: "messages-service"        │
+└─────────────────────────────────────────┘
+             ↑
+             │ (service discovery)
+             │
+     ┌───────────────┐
+     │  Registry     │
+     │  (PostgreSQL) │
+     └───────────────┘
+```
 
 ---
 
@@ -55,9 +180,9 @@ Infrastructure resolves "http://messages-service" → physical instances:
 ### Three-Table Model
 
 ```sql
-service_macroliths        -- Which macroliths exist
-service_capabilities  -- Which capabilities exist
-macrolith_capabilities    -- Which macroliths provide which capabilities (many-to-many)
+service_macroliths       -- Which macroliths exist
+service_capabilities     -- Which capabilities exist
+macrolith_capabilities   -- Which macroliths provide which capabilities (many-to-many)
 ```
 
 **Rationale:**
@@ -67,87 +192,69 @@ macrolith_capabilities    -- Which macroliths provide which capabilities (many-t
 
 ---
 
-## Component Diagram
+## Dependency Rules (Enforced by ArchUnit)
 
-```
-┌─────────────────────────────────────────┐
-│  Macrolith Process                      │
-│  (e.g., "messages-service")             │
-│                                         │
-│  ┌────────────────────────────────┐    │
-│  │  EventBob Server               │    │
-│  │                                │    │
-│  │  [JAR Loader]                  │    │
-│  │     ↓                          │    │
-│  │  messages-read.jar             │    │
-│  │  messages-write.jar            │    │
-│  │  messages-delete.jar           │    │
-│  │     ↓                          │    │
-│  │  [Router] → in-process calls   │    │
-│  └────────────────────────────────┘    │
-│                                         │
-│  Exposed as: "messages-service"        │
-└─────────────────────────────────────────┘
-             ↑
-             │ (service discovery)
-             │
-     ┌───────────────┐
-     │  Registry     │
-     │  (PostgreSQL) │
-     └───────────────┘
-```
+**✅ Allowed:**
+- `io.eventbob.spring` → `io.eventbob.core`
+- Infrastructure → Domain
 
----
+**❌ Forbidden:**
+- `io.eventbob.core` → `io.eventbob.spring`
+- Domain → Infrastructure
+- Core importing Spring types
 
-## io.eventbob.spring Implementation
-
-### What It Provides
-
-Spring Boot integration layer for EventBob server deployment. Provides transport adapters and infrastructure wiring.
-
-**Implementation is work-in-progress** and evolving as requirements clarify.
-
+**Enforcement mechanism:** ArchUnit tests in both modules verify dependency direction.
 
 ---
 
 ## Open Questions About Architecture
 
-Things I don't understand yet:
+Things that need clarification:
 
 1. **How does routing work?** What mechanism routes requests inside the macrolith?
-2. **JAR isolation?** Are services loaded in isolated classloaders?
-3. **Transport layer?** User said "not just HTTP"—what transports are supported?
-4. **Event model?** Is this event-driven? What are events?
-5. **Bootstrap sequence?** What's the startup flow from JARs to running macrolith?
-6. **Discovery mechanism?** How does macrolith register with registry on startup?
+2. **Transport layer?** User said "not just HTTP"—what transports are supported?
+3. **Event model?** Is this event-driven? What are events vs. requests?
+4. **Bootstrap sequence?** What's the startup flow from JARs to running macrolith?
+5. **Discovery mechanism?** How does macrolith register with registry on startup?
 
 ---
 
 ## What Belongs Where
 
 ### Core (`io.eventbob.core`)
-- Domain concepts (Capability, Endpoint)
-- Port interfaces (CapabilityResolver)
-- **NO framework dependencies**
+- Domain concepts (Event, EventHandler, Capability)
+- Routing abstractions (Dispatcher)
+- JAR loading abstractions and implementation (HandlerLoader, JarHandlerLoader)
+- **NO framework dependencies** (Spring, Dropwizard, etc.)
 
-### Implementations (`io.eventbob.spring`)
-- JAR scanning, persistence, bootstrap
+### Spring (`io.eventbob.spring`)
+- JAR scanning configuration (paths, patterns)
+- Persistence, bootstrap
 - Framework-specific code (Spring JDBC, PostgreSQL)
-- Implements core ports
+- HTTP transport adapters (future)
 
 ### Rule
-Core defines WHAT (domain model). Implementations define HOW (with specific frameworks).
+Core defines WHAT (domain model + abstractions). Infrastructure defines HOW (with specific frameworks) and WHEN (configuration, startup).
 
 ---
 
-## Dependency Rules (Enforced by ArchUnit)
+## Future: Additional Infrastructure Implementations
 
-**✅ Allowed:**
-- Implementations → Core
-- Adapters → Core
-- Services → Core
+The two-layer architecture allows for alternative infrastructure implementations:
 
-**❌ Forbidden:**
-- Core → Implementations
-- Core → Adapters
-- Implementation A → Implementation B
+```
+                io.eventbob.core
+                       ↑
+         ┌─────────────┼─────────────┐
+         │             │             │
+io.eventbob.spring  io.eventbob.dropwizard  io.eventbob.quarkus
+   (current)           (future)              (future)
+```
+
+Each infrastructure module:
+- Depends on core
+- Never depends on other infrastructure modules
+- Provides framework-specific wiring
+- Uses HandlerLoader.jarLoader() factory method
+
+Core remains unchanged regardless of infrastructure choice.

@@ -1,7 +1,7 @@
 package io.eventbob.spring;
 
-import io.eventbob.core.eventrouting.Event;
-import io.eventbob.core.eventrouting.EventBob;
+import io.eventbob.core.Event;
+import io.eventbob.core.EventBob;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;

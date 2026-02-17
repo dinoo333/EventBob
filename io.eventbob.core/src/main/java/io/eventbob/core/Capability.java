@@ -1,4 +1,4 @@
-package io.eventbob.core.eventrouting;
+package io.eventbob.core;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -16,7 +16,7 @@ import java.lang.annotation.Target;
  * })
  * public class MessageContentResource implements EventHandler {
  *   @Override
- *   public Event handle(Event event) {
+ *   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
  *     // Implementation
  *   }
  * }

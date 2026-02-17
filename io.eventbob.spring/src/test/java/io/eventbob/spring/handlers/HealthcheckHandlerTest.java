@@ -1,7 +1,7 @@
 package io.eventbob.spring.handlers;
 
-import io.eventbob.core.eventrouting.Event;
-import io.eventbob.core.eventrouting.EventHandlingException;
+import io.eventbob.core.Event;
+import io.eventbob.core.EventHandlingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
