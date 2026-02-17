@@ -1,4 +1,4 @@
-package io.eventbob.example.macrolith.echo;
+package io.eventbob.example.microlith.spring.echo;
 
 import io.eventbob.spring.EventBobConfig;
 import org.springframework.boot.SpringApplication;
@@ -12,25 +12,25 @@ import java.nio.file.Paths;
 import java.util.List;
 
 /**
- * Echo macrolith application.
+ * Echo microlith application.
  *
- * <p>This concrete macrolith provides echo and lower capabilities by loading
+ * <p>This Spring Boot microlith provides echo and lower capabilities by loading
  * their handler JARs. It demonstrates how to configure a specific EventBob
  * deployment by specifying which handlers to load.
  */
 @SpringBootApplication
-@ComponentScan(basePackages = {"io.eventbob.spring", "io.eventbob.example.macrolith.echo"})
+@ComponentScan(basePackages = {"io.eventbob.spring", "io.eventbob.example.microlith.spring.echo"})
 @Import(EventBobConfig.class)
-public class EchoMacrolithApplication {
+public class EchoApplication {
 
   public static void main(String[] args) {
-    SpringApplication.run(EchoMacrolithApplication.class, args);
+    SpringApplication.run(EchoApplication.class, args);
   }
 
   /**
    * Provide the list of handler JAR paths to load.
    *
-   * <p>This configuration specifies which capabilities this macrolith supports.
+   * <p>This configuration specifies which capabilities this microlith supports.
    * JAR paths are relative to the project root directory.
    *
    * @return list of paths to handler JAR files

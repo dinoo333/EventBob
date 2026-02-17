@@ -77,7 +77,7 @@ This module is a **library** that provides Spring Boot integration for EventBob.
 
 **JAR Path Configuration:**
 - Applications provide `@Bean public List<Path> handlerJarPaths()` method
-- Example (from io.eventbob.example.macrolith.echo):
+- Example (from io.eventbob.example.microlith.spring.echo):
   ```java
   @Bean
   public List<Path> handlerJarPaths() {
@@ -141,4 +141,4 @@ To use this library in a Spring Boot application:
 4. EventBob instance is automatically available as Spring bean
 5. POST events to `/events` endpoint
 
-See `io.eventbob.example.macrolith.echo` for complete example.
+See `io.eventbob.example.microlith.spring.echo` for complete example.

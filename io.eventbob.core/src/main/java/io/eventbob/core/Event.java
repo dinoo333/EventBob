@@ -7,7 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Transport envelope for in-process communication between handlers within a macrolith.
+ * Transport envelope for in-process communication between handlers within a microlith.
  *
  * <p><b>Not a domain event.</b> Event is a request/response wrapper containing routing
  * information (source, target), parameters, metadata, and an optional payload.

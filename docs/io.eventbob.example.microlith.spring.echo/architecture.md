@@ -1,8 +1,8 @@
-# io.eventbob.example.macrolith.echo Architecture
+# io.eventbob.example.microlith.spring.echo Architecture
 
 ## Module Purpose
 
-Concrete EventBob macrolith application that provides "echo" and "lower" capabilities. This is a demonstration macrolith showing how to configure and deploy EventBob with specific handlers.
+Concrete EventBob microlith application that provides "echo" and "lower" capabilities. This is a demonstration microlith showing how to configure and deploy EventBob with specific handlers.
 
 **This is an application module.** It has a Spring Boot main class, concrete JAR path configuration, and deployment properties. It is built on top of the `io.eventbob.spring` library.
 
@@ -18,7 +18,7 @@ This module is in the **application layer** (outermost):
 
 **Dependency direction:**
 ```
-io.eventbob.example.macrolith.echo  →  io.eventbob.spring  →  io.eventbob.core
+io.eventbob.example.microlith.spring.echo  →  io.eventbob.spring  →  io.eventbob.core
 (application - concrete)            (infrastructure)          (domain)
 ```
 
@@ -28,8 +28,8 @@ io.eventbob.example.macrolith.echo  →  io.eventbob.spring  →  io.eventbob.co
 
 ### Spring Boot Application
 
-**EchoMacrolithApplication:**
-- Entry point for the macrolith server
+**EchoApplication:**
+- Entry point for the microlith server
 - Imports `EventBobConfig` from io.eventbob.spring library
 - Provides configuration via `@Bean` methods
 - Starts embedded web server (Tomcat)
@@ -37,12 +37,12 @@ io.eventbob.example.macrolith.echo  →  io.eventbob.spring  →  io.eventbob.co
 **Structure:**
 ```java
 @SpringBootApplication
-@ComponentScan(basePackages = {"io.eventbob.spring", "io.eventbob.example.macrolith.echo"})
+@ComponentScan(basePackages = {"io.eventbob.spring", "io.eventbob.example.microlith.spring.echo"})
 @Import(EventBobConfig.class)
-public class EchoMacrolithApplication {
+public class EchoApplication {
 
   public static void main(String[] args) {
-    SpringApplication.run(EchoMacrolithApplication.class, args);
+    SpringApplication.run(EchoApplication.class, args);
   }
 
   @Bean
@@ -81,7 +81,7 @@ public class EchoMacrolithApplication {
 
 ## Capabilities Provided
 
-This macrolith provides two capabilities loaded from JAR files:
+This microlith provides two capabilities loaded from JAR files:
 
 ### "echo" capability
 - **Handler JAR:** io.eventbob.example.echo
@@ -105,7 +105,7 @@ This macrolith provides two capabilities loaded from JAR files:
 ### Startup Sequence
 
 1. **Spring Boot initializes**
-   - EchoMacrolithApplication.main() invoked
+   - EchoApplication.main() invoked
    - SpringApplication.run() starts Spring context
 
 2. **Spring DI wiring**
@@ -163,7 +163,7 @@ This macrolith provides two capabilities loaded from JAR files:
 
 **Dependency graph:**
 ```
-io.eventbob.example.macrolith.echo
+io.eventbob.example.microlith.spring.echo
   ├─ io.eventbob.spring (compile)
   │   └─ io.eventbob.core (compile)
   ├─ io.eventbob.example.echo (runtime)
@@ -174,8 +174,8 @@ io.eventbob.example.macrolith.echo
 
 **Why runtime scope for handler JARs:**
 - Handler JARs are loaded dynamically at runtime via URLClassLoader
-- Maven runtime scope ensures JARs are built before macrolith runs
-- Prevents compile-time coupling between macrolith and handler implementations
+- Maven runtime scope ensures JARs are built before microlith runs
+- Prevents compile-time coupling between microlith and handler implementations
 
 ---
 
@@ -195,10 +195,10 @@ The library (`io.eventbob.spring`) remains generic. This module makes it specifi
 This module represents a single deployable unit:
 - One JAR file (built with spring-boot-maven-plugin)
 - One process when running
-- One logical service (echo-macrolith)
+- One logical service (echo-microlith)
 - Multiple capabilities bundled together
 
-This is the "macrolith" concept: multiple capabilities in one deployment.
+This is the "microlith" concept: multiple capabilities in one deployment.
 
 ### Evolution Path
 
@@ -225,7 +225,7 @@ This is the "macrolith" concept: multiple capabilities in one deployment.
 **Build and run:**
 ```bash
 mvn clean package
-cd io.eventbob.example.macrolith.echo
+cd io.eventbob.example.microlith.spring.echo
 mvn spring-boot:run
 ```
 
@@ -261,17 +261,17 @@ curl -X POST http://localhost:8080/events \
 
 ---
 
-## Relationship to Other Macrolith Applications
+## Relationship to Other Microlith Applications
 
-This is the **first** concrete macrolith application. More will follow:
+This is the **first** concrete microlith application. More will follow:
 
-**Future macrolith applications:**
-- `io.eventbob.example.macrolith.upper` - Loads "upper" handler
-- `io.eventbob.example.macrolith.messages` - Loads read/write/delete handlers
-- Custom macroliths per deployment scenario
+**Future microlith applications:**
+- `io.eventbob.example.microlith.upper` - Loads "upper" handler
+- `io.eventbob.example.microlith.messages` - Loads read/write/delete handlers
+- Custom microliths per deployment scenario
 
 **Pattern:**
-Every macrolith application follows the same structure:
+Every microlith application follows the same structure:
 1. Depends on `io.eventbob.spring` library
 2. Has Spring Boot main class with `@SpringBootApplication`
 3. Imports `EventBobConfig`
@@ -286,7 +286,7 @@ The library handles the rest. The application just configures.
 
 1. **Depends on library, not core directly** - Let the library manage core interactions
 2. **Configuration only** - No domain logic, no infrastructure logic in this module
-3. **One macrolith, multiple capabilities** - Bundle related handlers together
+3. **One microlith, multiple capabilities** - Bundle related handlers together
 4. **Reuses library completely** - No duplication of EventBobConfig or transport adapters
 
 **What NOT to put here:**
@@ -302,7 +302,7 @@ The library handles the rest. The application just configures.
 1. **JAR path resolution:** Should paths be relative, absolute, or classpath resources?
 2. **Configuration format:** Hard-coded @Bean, application.properties, or external config file?
 3. **Deployment model:** Single instance, replicated, or container orchestration?
-4. **Service registration:** How does this macrolith register with service discovery?
+4. **Service registration:** How does this microlith register with service discovery?
 5. **Monitoring:** What metrics and health checks should be exposed?
 
 These questions will be answered as requirements clarify. Current hard-coded approach works for development and testing.

@@ -275,4 +275,4 @@ class DefaultErrorEvent {
 4. **Immutable domain objects** - Event is immutable, builders create new instances
 5. **Flat package structure** - All classes in `io.eventbob.core`, no subpackages
 
-**Enforcement:** ArchUnit tests verify these invariants on every build.
+**Enforcement:** Maven module boundaries provide structural enforcement. Automated tests planned.

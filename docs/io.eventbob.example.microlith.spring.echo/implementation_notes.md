@@ -1,18 +1,18 @@
-# io.eventbob.example.macrolith.echo Implementation Notes
+# io.eventbob.example.microlith.spring.echo Implementation Notes
 
 ## Module Purpose
 
-This module demonstrates the **macrolith pattern** - a concrete Spring Boot application that imports the `io.eventbob.spring` library and specifies which handler JARs to load. This represents a single deployable EventBob server with a specific set of capabilities.
+This module demonstrates the **microlith pattern** - a concrete Spring Boot application that imports the `io.eventbob.spring` library and specifies which handler JARs to load. This represents a single deployable EventBob server with a specific set of capabilities.
 
-## What is a Macrolith?
+## What is a Microlith?
 
-A **macrolith** is a concrete EventBob deployment that:
+A **microlith** is a concrete EventBob deployment that:
 - Runs as a standalone Spring Boot application
 - Loads a specific set of handler JARs (capabilities)
 - Exposes those capabilities via HTTP REST endpoints
-- Can invoke capabilities on other macroliths (future enhancement)
+- Can invoke capabilities on other microliths (future enhancement)
 
-Unlike a monolith (where all code is compiled together) or microservices (where each capability is a separate deployment), a macrolith:
+Unlike a monolith (where all code is compiled together) or microservices (where each capability is a separate deployment), a microlith:
 - Dynamically loads capabilities from JARs at startup
 - Provides coarse-grained deployability (multiple related capabilities per server)
 - Enables flexible capability distribution across servers
@@ -22,7 +22,7 @@ Unlike a monolith (where all code is compiled together) or microservices (where 
 
 ### Application Pattern
 
-**Applied in:** EchoMacrolithApplication
+**Applied in:** EchoApplication
 
 **Pattern:**
 - Standard `@SpringBootApplication` entry point with `main()` method
@@ -33,11 +33,11 @@ Unlike a monolith (where all code is compiled together) or microservices (where 
 **Structure:**
 ```java
 @SpringBootApplication
-@ComponentScan(basePackages = {"io.eventbob.spring", "io.eventbob.example.macrolith.echo"})
+@ComponentScan(basePackages = {"io.eventbob.spring", "io.eventbob.example.microlith.spring.echo"})
 @Import(EventBobConfig.class)
-public class EchoMacrolithApplication {
+public class EchoApplication {
   public static void main(String[] args) {
-    SpringApplication.run(EchoMacrolithApplication.class, args);
+    SpringApplication.run(EchoApplication.class, args);
   }
 
   @Bean
@@ -57,16 +57,16 @@ public class EchoMacrolithApplication {
 **Pattern:**
 - Concrete application provides `List<Path>` bean
 - Spring injects this bean into `EventBobConfig` constructor
-- JAR paths are specific to this macrolith's capabilities
+- JAR paths are specific to this microlith's capabilities
 - Paths are relative to project root (development convenience)
 
-**This macrolith's capabilities:**
+**This microlith's capabilities:**
 - `echo` - Returns input text unchanged
 - `lower` - Converts input text to lowercase
 
 **Design decisions:**
 - Relative paths for development (no need to reconfigure for local testing)
-- Explicit list (clear documentation of what this macrolith provides)
+- Explicit list (clear documentation of what this microlith provides)
 - Compile-time dependencies on handler modules (ensures JARs are built before application starts)
 
 **Future evolution:**
@@ -85,7 +85,7 @@ public class EchoMacrolithApplication {
 
 **Dependency structure:**
 ```
-io.eventbob.example.macrolith.echo (application)
+io.eventbob.example.microlith.spring.echo (application)
   ├─ io.eventbob.spring (compile) - Spring Boot integration library
   ├─ io.eventbob.example.echo (runtime) - Handler JAR dependency
   └─ io.eventbob.example.lower (runtime) - Handler JAR dependency
@@ -114,7 +114,7 @@ server.port=8080
 
 **Future enhancements:**
 - Externalize handler JAR paths
-- Remote macrolith endpoint configuration
+- Remote microlith endpoint configuration
 - Logging configuration
 
 ## Testing
@@ -154,7 +154,7 @@ curl -X POST http://localhost:8080/events \
 - Minimal configuration-only application
 - No business logic (all logic in handlers and library)
 - Clean baseline (no technical debt)
-- Single responsibility: wire up echo+lower macrolith
+- Single responsibility: wire up echo+lower microlith
 
 ### Design Principles Applied
 
@@ -165,17 +165,17 @@ curl -X POST http://localhost:8080/events \
 
 **Clarity:**
 - Bean method name `handlerJarPaths()` clearly states what it provides
-- List of paths explicitly documents this macrolith's capabilities
+- List of paths explicitly documents this microlith's capabilities
 - No hidden configuration or magic conventions
 
 **Restraint:**
-- Only one class (EchoMacrolithApplication)
+- Only one class (EchoApplication)
 - Only one bean method (handlerJarPaths)
 - No unnecessary abstractions or patterns
 
 ## Usage Pattern
 
-To create a similar macrolith with different capabilities:
+To create a similar microlith with different capabilities:
 
 1. Copy this module structure
 2. Rename package and application class
@@ -183,7 +183,7 @@ To create a similar macrolith with different capabilities:
 4. Update `pom.xml` dependencies to reference different handler modules
 5. Optionally change server port in application.properties
 
-Example - creating a macrolith with `upper` capability:
+Example - creating a microlith with `upper` capability:
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -197,7 +197,7 @@ public List<Path> handlerJarPaths() {
 
 ### Remote Invocation (Planned)
 
-When implementing remote macrolith-to-macrolith invocation:
+When implementing remote microlith-to-microlith invocation:
 
 1. Add `Map<String, URI>` bean for remote capability routing:
    ```java
@@ -210,7 +210,7 @@ When implementing remote macrolith-to-macrolith invocation:
    ```
 
 2. Library will use this to route:
-   - If capability in `remoteCapabilities` map → HTTP POST to remote macrolith
+   - If capability in `remoteCapabilities` map → HTTP POST to remote microlith
    - Else → load from local JAR and execute locally
 
 3. This enables distributed capability deployment while maintaining single EventBob API
@@ -236,4 +236,4 @@ Requires:
 
 3. **No capability validation:** Application starts successfully even if handler JARs are missing or malformed (fails at first invocation). Should fail fast at startup.
 
-4. **Single server port:** Cannot run multiple macroliths on same machine without port configuration. Need better defaults or automatic port assignment for testing.
+4. **Single server port:** Cannot run multiple microliths on same machine without port configuration. Need better defaults or automatic port assignment for testing.

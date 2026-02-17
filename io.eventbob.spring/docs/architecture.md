@@ -2,314 +2,151 @@
 
 **Module:** io.eventbob.spring
 **Type:** Infrastructure Implementation (Bridge Pattern)
-**Last Updated:** 2026-02-12
+**Last Updated:** 2026-02-16
 
 ## Bridge Pattern: Core + Spring
 
-This module is the **Spring Boot implementation of EventBob**. It implements the complete macrolith-service infrastructure using Spring Framework.
+This module is the **Spring Boot implementation of EventBob**. It provides a REST HTTP adapter for event processing.
 
 **Architecture Pattern:** Bridge Pattern
-- **Abstraction:** `io.eventbob.core` (domain model, ports, interfaces)
-- **Implementation:** `io.eventbob.spring` (Spring-based concrete implementation)
+- **Abstraction:** `io.eventbob.core` (domain model, EventBob, EventHandler)
+- **Implementation:** `io.eventbob.spring` (Spring Boot REST adapter)
 
-This is NOT "a registry using Spring." This is **EventBob implemented using Spring**.
+This is NOT a standalone system. This is **EventBob with a Spring Boot HTTP interface**.
 
 ## Module Purpose
 
-This Spring implementation provides the EventBob macrolith-service infrastructure:
-- **Capability-based service discovery** (JAR scanning, registration)
-- **Macrolith tracking** (logical deployment units and their endpoints)
-- **Macro-service bootstrap** (startup orchestration, configuration)
-- **Persistence layer** (Spring JDBC with PostgreSQL)
-
-It sits at the infrastructure layer, implementing ports defined by `io.eventbob.core`.
+This Spring implementation provides the HTTP REST adapter for EventBob:
+- **HTTP endpoint** for event processing (POST /events)
+- **JSON serialization** for Event messages
+- **Spring configuration** to wire EventBob with handlers loaded from JARs
+- **Built-in healthcheck handler** for monitoring
 
 **Responsibilities:**
-- Scan JARs for `@EventHandlerCapability` annotations
-- Persist capability metadata to PostgreSQL
-- Track macroliths (logical deployment units) and their endpoints
-- (Future) Implement `CapabilityResolver` port for endpoint resolution
+- Expose REST endpoint for event processing
+- Serialize/deserialize Event messages to/from JSON
+- Load handlers from JAR files via HandlerLoader
+- Register handlers with EventBob by capability name
 
 **Not responsible for:**
-- Event routing logic (core domain)
-- Request handling (application layer)
-- Business domain operations (service layer)
-- Deployment orchestration (infrastructure concern - handled by DNS, service mesh, load balancers)
+- Event routing logic (core domain in io.eventbob.core)
+- Handler implementation (handlers are in separate JARs)
+- Handler discovery/registration system (not implemented)
 
 ## Layer Assignment
 
 ```
 ┌─────────────────────────────────┐
-│   Application Layer             │  (future: API gateway, HTTP endpoints)
+│   REST Adapter Layer            │
+│   io.eventbob.spring            │  EventController (REST endpoint)
+│                                 │  EventDto (JSON serialization)
+│                                 │  EventBobConfig (Spring configuration)
 └─────────────────────────────────┘
               ↓
 ┌─────────────────────────────────┐
 │   Domain Layer                  │
-│   io.eventbob.core              │  Event, EventHandler, Capability, CapabilityResolver port
-└─────────────────────────────────┘
-              ↑
-┌─────────────────────────────────┐
-│   Infrastructure Layer          │
-│   io.eventbob.spring            │  CapabilityScanner, CapabilityRegistrar, MacroServiceBootstrap
-│                                 │  ServiceRegistryRepository (Spring JDBC)
-└─────────────────────────────────┘
-              ↓
-┌─────────────────────────────────┐
-│   Database                      │  PostgreSQL (service_capabilities, service_macroliths,
-│                                 │  macrolith_capabilities, registry_version)
+│   io.eventbob.core              │  EventBob (event processor)
+│                                 │  EventHandler (handler interface)
+│                                 │  Event (domain model)
 └─────────────────────────────────┘
 ```
 
-**Dependency direction:** Infrastructure → Core (outer depends on inner). Core never imports from infrastructure.
+**Dependency direction:** Infrastructure → Core (outer depends on inner). Core never imports from Spring module.
 
-**Anti-Corruption Layer:** Translates Spring-specific types (JdbcTemplate, ResultSet) to core types (Capability, Endpoint). Infrastructure persistence never crosses to core.
+**Anti-Corruption Layer:** Spring types (RestController, RequestBody, CompletableFuture) stay in Spring module. Domain Event objects are never exposed directly via REST - EventDto provides translation.
 
 ## Component Design
 
-### CapabilityScanner
+### EventBobConfig
 
-**Responsibility:** Discover capabilities from JARs via annotation scanning.
+**Responsibility:** Spring configuration for EventBob and its handlers.
 
-**Pattern:** Domain Service (infrastructure-flavored)
+**Pattern:** Spring @Configuration
 
 **Key operations:**
-- `scanJar(jarPath, classLoader) → List<CapabilityDescriptor>`
+- `eventBob(HealthcheckHandler) → EventBob` - Create configured EventBob bean
+- `healthcheckHandler() → HealthcheckHandler` - Create healthcheck handler bean
 
 **Dependencies:**
-- ClassGraph (JAR scanning library)
-- `@EventHandlerCapability` annotation (from core)
+- `HandlerLoader` from core (loads handlers from JARs)
+- `EventBob` from core (event processor)
 
 **Data flow:**
 ```
-JAR file → ClassGraph.scan() → Find @EventHandlerCapability annotations
-         → Parse operations ("GET /path") → Build CapabilityDescriptor list
+List<Path> handlerJarPaths → HandlerLoader.loadHandlers()
+                           → Map<String, EventHandler>
+                           → EventBob.Builder.handler()
+                           → EventBob instance
 ```
 
 **Why this design:**
-- Annotation scanning is infrastructure concern (ClassGraph, reflection, classloaders)
-- Core defines WHAT is scanned (`@EventHandlerCapability` contract)
-- Infrastructure defines HOW to scan (ClassGraph implementation)
+- Spring DI manages component wiring
+- HandlerLoader handles JAR scanning and instantiation
+- Configuration is explicit (no hidden magic)
 
 ---
 
-### CapabilityDescriptor
+### EventController
 
-**Responsibility:** In-memory representation of discovered capability metadata.
+**Responsibility:** REST endpoint for event processing.
 
-**Pattern:** Data Transfer Object
+**Pattern:** Spring @RestController
+
+**Key operations:**
+- `processEvent(EventDto) → CompletableFuture<EventDto>` - Process event via HTTP POST
+
+**Dependencies:**
+- `EventBob` (injected via constructor)
+
+**Data flow:**
+```
+HTTP POST /events with EventDto JSON
+         → toEvent(EventDto) → Event
+         → eventBob.processEvent(Event)
+         → CompletableFuture<Event>
+         → fromEvent(Event) → EventDto
+         → HTTP response with EventDto JSON
+```
+
+**Why this design:**
+- EventDto keeps Jackson annotations out of domain Event
+- CompletableFuture makes endpoint non-blocking
+- Simple mapping methods keep translation explicit
+
+---
+
+### EventDto
+
+**Responsibility:** Data Transfer Object for Event JSON serialization.
+
+**Pattern:** DTO (plain JavaBean)
 
 **Structure:**
 ```java
-public final class CapabilityDescriptor {
-    private final String serviceName;
-    private final Capability capability;      // READ/WRITE/ADMIN
-    private final int capabilityVersion;
-    private final String method;              // HTTP method
-    private final String pathPattern;
+public class EventDto {
+    private String source;
+    private String target;
+    private Map<String, Object> parameters;
+    private Map<String, Object> metadata;
+    private Object payload;
 }
 ```
 
-**Lifecycle:** Created by scanner → passed to registrar → persisted → discarded
+**Lifecycle:** Created by Jackson from HTTP request → mapped to Event → processed → mapped from Event → serialized to HTTP response
 
-**Why immutable:** Metadata should not change after discovery. Builder pattern enforces complete construction.
-
----
-
-### CapabilityRegistrar
-
-**Responsibility:** Register macroliths and their capabilities in the registry.
-
-**Pattern:** Application Service (infrastructure layer)
-
-**Key operations:**
-- `registerMacro(request) → RegistrationResult`
-
-**Request/Response:**
-```java
-public record RegistrationRequest(
-    String macrolithName,
-    String endpoint,  // Logical name
-    List<CapabilityDescriptor> capabilities
-) {}
-
-public record RegistrationResult(
-    UUID macrolithId,
-    Map<String, UUID> capabilityIds
-) {
-    public boolean isSuccess() {
-        return macrolithId != null && !capabilityIds.isEmpty();
-    }
-}
-```
-
-**Transaction boundary:** Entire registration (macrolith + capabilities + links) is atomic.
-
-**Idempotency:** Re-registering same macrolith updates endpoint but doesn't create duplicates.
-
-**Why this design:**
-- Orchestrates repository calls (registerMacro, registerCapability, linkMacroCapability)
-- Encapsulates transaction boundary
-- Provides high-level registration API for bootstrap
+**Why plain JavaBean:** Spring MVC and Jackson expect JavaBean pattern (getters/setters, no-arg constructor).
 
 ---
 
-### ServiceRegistryRepository
+### HealthcheckHandler
 
-**Responsibility:** Persistence of macroliths, capabilities, and their relationships.
+**Responsibility:** Built-in handler for system health monitoring.
 
-**Pattern:** Repository (Spring JDBC)
+**Pattern:** EventHandler implementation
 
-**Key operations:**
-- `registerMacro(macrolithName, endpoint) → UUID`
-- `registerCapability(descriptor) → UUID`
-- `linkMacroCapability(macrolithId, capabilityId) → void`
-- `getCurrentVersion() → long`
+**Behavior:** Returns event with `payload=true` to indicate service is alive.
 
-**Database tables:**
-- `service_macroliths` - logical deployment units
-- `service_capabilities` - capability operations
-- `macrolith_capabilities` - junction table (which macroliths provide which capabilities)
-- `registry_version` - cache invalidation counter
-
-**Idempotency strategy:**
-- Macroliths: `ON CONFLICT (macrolith_name) DO UPDATE SET endpoint = ...` (last-wins)
-- Capabilities: `ON CONFLICT DO NOTHING`, query for existing UUID if needed (first-wins)
-- Links: `ON CONFLICT DO NOTHING` (first-wins)
-
-**Why Spring JDBC (not JPA):**
-- Explicit SQL control (no hidden queries)
-- PostgreSQL-specific features (gen_random_uuid(), triggers)
-- Performance (no object-relational mapping overhead)
-
----
-
-### MacrolithServiceBootstrap
-
-**Responsibility:** Bootstrap a macrolith-service on startup.
-
-**Pattern:** Application Service (infrastructure layer)
-
-**Key operations:**
-- `bootstrap(config) → BootstrapResult`
-
-**Configuration:**
-```java
-public record BootstrapConfig(
-    String macrolithName,
-    List<Path> jarPaths,
-    String endpoint  // null = defaults to macrolithName
-) {}
-```
-
-**Bootstrap flow:**
-```
-1. Scan JARs for capabilities (via CapabilityScanner)
-2. Validate at least one capability found
-3. Determine endpoint (explicit or default to macrolithName)
-4. Register macrolith + capabilities (via CapabilityRegistrar)
-5. Return result
-```
-
-**Why this design:**
-- Separates bootstrap orchestration from registration logic
-- Single entry point for macrolith-service initialization
-- Explicit configuration record (no hidden defaults)
-
----
-
-## Database Schema
-
-### service_macroliths
-
-Tracks logical deployment units.
-
-```sql
-CREATE TABLE service_macroliths (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  macrolith_name VARCHAR(255) NOT NULL UNIQUE,
-  endpoint VARCHAR(500) NOT NULL,
-  registered_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  metadata JSONB
-);
-```
-
-**Key insight:** One record per macrolith. Endpoint is logical name, resolved by infrastructure.
-
----
-
-### service_capabilities
-
-Tracks capability operations.
-
-```sql
-CREATE TABLE service_capabilities (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  service_name VARCHAR(255) NOT NULL,
-  capability capability_type NOT NULL,
-  capability_version INTEGER NOT NULL,
-  method VARCHAR(10) NOT NULL,
-  path_pattern VARCHAR(500) NOT NULL,
-  registered_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  metadata JSONB,
-
-  CONSTRAINT uq_capability_routing_key
-    UNIQUE(service_name, capability, capability_version, method, path_pattern)
-);
-```
-
-**Key insight:** Routing key must be unique. One version per routing key.
-
----
-
-### macrolith_capabilities
-
-Junction table linking macroliths to capabilities.
-
-```sql
-CREATE TABLE macrolith_capabilities (
-  macrolith_id UUID NOT NULL REFERENCES service_macroliths(id) ON DELETE CASCADE,
-  capability_id UUID NOT NULL REFERENCES service_capabilities(id) ON DELETE CASCADE,
-  linked_at TIMESTAMP NOT NULL DEFAULT NOW(),
-
-  PRIMARY KEY (macrolith_id, capability_id)
-);
-```
-
-**Key insight:** Capabilities can be shared across macroliths. Same capability, multiple macroliths.
-
----
-
-### registry_version
-
-Cache invalidation counter.
-
-```sql
-CREATE TABLE registry_version (
-  id INTEGER PRIMARY KEY DEFAULT 1,
-  version BIGINT NOT NULL DEFAULT 1,
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-
-  CONSTRAINT chk_single_row CHECK (id = 1)
-);
-
-CREATE OR REPLACE FUNCTION bump_registry_version()
-RETURNS TRIGGER AS $$
-BEGIN
-  UPDATE registry_version SET version = version + 1, updated_at = NOW() WHERE id = 1;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_capabilities_version
-  AFTER INSERT OR UPDATE OR DELETE ON service_capabilities
-  FOR EACH STATEMENT EXECUTE FUNCTION bump_registry_version();
-
-CREATE TRIGGER trigger_macroliths_version
-  AFTER INSERT OR UPDATE OR DELETE ON service_macroliths
-  FOR EACH STATEMENT EXECUTE FUNCTION bump_registry_version();
-```
-
-**Key insight:** Any registry change bumps version. Enables efficient cache invalidation.
+**Why hard-coded:** System health monitoring is infrastructure concern, not pluggable business logic.
 
 ---
 
@@ -317,125 +154,44 @@ CREATE TRIGGER trigger_macroliths_version
 
 ### Why Spring Boot?
 
-- Mature dependency injection (component wiring)
-- Spring JDBC for explicit SQL control
-- Flyway for schema migrations
-- TestContainers integration for tests
-- Configuration management (application.yml)
+- Mature REST framework (Spring MVC)
+- JSON serialization (Jackson)
+- Dependency injection (Spring DI)
+- Non-blocking async support (CompletableFuture)
+- Minimal configuration
 
-### Why PostgreSQL?
+### Why EventDto (not expose Event directly)?
 
-- Transactional DDL (schema migrations are atomic)
-- Triggers (automatic version bumping)
-- Partial unique indexes (future extensibility)
-- JSONB for extensible metadata
+- Keeps Jackson annotations out of domain model
+- Provides clean separation between REST concerns and domain
+- Allows REST representation to differ from domain if needed
 
-### Why ClassGraph?
+### Why CompletableFuture?
 
-- Fast JAR scanning (no custom classloader needed)
-- Annotation filtering (find @EventHandlerCapability)
-- Works with modular JARs
-
----
-
-## Simplification History
-
-### V002: Removed Deployment Orchestration (2026-02-12)
-
-**What was removed:**
-- Deployment state tracking (BLUE, GREEN, GRAY, RETIRED enums)
-- Instance-level tracking (instanceId, last_heartbeat, status)
-- Conflict detection (version mismatch warnings)
-- Deployment history (audit log)
-- jarVersion tracking
-
-**Why removed:**
-- Deployment orchestration is infrastructure concern (DNS, service mesh, load balancers)
-- Registry should track "what and where" (capabilities and endpoints), not "how" (deployment states)
-- Over-engineered for current needs (no consumers of deployment state data)
-
-**What changed:**
-- `service_macroliths` → `service_macroliths` (tracks logical units, not physical instances)
-- `instance_capabilities` → `macrolith_capabilities`
-- Endpoint is now logical name (e.g., "messages-service"), not physical URL
-- RegistrationRequest simplified from 7 fields to 3
-- Database schema simplified (removed state columns, deployment history table)
-
-**Trade-offs:**
-- Simpler model (less code, less complexity)
-- No runtime conflict detection (database unique constraint enforces single version per routing key)
-- No audit trail (no deployment history)
-- Cannot track multiple active versions of same capability (database constraint prevents it)
-
----
-
-## Future Extension Points
-
-### 1. CapabilityResolver Implementation
-
-**Goal:** Implement `CapabilityResolver` port from core.
-
-**Signature:**
-```java
-public interface CapabilityResolver {
-    List<Endpoint> resolve(String routingKey);
-}
-```
-
-**Implementation approach:**
-- Query `service_capabilities` by routing key
-- Join to `macrolith_capabilities` to get macros
-- Join to `service_macroliths` to get endpoints
-- Return `List<Endpoint>` with logical names
-- Infrastructure (DNS, load balancers) resolves logical → physical
-
-**Why not yet implemented:** Routing logic still in development. Resolver will be added when router is ready.
-
----
-
-### 2. Health-Based Routing (Future)
-
-**Goal:** Exclude unhealthy macroliths from resolution.
-
-**Approach (if needed):**
-- Add health check endpoint to macroliths
-- Periodically query health, update macrolith metadata
-- Filter unhealthy macroliths in resolver query
-
-**Note:** This may not be needed if infrastructure (load balancers, service mesh) already handles health.
-
----
-
-### 3. Multi-Region Registry (Future)
-
-**Goal:** Replicate capabilities across regions.
-
-**Approach:**
-- Add region column to service_macroliths
-- Replicate capability metadata across regions
-- Resolver queries local region first, falls back to remote
+- Non-blocking HTTP endpoint (Spring MVC suspends async)
+- Matches EventBob's async API
+- No thread blocking while handlers process events
 
 ---
 
 ## Summary
 
-This Spring implementation provides a **simple, honest registry** for capability-based routing:
+This Spring implementation provides a **simple HTTP REST adapter** for EventBob:
 
-1. **Scan JARs** to discover capabilities
-2. **Register macroliths** and their capabilities
-3. **Persist to PostgreSQL** with transactional guarantees
-4. **(Future) Resolve routing keys** to endpoints for the router
+1. **Expose REST endpoint** for event processing (POST /events)
+2. **Load handlers from JARs** via HandlerLoader
+3. **Serialize events to/from JSON** via EventDto
+4. **Provide system health monitoring** via built-in healthcheck handler
 
 **Key architectural decisions:**
-- PostgreSQL for transactional correctness
-- Spring JDBC for explicit SQL control
-- Flat package structure (currently 5 classes, will refactor if >15)
-- Dependency direction: infrastructure → core (never reverse)
-- Anti-Corruption Layer: Spring types never leak to core
-- Logical endpoints (resolved by infrastructure) not physical URLs
+- Spring Boot for REST infrastructure
+- Bridge Pattern keeps Spring types in infrastructure layer
+- EventDto provides anti-corruption layer for REST/domain boundary
+- Dependency direction: Spring module → core (never reverse)
+- Non-blocking via CompletableFuture
 
 **What this is NOT:**
-- Not a deployment orchestration system (that's infrastructure)
-- Not a health monitoring system (that's infrastructure)
-- Not a service mesh (that's infrastructure)
-- Just a capability registry enabling routing decisions
+- Not a handler registry system
+- Not a deployment orchestration system
+- Not a discovery system
+- Just a REST adapter for event processing
