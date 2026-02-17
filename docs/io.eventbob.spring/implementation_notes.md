@@ -1,16 +1,21 @@
 # io.eventbob.spring Implementation Notes
 
+## Module Purpose
+
+This module is a **library** that provides Spring Boot integration for EventBob. It does not contain a Spring Boot application main class. Concrete applications import this module and provide configuration.
+
 ## Module Patterns
 
-### Spring Boot Application Pattern
-- `@SpringBootApplication` entry point
-- Standard Spring Boot lifecycle
-- Configuration via `application.properties`
+### Library Pattern
+- No `@SpringBootApplication` entry point (applications provide this)
+- Reusable `@Configuration` classes
+- Concrete applications provide handler JAR paths via dependency injection
 
 ### Dependency Injection
 - `@Configuration` classes define beans
 - EventBob instance created as Spring bean
 - Handlers registered via EventBob builder
+- Constructor injection for handler JAR paths: `EventBobConfig(List<Path> handlerJarPaths)`
 
 ### Handler Implementation
 - Handlers implement core `EventHandler` interface
@@ -47,14 +52,14 @@
 ## Code Quality
 
 ### Current State
-- Minimal bootstrap implementation
-- Clean baseline (no technical debt)
+- Clean library implementation
+- No technical debt
 - Following core patterns and conventions
+- Constructor injection for configuration (no hard-coded paths)
 
 ### Known Gaps
-- Transport layer work-in-progress
-- Configuration patterns evolving
 - Integration test strategy to be determined
+- Remote invocation support (planned for future)
 
 ## JAR Loading Integration
 
@@ -63,23 +68,27 @@
 **Applied in:** EventBobConfig
 
 **Pattern:**
+- Constructor injection: `EventBobConfig(List<Path> handlerJarPaths)`
+- Concrete applications provide `List<Path>` bean with JAR paths to load
 - Uses `HandlerLoader.jarLoader()` to obtain default loader implementation
 - Loads handlers at Spring context initialization (eager loading)
 - Registers loaded handlers via `EventBob.Builder.handler(String, EventHandler)`
-- Includes hard-coded healthcheck handler alongside JAR-loaded handlers
+- Includes healthcheck handler (always registered, not loaded from JARs)
 
 **JAR Path Configuration:**
-- Currently hard-coded in `loadHandlersFromJars()` method
-- Paths: relative to working directory (project root)
-  - `io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar`
-  - `io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar`
-- **Technical debt:** Should be externalized to `application.properties` for production use
-
-**Working Directory Dependency:**
-- JAR paths are relative to project root
-- Application must be started from project root directory
-- **Limitation:** Breaks if started from different working directory
-- **Future:** Externalize to configuration with absolute paths or classpath-relative resolution
+- Applications provide `@Bean public List<Path> handlerJarPaths()` method
+- Example (from io.eventbob.example.macrolith.echo):
+  ```java
+  @Bean
+  public List<Path> handlerJarPaths() {
+    return List.of(
+      Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar"),
+      Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar")
+    );
+  }
+  ```
+- JAR paths are application-specific (this library is agnostic)
+- Applications decide path resolution strategy (relative, absolute, classpath)
 
 **Error Handling:**
 - `IOException` from loader wrapped in `IllegalStateException` (fails application startup)
@@ -91,15 +100,45 @@
 - Failure: ERROR log with exception details, then throws `IllegalStateException`
 
 **Design Decisions:**
+- Constructor injection: Clean dependency inversion (library depends on abstraction, applications provide concrete paths)
 - Eager loading: Handlers loaded at context init (fast failure, predictable startup)
-- Mixed registration: Hard-coded and JAR-based handlers coexist (healthcheck stays hard-coded)
+- Mixed registration: Healthcheck handler hard-coded, other handlers JAR-loaded
 - Fail-fast: Missing/malformed JARs prevent application startup (better than partial functionality)
+- Library stays generic: No knowledge of specific handlers or paths
 
-**Known Technical Debt:**
-- Hard-coded JAR paths (should be `spring.eventbob.handler-jars` in application.properties)
-- Working directory dependency (should be absolute paths or classpath-relative)
-- No JAR path validation before attempting load (should check existence earlier)
+## Usage Pattern
 
-## Work-in-Progress
+To use this library in a Spring Boot application:
 
-This module is under active development. Patterns and implementation details are subject to change as requirements clarify and the system evolves.
+1. Add dependency in pom.xml:
+   ```xml
+   <dependency>
+     <groupId>io.eventbob</groupId>
+     <artifactId>io.eventbob.spring</artifactId>
+     <version>${project.version}</version>
+   </dependency>
+   ```
+
+2. Import EventBobConfig:
+   ```java
+   @SpringBootApplication
+   @Import(EventBobConfig.class)
+   public class MyApplication {
+     // ...
+   }
+   ```
+
+3. Provide handler JAR paths bean:
+   ```java
+   @Bean
+   public List<Path> handlerJarPaths() {
+     return List.of(
+       Paths.get("path/to/handler.jar")
+     );
+   }
+   ```
+
+4. EventBob instance is automatically available as Spring bean
+5. POST events to `/events` endpoint
+
+See `io.eventbob.example.macrolith.echo` for complete example.

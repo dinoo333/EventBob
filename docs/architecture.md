@@ -6,39 +6,54 @@ EventBob bundles multiple microservices into a macrolith to solve the chatty-app
 
 ---
 
-## Two-Layer Architecture
+## Three-Layer Architecture
 
-EventBob follows Clean Architecture with two layers:
+EventBob follows Clean Architecture with three layers:
 
 ```
-┌─────────────────────────────────┐
-│   io.eventbob.core              │  Domain Layer (Innermost)
-│   - Domain model (Event)        │
-│   - Abstractions (EventHandler) │
-│   - JAR loading (HandlerLoader) │
-│   - Routing (EventBob)          │
-│   - NO framework dependencies   │
-└─────────────────────────────────┘
+┌──────────────────────────────────────┐
+│   io.eventbob.core                   │  Domain Layer (Innermost)
+│   - Domain model (Event)             │
+│   - Abstractions (EventHandler)      │
+│   - JAR loading (HandlerLoader)      │
+│   - Routing (EventBob)               │
+│   - NO framework dependencies        │
+└──────────────────────────────────────┘
               ↑ implements
               │
-┌─────────────────────────────────┐
-│   io.eventbob.spring            │  Infrastructure Layer (Outermost)
-│   - Spring Boot wiring          │
-│   - HTTP transport adapters     │
-│   - Concrete handlers           │
-│   - Framework-specific code     │
-└─────────────────────────────────┘
+┌──────────────────────────────────────┐
+│   io.eventbob.spring                 │  Infrastructure Library (Middle)
+│   - Spring Boot wiring               │
+│   - HTTP transport adapters          │
+│   - EventBobConfig (generic)         │
+│   - NO main class (library)          │
+│   - NO hard-coded paths              │
+└──────────────────────────────────────┘
+              ↑ imports & configures
+              │
+┌──────────────────────────────────────┐
+│   io.eventbob.example.macrolith.*   │  Application Layer (Outermost)
+│   - Spring Boot main class           │
+│   - Concrete JAR path configuration  │
+│   - Deployment-specific wiring       │
+│   - Example: macrolith.echo          │
+└──────────────────────────────────────┘
 ```
 
-**Dependency Rule:** Infrastructure depends on core. Core depends on nothing (except JDK).
+**Dependency Rule:** Each layer depends only on layers inside it. Applications depend on infrastructure library, which depends on core. Core depends on nothing (except JDK).
 
-**Why loader is in core:** JAR loading and ClassLoader manipulation are Java domain concepts, not infrastructure concerns. The HandlerLoader abstraction belongs in the domain because it defines WHAT handler loading means. The implementation (JarHandlerLoader) uses only JDK classes (URLClassLoader, JarFile) - no framework dependencies.
+**Why three layers:**
+- **Core:** Framework-agnostic domain logic (what EventBob IS)
+- **Spring library:** Reusable infrastructure (how to deploy with Spring Boot)
+- **Macrolith applications:** Concrete configurations (which handlers to load)
 
 ---
 
-## Dependency Inversion at the Boundary
+## Dependency Inversion at Boundaries
 
-Core defines the HandlerLoader interface with a factory method:
+### Core → Spring Boundary
+
+Core defines HandlerLoader interface with factory method:
 
 ```java
 public interface HandlerLoader {
@@ -55,14 +70,46 @@ Spring infrastructure depends only on the interface:
 ```java
 @Configuration
 public class EventBobConfig {
+    private final List<Path> handlerJarPaths;
+    
+    public EventBobConfig(List<Path> handlerJarPaths) {
+        this.handlerJarPaths = handlerJarPaths;
+    }
+    
     private Map<String, EventHandler> loadHandlersFromJars() throws IOException {
         HandlerLoader loader = HandlerLoader.jarLoader();  // Factory method
-        return loader.loadHandlers(jarPaths);
+        return loader.loadHandlers(handlerJarPaths);
     }
 }
 ```
 
 **Key insight:** Spring never sees JarHandlerLoader (package-private). It depends only on the public HandlerLoader interface. This is Dependency Inversion Principle in practice.
+
+### Spring → Application Boundary
+
+Spring library defines EventBobConfig that accepts configuration via constructor injection:
+
+```java
+// In EventBobConfig (io.eventbob.spring) - generic library
+public EventBobConfig(List<Path> handlerJarPaths) {
+    this.handlerJarPaths = handlerJarPaths;
+}
+```
+
+Application provides concrete configuration:
+
+```java
+// In EchoMacrolithApplication (io.eventbob.example.macrolith.echo) - concrete app
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(
+        Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar"),
+        Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar")
+    );
+}
+```
+
+**Key insight:** Spring library has no hard-coded paths, no main class. It is purely infrastructure. Applications decide which handlers to load.
 
 ---
 
@@ -94,15 +141,27 @@ io.eventbob.core
 
 **Rationale for flat structure:** Core is small and cohesive. All classes operate at the same abstraction level (domain primitives and routing). Subpackages would add complexity without clarity gains.
 
-### Spring (Adapter Structure)
+### Spring (Library Structure)
 
 ```
 io.eventbob.spring
-├── EventBobConfig                 (Spring configuration)
-├── EventBobApplication            (Spring Boot entry point)
+├── EventBobConfig                 (Spring configuration - constructor injection)
+├── EventController                (REST endpoint adapter)
+├── EventDto                       (HTTP/Event boundary DTO)
 └── handlers/
     └── HealthcheckHandler         (Built-in system handler)
 ```
+
+**No main class.** This is a library module. Applications import and configure it.
+
+### Macrolith Applications (Example: Echo)
+
+```
+io.eventbob.example.macrolith.echo
+└── EchoMacrolithApplication       (Spring Boot main class + JAR path config)
+```
+
+More macrolith applications will follow this pattern (e.g., `io.eventbob.example.macrolith.upper` for testing remote invocation).
 
 ---
 
@@ -130,25 +189,25 @@ HandlerLoader uses isolated class loaders:
 ```
 ┌─────────────────────────────────────────┐
 │  Macrolith Process                      │
-│  (e.g., "messages-service")             │
+│  (e.g., echo-macrolith)                 │
 │                                         │
 │  ┌────────────────────────────────┐    │
 │  │  EventBob Server (Spring)      │    │
 │  │                                │    │
 │  │  [HandlerLoader]               │    │
 │  │     ↓                          │    │
-│  │  messages-read.jar             │    │
-│  │  messages-write.jar            │    │
-│  │  messages-delete.jar           │    │
+│  │  echo.jar                      │    │
+│  │  lower.jar                     │    │
 │  │     ↓                          │    │
 │  │  [EventBob Router]             │    │
 │  │     → in-process calls         │    │
 │  └────────────────────────────────┘    │
 │                                         │
-│  Exposed as: "messages-service"        │
+│  Configured in:                         │
+│  EchoMacrolithApplication               │
 └─────────────────────────────────────────┘
              ↑
-             │ (service discovery)
+             │ (future: service discovery)
              │
      ┌───────────────┐
      │  Registry     │
@@ -163,14 +222,13 @@ HandlerLoader uses isolated class loaders:
 ### What Registry Tracks
 
 ```
-Macrolith: "messages-service"
-├─ Endpoint: "http://messages-service" (logical URL, not IP)
-├─ Capability: READ /content (GET)
-├─ Capability: WRITE /content (POST)
-└─ Capability: DELETE /content/{id} (DELETE)
+Macrolith: "echo-macrolith"
+├─ Endpoint: "http://echo-macrolith" (logical URL, not IP)
+├─ Capability: echo /events (POST)
+└─ Capability: lower /events (POST)
 ```
 
-Infrastructure resolves "http://messages-service" → physical instances:
+Infrastructure resolves "http://echo-macrolith" → physical instances:
 - 10.0.1.5:8080
 - 10.0.1.6:8080
 - 10.0.1.7:8080
@@ -195,27 +253,17 @@ macrolith_capabilities   -- Which macroliths provide which capabilities (many-to
 ## Dependency Rules (Enforced by ArchUnit)
 
 **✅ Allowed:**
+- `io.eventbob.example.macrolith.*` → `io.eventbob.spring`
 - `io.eventbob.spring` → `io.eventbob.core`
-- Infrastructure → Domain
+- Applications → Library → Domain
 
 **❌ Forbidden:**
 - `io.eventbob.core` → `io.eventbob.spring`
+- `io.eventbob.spring` → `io.eventbob.example.*`
 - Domain → Infrastructure
-- Core importing Spring types
+- Library → Applications
 
 **Enforcement mechanism:** ArchUnit tests in both modules verify dependency direction.
-
----
-
-## Open Questions About Architecture
-
-Things that need clarification:
-
-1. **How does routing work?** What mechanism routes requests inside the macrolith?
-2. **Transport layer?** User said "not just HTTP"—what transports are supported?
-3. **Event model?** Is this event-driven? What are events vs. requests?
-4. **Bootstrap sequence?** What's the startup flow from JARs to running macrolith?
-5. **Discovery mechanism?** How does macrolith register with registry on startup?
 
 ---
 
@@ -227,20 +275,53 @@ Things that need clarification:
 - JAR loading abstractions and implementation (HandlerLoader, JarHandlerLoader)
 - **NO framework dependencies** (Spring, Dropwizard, etc.)
 
-### Spring (`io.eventbob.spring`)
-- JAR scanning configuration (paths, patterns)
-- Persistence, bootstrap
-- Framework-specific code (Spring JDBC, PostgreSQL)
-- HTTP transport adapters (future)
+### Spring Library (`io.eventbob.spring`)
+- Generic EventBob configuration (constructor injection)
+- HTTP transport adapters
+- REST endpoints
+- Framework-specific code (Spring Boot, Spring Web)
+- **NO main class, NO hard-coded paths**
+
+### Macrolith Applications (`io.eventbob.example.macrolith.*`)
+- Spring Boot main class
+- Concrete JAR path configuration
+- Deployment-specific wiring
+- Runtime dependencies on handler JARs
 
 ### Rule
-Core defines WHAT (domain model + abstractions). Infrastructure defines HOW (with specific frameworks) and WHEN (configuration, startup).
+Core defines WHAT (domain model + abstractions). Infrastructure library defines HOW (with specific frameworks). Applications define WHICH (which handlers to load, where to deploy).
+
+---
+
+## Multiple Macrolith Deployments
+
+The three-layer architecture enables multiple concrete macrolith deployments from a single infrastructure library:
+
+```
+                io.eventbob.core
+                       ↑
+                       │
+                io.eventbob.spring
+                       ↑
+         ┌─────────────┼─────────────┐
+         │             │             │
+   macrolith.echo  macrolith.upper  macrolith.messages
+   (lower + echo)  (upper + ...)   (read + write + ...)
+```
+
+Each macrolith:
+- Imports io.eventbob.spring library
+- Provides @Bean for List<Path> handlerJarPaths
+- Has its own Spring Boot main class
+- Loads different combinations of handlers
+
+The infrastructure library remains unchanged regardless of which handlers are loaded.
 
 ---
 
 ## Future: Additional Infrastructure Implementations
 
-The two-layer architecture allows for alternative infrastructure implementations:
+The architecture also allows for alternative infrastructure implementations beyond Spring Boot:
 
 ```
                 io.eventbob.core
@@ -251,7 +332,7 @@ io.eventbob.spring  io.eventbob.dropwizard  io.eventbob.quarkus
    (current)           (future)              (future)
 ```
 
-Each infrastructure module:
+Each infrastructure library:
 - Depends on core
 - Never depends on other infrastructure modules
 - Provides framework-specific wiring

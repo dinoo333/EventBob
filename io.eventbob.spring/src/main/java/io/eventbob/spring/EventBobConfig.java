@@ -11,7 +11,6 @@ import org.springframework.context.annotation.Configuration;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 
@@ -25,10 +24,25 @@ import java.util.Map;
  *   <li>Registers all handlers with EventBob</li>
  *   <li>Keeps the healthcheck handler hard-coded for system health monitoring</li>
  * </ul>
+ * <p>
+ * This is a generic library configuration. Concrete applications must provide
+ * a {@code List<Path> handlerJarPaths} bean specifying which handler JARs to load.
+ * </p>
  */
 @Configuration
 public class EventBobConfig {
   private static final Logger logger = LoggerFactory.getLogger(EventBobConfig.class);
+
+  private final List<Path> handlerJarPaths;
+
+  /**
+   * Create EventBob configuration with specified handler JAR paths.
+   *
+   * @param handlerJarPaths list of paths to handler JAR files to load
+   */
+  public EventBobConfig(List<Path> handlerJarPaths) {
+    this.handlerJarPaths = handlerJarPaths;
+  }
 
   /**
    * Create the healthcheck handler bean.
@@ -80,25 +94,12 @@ public class EventBobConfig {
 
   /**
    * Loads and instantiates handlers from configured JAR files.
-   * <p>
-   * JAR paths are currently hard-coded to the example modules:
-   * </p>
-   * <ul>
-   *   <li>io.eventbob.example.lower</li>
-   *   <li>io.eventbob.example.echo</li>
-   * </ul>
    *
    * @return map of capability names to instantiated handlers
    * @throws IOException if JAR files cannot be read
    */
   private Map<String, EventHandler> loadHandlersFromJars() throws IOException {
     HandlerLoader loader = HandlerLoader.jarLoader();
-
-    List<Path> jarPaths = List.of(
-        Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar"),
-        Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar")
-    );
-
-    return loader.loadHandlers(jarPaths);
+    return loader.loadHandlers(handlerJarPaths);
   }
 }
