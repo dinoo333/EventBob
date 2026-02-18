@@ -15,7 +15,8 @@ This module is a **library** that provides Spring Boot integration for EventBob.
 - `@Configuration` classes define beans
 - EventBob instance created as Spring bean
 - Handlers registered via EventBob builder
-- Constructor injection for handler JAR paths: `EventBobConfig(List<Path> handlerJarPaths)`
+- Constructor injection for handler sources: `EventBobConfig(List<Path> handlerJarPaths, List<RemoteCapability> remoteCapabilities)`
+- Remote capabilities are optional (autowired with `required = false`)
 
 ### Handler Implementation
 - Handlers implement core `EventHandler` interface
@@ -34,9 +35,26 @@ This module is a **library** that provides Spring Boot integration for EventBob.
 - Spring MVC handles async suspension automatically
 
 **Mapping strategy:**
-- EventDto and Event use identical `Object` types for parameters/metadata/payload
-- No type conversion helpers needed (direct pass-through)
-- Transformation: `Event → EventBob.processEvent() → thenApply(Event → EventDto)`
+- EventDto is a Java Record with Jackson annotations for JSON serialization/deserialization
+- Uses `@JsonCreator` and `@JsonProperty` for proper Jackson binding
+- Translation methods: `EventDto.fromEvent(Event)` and `eventDto.toEvent()`
+- Direct field mapping (no complex type conversion)
+- Null-safe: null parameters/metadata become empty maps in EventDto constructor
+- Transformation: `EventDto → toEvent() → EventBob.processEvent() → thenApply(fromEvent())`
+
+**EventDto Pattern:**
+```java
+public record EventDto(
+    String source,
+    String target,
+    Map<String, Object> parameters,
+    Map<String, Object> metadata,
+    Object payload
+) {
+  public static EventDto fromEvent(Event event) { ... }
+  public Event toEvent() { ... }
+}
+```
 
 ## Testing Conventions
 
@@ -47,7 +65,9 @@ This module is a **library** that provides Spring Boot integration for EventBob.
 - Test payload transformation logic
 
 ### Integration Tests
-- To be determined as implementation evolves
+- WireMock for testing HttpEventHandlerAdapter
+- TestContainers can be used for full Spring Boot integration tests
+- HttpEventHandlerAdapterTest demonstrates WireMock stubbing pattern
 
 ## Code Quality
 
@@ -56,10 +76,93 @@ This module is a **library** that provides Spring Boot integration for EventBob.
 - No technical debt
 - Following core patterns and conventions
 - Constructor injection for configuration (no hard-coded paths)
+- EventDto keeps Jackson annotations out of domain layer
+- Location transparency for remote handlers (HttpEventHandlerAdapter implements EventHandler)
 
-### Known Gaps
-- Integration test strategy to be determined
-- Remote invocation support (planned for future)
+## Remote Invocation Implementation
+
+### RemoteCapability Configuration
+
+**Applied in:** RemoteCapability (Java Record)
+
+**Pattern:**
+- Java Record with validation in compact constructor
+- Maps capability name to remote endpoint URI
+- Immutable and type-safe configuration
+- Validation: name must not be null or blank, URI must not be null
+
+**Example:**
+```java
+@Bean
+public List<RemoteCapability> remoteCapabilities() {
+  return List.of(
+    new RemoteCapability("upper", URI.create("http://localhost:8081")),
+    new RemoteCapability("email", URI.create("http://email-service:8080"))
+  );
+}
+```
+
+### HttpEventHandlerAdapter
+
+**Applied in:** HttpEventHandlerAdapter
+
+**Pattern:**
+- Implements `EventHandler` interface (location transparency)
+- Wraps HTTP calls to remote EventHandler endpoints
+- Constructor injection: `HttpEventHandlerAdapter(URI remoteEndpoint, HttpClient httpClient)`
+- Uses EventDto for JSON serialization/deserialization
+- Synchronous HTTP calls (blocking within handler invocation)
+- Converts HTTP errors to `EventHandlingException`
+
+**HTTP Protocol:**
+- POST `{remoteEndpoint}/events`
+- Content-Type: application/json
+- Request body: EventDto serialized to JSON
+- Response body: EventDto deserialized from JSON
+- HTTP status codes: 2xx = success, 4xx = client error, 5xx = server error
+
+**Error Handling:**
+- Network errors (IOException): throw `EventHandlingException` with cause
+- Interrupted requests: restore interrupt flag, throw `EventHandlingException`
+- HTTP 4xx/5xx: throw `EventHandlingException` with status code and response body
+- Serialization failures: throw `EventHandlingException` with cause
+
+### RemoteHandlerLoader
+
+**Applied in:** RemoteHandlerLoader
+
+**Pattern:**
+- Implements `HandlerLoader` interface
+- Constructor injection: `RemoteHandlerLoader(List<RemoteCapability> remoteCapabilities, HttpClient httpClient)`
+- Creates `HttpEventHandlerAdapter` instances for each remote capability
+- Parameterless `loadHandlers()` returns map of capability names to adapters
+- No I/O during loading (adapters created, not invoked)
+
+**Design:**
+- Location transparency: Remote handlers indistinguishable from local handlers to EventBob
+- Extensibility: Future transport mechanisms (gRPC, JMS, Kafka) can be added by inspecting URI scheme
+- Dependency injection: HttpClient provided by Spring configuration, reused across all adapters
+
+### HttpClient Bean Configuration
+
+**Applied in:** EventBobConfig
+
+**Pattern:**
+- HttpClient created as Spring bean
+- Configuration: HTTP/1.1 version (standard compatibility)
+- Shared across all HttpEventHandlerAdapter instances
+- Applications can override bean to customize timeout, proxy, SSL, etc.
+
+**Example override:**
+```java
+@Bean
+public HttpClient httpClient() {
+  return HttpClient.newBuilder()
+      .version(HttpClient.Version.HTTP_1_1)
+      .connectTimeout(Duration.ofSeconds(5))
+      .build();
+}
+```
 
 ## JAR Loading Integration
 
@@ -68,12 +171,17 @@ This module is a **library** that provides Spring Boot integration for EventBob.
 **Applied in:** EventBobConfig
 
 **Pattern:**
-- Constructor injection: `EventBobConfig(List<Path> handlerJarPaths)`
+- Constructor injection: `EventBobConfig(List<Path> handlerJarPaths, List<RemoteCapability> remoteCapabilities)`
+- Remote capabilities are optional (autowired with `required = false`, defaults to empty list)
 - Concrete applications provide `List<Path>` bean with JAR paths to load
-- Uses `HandlerLoader.jarLoader()` to obtain default loader implementation
+- Optionally provide `List<RemoteCapability>` bean for remote handler endpoints
+- Uses `HandlerLoader.jarLoader(handlerJarPaths)` to obtain JAR-based loader implementation
+- Uses `RemoteHandlerLoader(remoteCapabilities, httpClient)` to obtain remote loader implementation
 - Loads handlers at Spring context initialization (eager loading)
-- Registers loaded handlers via `EventBob.Builder.handler(String, EventHandler)`
-- Includes healthcheck handler (always registered, not loaded from JARs)
+- Merges handlers from both sources (JAR and remote)
+- Detects and fails on duplicate capability names across sources
+- Registers all loaded handlers via `EventBob.Builder.handler(String, EventHandler)`
+- Includes healthcheck handler (always registered, not loaded from external sources)
 
 **JAR Path Configuration:**
 - Applications provide `@Bean public List<Path> handlerJarPaths()` method
@@ -102,9 +210,11 @@ This module is a **library** that provides Spring Boot integration for EventBob.
 **Design Decisions:**
 - Constructor injection: Clean dependency inversion (library depends on abstraction, applications provide concrete paths)
 - Eager loading: Handlers loaded at context init (fast failure, predictable startup)
-- Mixed registration: Healthcheck handler hard-coded, other handlers JAR-loaded
-- Fail-fast: Missing/malformed JARs prevent application startup (better than partial functionality)
+- Mixed registration: Healthcheck handler hard-coded, other handlers loaded from JARs or remote endpoints
+- Fail-fast: Missing/malformed JARs or duplicate capabilities prevent application startup (better than partial functionality)
 - Library stays generic: No knowledge of specific handlers or paths
+- HttpClient bean created by config for use by remote loaders
+- Remote capabilities optional: Applications without remote handlers need not provide the bean
 
 ## Usage Pattern
 
@@ -138,7 +248,17 @@ To use this library in a Spring Boot application:
    }
    ```
 
-4. EventBob instance is automatically available as Spring bean
-5. POST events to `/events` endpoint
+4. (Optional) Provide remote capabilities bean for inter-microlith communication:
+   ```java
+   @Bean
+   public List<RemoteCapability> remoteCapabilities() {
+     return List.of(
+       new RemoteCapability("upper", URI.create("http://localhost:8081"))
+     );
+   }
+   ```
+
+5. EventBob instance is automatically available as Spring bean
+6. POST events to `/events` endpoint
 
 See `io.eventbob.example.microlith.spring.echo` for complete example.

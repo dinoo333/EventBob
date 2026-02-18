@@ -54,7 +54,9 @@ EventBob follows a **simple, focused design:**
 **Resolved approach:** Dynamic JAR scanning using URLClassLoader (one per JAR).
 
 **Pattern:**
-- `HandlerLoader` interface with factory method `HandlerLoader.jarLoader()`
+- `HandlerLoader` interface with constructor injection pattern
+- Factory method `HandlerLoader.jarLoader(Collection<Path>)` returns JAR-based implementation
+- Parameterless `loadHandlers()` method uses constructor-injected dependencies
 - `JarHandlerLoader` implementation (package-private)
 - Separate URLClassLoader per JAR, parent = `EventHandler.class.getClassLoader()`
 - Reflection-based handler instantiation via no-args constructor
@@ -69,8 +71,39 @@ EventBob follows a **simple, focused design:**
 
 ---
 
-## Open Questions
+## Remote Invocation Implementation
 
-1. **Transport layer:** How do external clients invoke capabilities? HTTP adapter? gRPC? Message queue listener? (Partially resolved: HTTP REST adapter implemented in io.eventbob.spring)
-2. **Error handling:** Standardized error event format? Custom error handlers per transport? (To be determined)
-3. **Remote invocation:** How do microliths invoke capabilities on other microliths? (To be determined)
+**Resolved approach:** HTTP-based remote handler adapters with location transparency.
+
+**Pattern:**
+- `RemoteCapability` record maps capability names to remote endpoint URIs
+- `RemoteHandlerLoader` creates `HttpEventHandlerAdapter` instances for each remote capability
+- `HttpEventHandlerAdapter` implements `EventHandler` interface, delegates to remote HTTP endpoint
+- `EventDto` (Java Record) translates between domain `Event` and JSON for HTTP communication
+- EventBob treats remote handlers identically to local handlers (location transparency)
+
+**Communication protocol:**
+- HTTP POST to `{remoteEndpoint}/events`
+- Content-Type: application/json
+- Request/response body: EventDto serialized to JSON
+- HTTP status codes: 2xx = success, 4xx/5xx = error
+
+**Configuration:**
+- `EventBobConfig` accepts `List<RemoteCapability>` via constructor (optional, autowired)
+- Applications provide `@Bean List<RemoteCapability>` to register remote capabilities
+- Duplicate capability names across local and remote handlers detected and fail-fast
+
+---
+
+## Transport Layer
+
+**HTTP REST adapter implemented in io.eventbob.spring:**
+- EventController exposes POST /events endpoint
+- EventDto serves as boundary object (keeps Jackson annotations out of domain)
+- Non-blocking: returns `CompletableFuture<EventDto>`
+- Spring MVC handles async suspension automatically
+
+**Error handling:**
+- Errors converted to error events at EventBob level
+- HTTP adapter propagates errors as HTTP 4xx/5xx status codes
+- Network errors and timeouts throw `EventHandlingException`

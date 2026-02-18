@@ -28,6 +28,18 @@ EventBob remains **compliant with microservice architecture**. It just allows en
 
 ---
 
+## Core Domain Principles
+
+### Location Transparency
+
+Handlers can be local (loaded from JARs in-process) or remote (accessed via HTTP/gRPC). EventBob's routing layer treats both identically—the location is an implementation detail hidden behind the EventHandler interface.
+
+**Implication:** A capability can be relocated from one microlith to another without changing the routing logic. Only configuration changes (which HandlerLoader implementation to use).
+
+**Vocabulary:** We say "capability" not "local capability" or "remote capability" in the routing layer. Location is infrastructure concern, not domain concern.
+
+---
+
 ## Ubiquitous Language
 
 ### Microlith
@@ -63,13 +75,35 @@ What a microservice provides. A capability is declared via the @Capability annot
 
 **Note:** Future enhancements may add routing metadata (HTTP method, path, service grouping) to the annotation. Current implementation uses simple string identifiers.
 
+### RemoteCapability
+A mapping from capability name to remote endpoint URI, enabling inter-microlith communication. Represents a capability hosted in a different process or service.
+
+**Structure:** `RemoteCapability(name: String, uri: URI)` where name is the capability identifier and uri is the remote endpoint.
+
+**Purpose:** Enables EventBob to route events to handlers in other microliths. The transport mechanism (HTTP, gRPC) is determined by the URI scheme.
+
+**Example:** `RemoteCapability("upper", URI.create("http://text-processing-service:8080"))` routes "upper" capability requests to a remote service.
+
 ### HandlerLoader
-The mechanism for loading microservices from JARs. Discovers EventHandler implementations and registers them with EventBob.
+The mechanism for loading microservices from JARs or remote endpoints. Discovers EventHandler implementations and registers them with EventBob.
+
+**Contract:** `Map<String, EventHandler> loadHandlers()` - parameterless method that uses constructor-injected configuration (JAR paths, remote endpoints) to discover and instantiate handlers.
+
+**Implementations:**
+- **JarHandlerLoader** - loads handlers from JAR files using isolated class loaders
+- **RemoteHandlerLoader** - creates HTTP adapter wrappers for remote capability endpoints
 
 ### Event
 A transport envelope for in-process communication between handlers within a microlith. **Not a domain event.** An Event contains routing information (source, target), parameters, metadata, and an optional payload. Events are immutable messages passed between EventHandler implementations via EventBob.
 
 **Important distinction:** "Event" in EventBob refers to the message envelope, not to domain events in the Event Sourcing sense. Think of it as a request/response wrapper, not an occurrence that happened in the domain.
+
+### EventDto
+Data Transfer Object for Event serialization across HTTP boundaries. Translates between domain Event (core) and JSON representations (infrastructure).
+
+**Purpose:** Keeps Jackson annotations and REST concerns out of the domain Event class. Acts as anti-corruption layer at HTTP boundary.
+
+**Usage:** Infrastructure code converts EventDto ↔ Event at the system edge. Core domain never sees EventDto.
 
 ### Dispatcher
 A facility provided to EventHandlers to send events to other handlers. The Dispatcher abstracts away the routing mechanism.
@@ -89,13 +123,13 @@ The core defines domain concepts and port interfaces:
 - Microservice: Code in a JAR that integrates with EventBob via EventHandler implementations
 - EventHandler: Integration contract that microservices implement (single method: `handle(Event, Dispatcher)`)
 - Capability: Identifier (string + version) declared via @Capability annotation
-- HandlerLoader: Mechanism for loading microservices from JARs
+- HandlerLoader: Mechanism for loading microservices from various sources (JARs, remote endpoints)
 - Event: Message envelope for in-process communication
 - Dispatcher: Facility provided to EventHandlers for sending events to other handlers
 
 **Core Components:**
 - EventBob: Routes events to handlers
-- HandlerLoader: Loads microservices from JAR files
+- HandlerLoader: Port interface for loading handlers from various sources
 
 **Boundaries:**
 - Core has NO framework dependencies (no Spring, no database libraries)
@@ -108,10 +142,21 @@ The core defines domain concepts and port interfaces:
 - Loading microservices from JAR files at startup
 - Discovering EventHandler implementations via @Capability annotations
 - Registering handlers with EventBob router
+- Providing HTTP adapters for remote capability invocation (RemoteHandlerLoader, HttpEventHandlerAdapter)
 
 **Bridge Pattern:** Infrastructure depends on core, never reverse. Spring types stay in infrastructure layer, core types stay in core.
 
 **Not a separate bounded context:** io.eventbob.spring uses the SAME ubiquitous language as core. It's an adapter, not a different semantic model.
+
+### Inter-Microlith Communication
+
+**Pattern:** Microliths communicate via HTTP by wrapping remote endpoints as EventHandler implementations.
+
+**Anti-Corruption Layer:** HttpEventHandlerAdapter + EventDto translate between HTTP and domain Event at the boundary. Core routing logic remains unchanged.
+
+**Location transparency:** Remote handlers are indistinguishable from local handlers at the EventBob routing level. Both implement EventHandler interface.
+
+**Configuration:** RemoteCapability definitions declare which capabilities are hosted remotely. RemoteHandlerLoader instantiates HTTP adapters for those capabilities.
 
 ---
 
@@ -119,6 +164,7 @@ The core defines domain concepts and port interfaces:
 
 1. **Capabilities are unique** — Each capability identifier (value + version) must be unique within a microlith
 2. **Microservices must implement EventHandler** — Integration with EventBob requires one or more EventHandler implementations annotated with @Capability
+3. **Location transparency preserved** — Remote handlers must implement the same EventHandler contract as local handlers. No special-case routing logic.
 
 ---
 

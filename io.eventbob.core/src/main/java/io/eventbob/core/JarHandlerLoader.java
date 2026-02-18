@@ -45,8 +45,19 @@ class JarHandlerLoader implements HandlerLoader {
     private static final Logger logger = Logger.getLogger(JarHandlerLoader.class.getName());
     private static final String CLASS_SUFFIX = ".class";
 
+    private final Collection<Path> jarPaths;
+
+    /**
+     * Creates a JAR handler loader with specified JAR paths.
+     *
+     * @param jarPaths collection of paths to JAR files to scan
+     */
+    JarHandlerLoader(Collection<Path> jarPaths) {
+        this.jarPaths = jarPaths;
+    }
+
     @Override
-    public Map<String, EventHandler> loadHandlers(Collection<Path> jarPaths) throws IOException {
+    public Map<String, EventHandler> loadHandlers() throws IOException {
         List<DiscoveredHandler> discoveredHandlers = discoverHandlers(jarPaths);
         return instantiateHandlers(discoveredHandlers);
     }
