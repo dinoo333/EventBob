@@ -113,10 +113,17 @@ Simple stubs over mocks - verify behavior via recorded state.
 **Applied in:** HandlerLoader, JarHandlerLoader
 
 **Pattern:**
-- Public interface with single method: `Map<String, EventHandler> loadHandlers(Collection<Path> jarPaths)`
-- Factory method: `HandlerLoader.jarLoader()` returns default implementation
+- Public interface with constructor injection pattern
+- Implementations receive dependencies (JAR paths, remote endpoints, etc.) via constructor
+- Single method: `Map<String, EventHandler> loadHandlers()` (no parameters)
+- Factory method: `HandlerLoader.jarLoader(Collection<Path>)` returns JAR-based implementation with injected paths
 - Returns map of capability names to instantiated handlers
 - Throws `IOException` for unreadable JARs, `IllegalStateException` for duplicate capabilities or instantiation failures
+
+**Design rationale:**
+- Constructor injection allows different loader implementations (JAR-based, remote, service registry, etc.)
+- Parameterless `loadHandlers()` follows Command pattern (dependencies captured at construction time)
+- Decouples loading strategy from usage (callers don't need to know source of handlers)
 
 ### JarHandlerLoader Implementation
 
@@ -159,7 +166,8 @@ Simple stubs over mocks - verify behavior via recorded state.
 
 **Design Decisions:**
 - Package-private visibility: Implementation detail, not part of public API
-- Factory method pattern: `HandlerLoader.jarLoader()` decouples interface from concrete class
+- Factory method pattern: `HandlerLoader.jarLoader(Collection<Path>)` decouples interface from concrete class
+- Constructor injection: JAR paths provided at construction, used by parameterless `loadHandlers()`
 - Two-phase design: Discovery separated from instantiation (easier to test, clearer logic flow)
 - Reflection vs ServiceLoader: Reflection chosen for simplicity and explicit control over class loading
 

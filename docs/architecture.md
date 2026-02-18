@@ -4,6 +4,8 @@
 
 EventBob bundles multiple microservices into a microlith to solve the chatty-application anti-pattern. When too many microservices cause network saturation and poor performance, EventBob loads their JARs into a single server for in-process communication.
 
+**Location Transparency Extension:** EventBob also supports remote handler loading via HTTP, enabling hybrid architectures where some handlers run in-process (from JARs) and others run remotely (via HTTP endpoints). The routing layer treats both types identically — clients see a unified capability namespace regardless of handler location.
+
 ---
 
 ## Three-Layer Architecture
@@ -25,6 +27,7 @@ EventBob follows Clean Architecture with three layers:
 │   io.eventbob.spring                 │  Infrastructure Library (Middle)
 │   - Spring Boot wiring               │
 │   - HTTP transport adapters          │
+│   - Remote handler loading adapters  │
 │   - EventBobConfig (generic)         │
 │   - NO main class (library)          │
 │   - NO hard-coded paths              │
@@ -35,6 +38,7 @@ EventBob follows Clean Architecture with three layers:
 │   io.eventbob.example.microlith.*   │  Application Layer (Outermost)
 │   - Spring Boot main class           │
 │   - Concrete JAR path configuration  │
+│   - Concrete remote endpoint config  │
 │   - Deployment-specific wiring       │
 │   - Example: microlith.echo          │
 └──────────────────────────────────────┘
@@ -53,14 +57,40 @@ EventBob follows Clean Architecture with three layers:
 
 ### Core → Spring Boundary
 
-Core defines HandlerLoader interface with factory method:
+Core defines HandlerLoader interface with factory methods:
 
 ```java
 public interface HandlerLoader {
-    Map<String, EventHandler> loadHandlers(Collection<Path> jarPaths) throws IOException;
+    /**
+     * Load handlers from the configured source.
+     * 
+     * @return Map of capability name to EventHandler
+     * @throws IOException if loading fails
+     */
+    Map<String, EventHandler> loadHandlers() throws IOException;
     
-    static HandlerLoader jarLoader() {
-        return new JarHandlerLoader();  // package-private implementation
+    /**
+     * Factory method: Create a JAR-based handler loader.
+     * 
+     * @param jarPaths Collection of JAR file paths to load handlers from
+     * @return HandlerLoader that loads from the specified JARs
+     */
+    static HandlerLoader jarLoader(Collection<Path> jarPaths) {
+        return new JarHandlerLoader(jarPaths);  // package-private implementation
+    }
+    
+    /**
+     * Factory method: Create a remote HTTP-based handler loader.
+     * Implementation provided by infrastructure layer (io.eventbob.spring).
+     * 
+     * @param remoteEndpoint URL of remote EventBob server
+     * @param capabilities Set of capability names available at remote endpoint
+     * @return HandlerLoader that proxies to remote handlers via HTTP
+     */
+    static HandlerLoader remoteLoader(String remoteEndpoint, Set<String> capabilities) {
+        // Implementation discovered via ServiceLoader mechanism
+        // This allows core to define the contract without depending on HTTP infrastructure
+        throw new UnsupportedOperationException("Remote loader requires io.eventbob.spring on classpath");
     }
 }
 ```
@@ -71,19 +101,30 @@ Spring infrastructure depends only on the interface:
 @Configuration
 public class EventBobConfig {
     private final List<Path> handlerJarPaths;
+    private final List<RemoteCapability> remoteCapabilities;
     
-    public EventBobConfig(List<Path> handlerJarPaths) {
+    public EventBobConfig(
+            List<Path> handlerJarPaths,
+            @Autowired(required = false) List<RemoteCapability> remoteCapabilities) {
         this.handlerJarPaths = handlerJarPaths;
+        this.remoteCapabilities = remoteCapabilities != null ? remoteCapabilities : List.of();
     }
     
     private Map<String, EventHandler> loadHandlersFromJars() throws IOException {
-        HandlerLoader loader = HandlerLoader.jarLoader();  // Factory method
-        return loader.loadHandlers(handlerJarPaths);
+        HandlerLoader loader = HandlerLoader.jarLoader(handlerJarPaths);  // Factory method
+        return loader.loadHandlers();
+    }
+    
+    private Map<String, EventHandler> loadRemoteHandlers(HttpClient httpClient) throws IOException {
+        HandlerLoader remoteLoader = new RemoteHandlerLoader(remoteCapabilities, httpClient);
+        return remoteLoader.loadHandlers();
     }
 }
 ```
 
 **Key insight:** Spring never sees JarHandlerLoader (package-private). It depends only on the public HandlerLoader interface. This is Dependency Inversion Principle in practice.
+
+**Remote loading insight:** The `remoteLoader()` factory method is defined in core but implemented in infrastructure layer via ServiceLoader pattern. This preserves dependency direction (Spring → Core) while allowing infrastructure-specific implementations.
 
 ### Spring → Application Boundary
 
@@ -147,10 +188,22 @@ io.eventbob.core
 io.eventbob.spring
 ├── EventBobConfig                 (Spring configuration - constructor injection)
 ├── EventController                (REST endpoint adapter)
-├── EventDto                       (HTTP/Event boundary DTO)
+├── EventDto                       (HTTP/Event boundary DTO - anti-corruption layer)
+├── adapter/
+│   └── http/
+│       ├── HttpEventHandlerAdapter (EventHandler → HTTP adapter)
+│       └── RemoteEventDto          (Remote HTTP DTO - separate from local EventDto)
+├── loader/
+│   └── RemoteHandlerLoader        (HandlerLoader implementation for remote endpoints)
 └── handlers/
     └── HealthcheckHandler         (Built-in system handler)
 ```
+
+**Package structure rationale:**
+- **Top-level:** Configuration and local REST endpoint (EventBobConfig, EventController, EventDto)
+- **adapter/http/:** HTTP client-side adapters for remote handler invocation
+- **loader/:** HandlerLoader implementations beyond core's JarHandlerLoader
+- **handlers/:** Built-in system handlers
 
 **No main class.** This is a library module. Applications import and configure it.
 
@@ -166,6 +219,8 @@ More microlith applications will follow this pattern (e.g., `io.eventbob.example
 ---
 
 ## Component Diagram
+
+### Local Handler Loading (Original)
 
 ```
 ┌─────────────────────────────────────────┐
@@ -189,6 +244,29 @@ More microlith applications will follow this pattern (e.g., `io.eventbob.example
 └─────────────────────────────────────────┘
 ```
 
+### Remote Handler Loading (New)
+
+```
+┌───────────────────────────────┐        ┌───────────────────────────────┐
+│  Microlith A                  │        │  Microlith B                  │
+│                               │        │                               │
+│  ┌─────────────────────┐     │        │  ┌─────────────────────┐     │
+│  │  EventBob Router    │     │  HTTP  │  │  EventBob Server    │     │
+│  │                     │ ────┼───────>│  │                     │     │
+│  │  [RemoteLoader]     │     │        │  │  [upper.jar]        │     │
+│  │  capability: upper  │     │        │  │                     │     │
+│  │                     │     │        │  │  POST /events       │     │
+│  └─────────────────────┘     │        │  └─────────────────────┘     │
+│                               │        │                               │
+└───────────────────────────────┘        └───────────────────────────────┘
+
+Microlith A sees "upper" capability in its namespace.
+At runtime, "upper" events are proxied to Microlith B via HTTP.
+Domain code in Microlith A is unaware of the location — it just calls EventHandler.
+```
+
+**Location transparency:** The EventBob router in Microlith A treats remote handlers identically to local handlers. Both implement EventHandler interface. Clients cannot tell the difference.
+
 ---
 
 ## Dependency Rules
@@ -196,6 +274,8 @@ More microlith applications will follow this pattern (e.g., `io.eventbob.example
 **✅ Allowed:**
 - `io.eventbob.example.microlith.*` → `io.eventbob.spring`
 - `io.eventbob.spring` → `io.eventbob.core`
+- `io.eventbob.spring.adapter.*` → `io.eventbob.core` (adapters depend on domain)
+- `io.eventbob.spring.loader.*` → `io.eventbob.core` (loaders implement HandlerLoader)
 - Applications → Library → Domain
 
 **❌ Forbidden:**
@@ -215,10 +295,12 @@ More microlith applications will follow this pattern (e.g., `io.eventbob.example
 - Routing abstractions (Dispatcher)
 - JAR loading abstractions and implementation (HandlerLoader, JarHandlerLoader)
 - **NO framework dependencies** (Spring, Dropwizard, etc.)
+- **NO HTTP client dependencies** (remote loading is infrastructure concern)
 
 ### Spring Library (`io.eventbob.spring`)
 - Generic EventBob configuration (constructor injection)
-- HTTP transport adapters
+- HTTP transport adapters (server-side: EventController, client-side: HttpEventHandlerAdapter)
+- Remote handler loading (RemoteHandlerLoader, RemoteEventDto)
 - REST endpoints
 - Framework-specific code (Spring Boot, Spring Web)
 - **NO main class, NO hard-coded paths**
@@ -226,11 +308,49 @@ More microlith applications will follow this pattern (e.g., `io.eventbob.example
 ### Microlith Applications (`io.eventbob.example.microlith.*`)
 - Spring Boot main class
 - Concrete JAR path configuration
+- Concrete remote endpoint configuration
 - Deployment-specific wiring
 - Runtime dependencies on handler JARs
 
 ### Rule
 Core defines WHAT (domain model + abstractions). Infrastructure library defines HOW (with specific frameworks). Applications define WHICH (which handlers to load, where to deploy).
+
+---
+
+## Location Transparency Architecture
+
+### Design Goal
+
+Domain code should be agnostic to handler location. Whether a handler runs in the same JVM (loaded from JAR) or in a remote process (accessed via HTTP) is a deployment decision, not a domain concern.
+
+### How It Works
+
+1. **Unified Interface:** Both local and remote handlers implement the same EventHandler interface from core
+2. **Adapter Pattern:** HttpEventHandlerAdapter wraps HTTP client logic and exposes EventHandler interface
+3. **Transparent Routing:** EventBob router treats all handlers identically — it calls `handle(Event)` regardless of implementation
+4. **Anti-Corruption Layer:** EventDto and RemoteEventDto prevent HTTP types from leaking into domain
+
+### Remote Handler Loading Sequence
+
+```
+Application configures remote endpoint
+        ↓
+RemoteHandlerLoader creates HttpEventHandlerAdapter
+        ↓
+HttpEventHandlerAdapter registered with EventBob router
+        ↓
+Client code calls eventBob.processEvent(event)
+        ↓
+EventBob routes to HttpEventHandlerAdapter (transparent)
+        ↓
+HttpEventHandlerAdapter converts Event → RemoteEventDto → HTTP POST
+        ↓
+Remote server responds with RemoteEventDto → Event
+        ↓
+Client receives Event (indistinguishable from local handler)
+```
+
+**Key insight:** The adapter lives in infrastructure layer. Core remains pure. Remote complexity is encapsulated.
 
 ---
 
@@ -248,13 +368,15 @@ The three-layer architecture enables multiple concrete microlith deployments fro
          │             │             │
    microlith.echo  microlith.upper  microlith.messages
    (lower + echo)  (upper + ...)   (read + write + ...)
+   (+ remote upper) (local only)    (+ remote archive)
 ```
 
 Each microlith:
 - Imports io.eventbob.spring library
 - Provides @Bean for List<Path> handlerJarPaths
+- Optionally provides @Bean for List<RemoteCapability> remoteCapabilities
 - Has its own Spring Boot main class
-- Loads different combinations of handlers
+- Loads different combinations of handlers (local and/or remote)
 
 The infrastructure library remains unchanged regardless of which handlers are loaded.
 
@@ -277,6 +399,7 @@ Each infrastructure library:
 - Depends on core
 - Never depends on other infrastructure modules
 - Provides framework-specific wiring
-- Uses HandlerLoader.jarLoader() factory method
+- Uses HandlerLoader.jarLoader(Collection<Path>) factory method
+- May provide HandlerLoader.remoteLoader() implementation
 
 Core remains unchanged regardless of infrastructure choice.
