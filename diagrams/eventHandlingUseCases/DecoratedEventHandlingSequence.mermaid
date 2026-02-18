@@ -11,7 +11,7 @@ sequenceDiagram
         opt before hook
             D->>D: before.accept(event)
         end
-        D->>H: delegate.handle(event)
+        D->>H: delegate.handle(event, dispatcher)
         H-->>D: Event
         opt afterSuccess hook
             D->>D: afterSuccess.accept(event)
@@ -21,7 +21,7 @@ sequenceDiagram
         opt before hook
             D->>D: before.accept(event)
         end
-        D->>H: delegate.handle(event)
+        D->>H: delegate.handle(event, dispatcher)
         H-->>D: exception
         opt onError hook
             D->>D: onError.accept(event, exception)

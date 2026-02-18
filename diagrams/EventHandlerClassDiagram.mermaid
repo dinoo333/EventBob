@@ -69,3 +69,53 @@ classDiagram
     EventBob o--> EventHandler: delegates handling
     DecoratedEventHandler o--> EventHandler: wraps delegate
     Event ..> MetadataKeys: uses keys from
+
+    class HandlerLoader {
+        <<interface>>
+        +Map~String,EventHandler~ loadHandlers()
+    }
+
+    class JarHandlerLoader {
+        -Collection~Path~ jarPaths
+        +JarHandlerLoader(Collection~Path~)
+        +Map~String,EventHandler~ loadHandlers()
+    }
+
+    class RemoteHandlerLoader {
+        -List~RemoteCapability~ remoteCapabilities
+        -HttpClient httpClient
+        +RemoteHandlerLoader(List~RemoteCapability~, HttpClient)
+        +Map~String,EventHandler~ loadHandlers()
+    }
+
+    class HttpEventHandlerAdapter {
+        -URI remoteEndpoint
+        -HttpClient httpClient
+        -ObjectMapper objectMapper
+        +Event handle(Event, Dispatcher)
+    }
+
+    class EventDto {
+        <<Record>>
+        +String source
+        +String target
+        +Map~String,Object~ parameters
+        +Map~String,Object~ metadata
+        +Object payload
+        +static EventDto fromEvent(Event)
+        +Event toEvent()
+    }
+
+    class RemoteCapability {
+        <<Record>>
+        +String name
+        +URI uri
+    }
+
+    HandlerLoader <|.. JarHandlerLoader: implements
+    HandlerLoader <|.. RemoteHandlerLoader: implements
+    EventHandler <|.. HttpEventHandlerAdapter: implements
+    RemoteHandlerLoader ..> HttpEventHandlerAdapter: creates
+    RemoteHandlerLoader o--> RemoteCapability: uses
+    HttpEventHandlerAdapter ..> EventDto: uses
+    HttpEventHandlerAdapter o--> HttpClient: uses

@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant EC as EventController
+    participant EB as EventBob
+    participant HA as HttpEventHandlerAdapter
+    participant RM as Remote Microlith
+    participant RH as Remote EventHandler
+
+    C->>EC: POST /events (EventDto JSON)
+    EC->>EB: handle(Event)
+    EB->>HA: handle(Event)
+    Note over HA: Convert Event → EventDto
+    HA->>RM: HTTP POST /events (EventDto JSON)
+    RM->>RH: handle(Event)
+    RH-->>RM: Event (response)
+    Note over RM: Convert Event → EventDto
+    RM-->>HA: EventDto JSON
+    Note over HA: Convert EventDto → Event
+    HA-->>EB: Event
+    EB-->>EC: Event
+    Note over EC: Convert Event → EventDto
+    EC-->>C: EventDto JSON
