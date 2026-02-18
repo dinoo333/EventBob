@@ -72,7 +72,7 @@ class LowerHandlerTest {
   }
 
   @Test
-  void shouldPreserveEventSource() throws EventHandlingException {
+  void shouldSetSourceToLower() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("lower")
@@ -81,11 +81,11 @@ class LowerHandlerTest {
 
     Event result = handler.handle(input, null);
 
-    assertThat(result.getSource()).isEqualTo("client");
+    assertThat(result.getSource()).isEqualTo("lower");
   }
 
   @Test
-  void shouldPreserveEventTarget() throws EventHandlingException {
+  void shouldSetTargetToOriginalSource() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("lower")
@@ -94,7 +94,7 @@ class LowerHandlerTest {
 
     Event result = handler.handle(input, null);
 
-    assertThat(result.getTarget()).isEqualTo("lower");
+    assertThat(result.getTarget()).isEqualTo("client");
   }
 
   @Test

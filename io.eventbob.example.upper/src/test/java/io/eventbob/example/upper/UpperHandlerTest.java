@@ -72,7 +72,7 @@ class UpperHandlerTest {
   }
 
   @Test
-  void shouldPreserveEventSource() throws EventHandlingException {
+  void shouldSetSourceToUpper() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("upper")
@@ -81,11 +81,11 @@ class UpperHandlerTest {
 
     Event result = handler.handle(input, null);
 
-    assertThat(result.getSource()).isEqualTo("client");
+    assertThat(result.getSource()).isEqualTo("upper");
   }
 
   @Test
-  void shouldPreserveEventTarget() throws EventHandlingException {
+  void shouldSetTargetToOriginalSource() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("upper")
@@ -94,7 +94,7 @@ class UpperHandlerTest {
 
     Event result = handler.handle(input, null);
 
-    assertThat(result.getTarget()).isEqualTo("upper");
+    assertThat(result.getTarget()).isEqualTo("client");
   }
 
   @Test

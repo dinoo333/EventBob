@@ -37,12 +37,18 @@ class EchoHandlerTest {
         .payload("hello world")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("HELLO WORLD")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     handler.handle(input, dispatcher);
 
-    assertThat(dispatcher.sentEvent).isNotNull();
-    assertThat(dispatcher.sentEvent.getTarget()).isEqualTo("lower");
+    assertThat(dispatcher.firstSentEvent).isNotNull();
+    assertThat(dispatcher.firstSentEvent.getTarget()).isEqualTo("lower");
   }
 
   @Test
@@ -59,12 +65,18 @@ class EchoHandlerTest {
         .payload("hello world")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("HELLO WORLD")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     handler.handle(input, dispatcher);
 
-    assertThat(dispatcher.sentEvent).isNotNull();
-    assertThat(dispatcher.sentEvent.getSource()).isEqualTo("echo");
+    assertThat(dispatcher.firstSentEvent).isNotNull();
+    assertThat(dispatcher.firstSentEvent.getSource()).isEqualTo("echo");
   }
 
   @Test
@@ -81,16 +93,22 @@ class EchoHandlerTest {
         .payload("hello world")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("HELLO WORLD")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     handler.handle(input, dispatcher);
 
-    assertThat(dispatcher.sentEvent).isNotNull();
-    assertThat(dispatcher.sentEvent.getPayload()).isEqualTo("HELLO WORLD");
+    assertThat(dispatcher.firstSentEvent).isNotNull();
+    assertThat(dispatcher.firstSentEvent.getPayload()).isEqualTo("HELLO WORLD");
   }
 
   @Test
-  void shouldReturnLowercasedResultFromDispatcher() throws EventHandlingException {
+  void shouldReturnCombinedResultFromDispatcher() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("echo")
@@ -103,15 +121,21 @@ class EchoHandlerTest {
         .payload("hello world")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("HELLO WORLD")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getPayload()).isEqualTo("hello world");
+    assertThat(result.getPayload()).isEqualTo("hello world HELLO WORLD");
   }
 
   @Test
-  void shouldPreserveOriginalEventSource() throws EventHandlingException {
+  void shouldSetSourceToEcho() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("echo")
@@ -124,15 +148,21 @@ class EchoHandlerTest {
         .payload("test")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("TEST")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getSource()).isEqualTo("client");
+    assertThat(result.getSource()).isEqualTo("echo");
   }
 
   @Test
-  void shouldPreserveOriginalEventTarget() throws EventHandlingException {
+  void shouldSetTargetToOriginalSource() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("echo")
@@ -145,15 +175,21 @@ class EchoHandlerTest {
         .payload("test")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("TEST")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getTarget()).isEqualTo("echo");
+    assertThat(result.getTarget()).isEqualTo("client");
   }
 
   @Test
-  void shouldPreserveOriginalEventMetadata() throws EventHandlingException {
+  void shouldNotPreserveOriginalEventMetadata() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("echo")
@@ -167,15 +203,21 @@ class EchoHandlerTest {
         .payload("test")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("TEST")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getMetadata()).containsEntry("traceId", "abc123");
+    assertThat(result.getMetadata()).isEmpty();
   }
 
   @Test
-  void shouldPreserveOriginalEventParameters() throws EventHandlingException {
+  void shouldNotPreserveOriginalEventParameters() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("echo")
@@ -189,15 +231,21 @@ class EchoHandlerTest {
         .payload("test")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("TEST")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getParameters()).containsEntry("locale", "en-US");
+    assertThat(result.getParameters()).isEmpty();
   }
 
   @Test
-  void shouldThrowEventHandlingExceptionWhenDispatcherFails() {
+  void shouldThrowEventHandlingExceptionWhenLowerDispatcherFails() {
     Event input = Event.builder()
         .source("client")
         .target("echo")
@@ -215,7 +263,7 @@ class EchoHandlerTest {
   }
 
   @Test
-  void shouldThrowEventHandlingExceptionWhenDispatcherTimesOut() {
+  void shouldThrowEventHandlingExceptionWhenLowerDispatcherTimesOut() {
     Event input = Event.builder()
         .source("client")
         .target("echo")
@@ -244,11 +292,17 @@ class EchoHandlerTest {
         .payload("")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getPayload()).isEqualTo("");
+    assertThat(result.getPayload()).isEqualTo(" ");
   }
 
   @Test
@@ -265,28 +319,45 @@ class EchoHandlerTest {
         .payload("12345")
         .build();
 
-    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse);
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("12345")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getPayload()).isEqualTo("12345");
+    assertThat(result.getPayload()).isEqualTo("12345 12345");
   }
 
   /**
    * Test double that records the event sent and returns a pre-configured response.
    */
   private static class RecordingDispatcher implements Dispatcher {
-    Event sentEvent;
-    private final Event response;
+    Event firstSentEvent;
+    Event secondSentEvent;
+    private final Event lowerResponse;
+    private final Event upperResponse;
+    private int callCount = 0;
 
-    RecordingDispatcher(Event response) {
-      this.response = response;
+    RecordingDispatcher(Event lowerResponse, Event upperResponse) {
+      this.lowerResponse = lowerResponse;
+      this.upperResponse = upperResponse;
     }
 
     @Override
     public CompletableFuture<Event> send(Event event, BiFunction<Throwable, Event, Event> onError) {
-      this.sentEvent = event;
-      return CompletableFuture.completedFuture(response);
+      if (callCount == 0) {
+        this.firstSentEvent = event;
+        callCount++;
+        return CompletableFuture.completedFuture(lowerResponse);
+      } else {
+        this.secondSentEvent = event;
+        callCount++;
+        return CompletableFuture.completedFuture(upperResponse);
+      }
     }
   }
 
