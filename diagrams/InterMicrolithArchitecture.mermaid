@@ -1,0 +1,27 @@
+graph LR
+    subgraph EM["Echo Microlith (localhost:8080)"]
+        EB1[EventBob]
+        EH[Echo Handler<br/>local]
+        LH[Lower Handler<br/>local]
+        RC[RemoteCapability<br/>upper → http://localhost:8081]
+
+        EB1 --> EH
+        EB1 --> LH
+        EB1 --> RC
+    end
+
+    subgraph UM["Upper Microlith (localhost:8081)"]
+        EB2[EventBob]
+        UH[Upper Handler<br/>local]
+
+        EB2 --> UH
+    end
+
+    RC -.->|HTTP POST /events| EB2
+
+    style EM fill:#e1f5ff,stroke:#0288d1,stroke-width:2px
+    style UM fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style RC fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+
+    classDef localHandler fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    class EH,LH,UH localHandler

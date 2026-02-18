@@ -31,9 +31,16 @@ This is the **Spring-based implementation of EventBob** - a Spring Boot adapter 
 └─────────────────────────┘
             ↓
 ┌─────────────────────────┐
-│   EventHandler          │  Handlers loaded from JARs
-│   (via HandlerLoader)   │  + HealthcheckHandler
+│   EventHandler          │  Handlers loaded from:
+│   (via HandlerLoader +  │  - JARs (HandlerLoader)
+│    RemoteHandlerLoader) │  - Remote HTTP (RemoteHandlerLoader)
+│                         │  - Built-in (HealthcheckHandler)
 └─────────────────────────┘
+            │
+            ├──> Local Handlers (from JARs)
+            │
+            └──> HttpEventHandlerAdapter ──> Remote Microlith
+                     (HTTP POST)              (via /events endpoint)
 ```
 
 ## Usage
@@ -92,6 +99,107 @@ Response:
 }
 ```
 
+## Remote Handler Configuration
+
+Microliths can communicate with each other by configuring remote handlers. A remote handler routes events to another microlith via HTTP.
+
+### Configure Remote Capabilities
+
+Provide a bean specifying remote handlers and their endpoints:
+
+```java
+@Configuration
+public class RemoteCapabilitiesConfig {
+  @Bean
+  public List<RemoteCapability> remoteCapabilities() {
+    return List.of(
+      new RemoteCapability("upper", URI.create("http://localhost:8081"))
+    );
+  }
+}
+```
+
+### Inter-Microlith Example
+
+**Scenario:** Echo microlith (port 8080) calls Upper microlith (port 8081) via HTTP.
+
+**Echo Microlith Configuration (port 8080):**
+```java
+@Configuration
+public class EchoMicrolithConfig {
+  @Bean
+  public List<Path> handlerJarPaths() {
+    return List.of(
+      Path.of("/app/handlers/echo-handler.jar")
+    );
+  }
+
+  @Bean
+  public List<RemoteCapability> remoteCapabilities() {
+    return List.of(
+      new RemoteCapability("upper", URI.create("http://localhost:8081"))
+    );
+  }
+}
+```
+
+**Upper Microlith Configuration (port 8081):**
+```java
+@Configuration
+public class UpperMicrolithConfig {
+  @Bean
+  public List<Path> handlerJarPaths() {
+    return List.of(
+      Path.of("/app/handlers/upper-handler.jar")
+    );
+  }
+
+  @Bean
+  public List<RemoteCapability> remoteCapabilities() {
+    return List.of(); // No remote handlers
+  }
+}
+```
+
+**Echo Handler Implementation (uses dispatcher to call remote upper):**
+```java
+@Capability("echo")
+public class EchoHandler implements EventHandler {
+  @Override
+  public Event handle(Event event, Dispatcher dispatcher) {
+    // Call remote upper capability via HTTP
+    Event upperResult = dispatcher.dispatch(
+      event.toBuilder()
+        .target("upper")
+        .build()
+    ).join();
+
+    return event.toBuilder()
+        .payload("Echo: " + upperResult.getPayload())
+        .build();
+  }
+}
+```
+
+**Client Request to Echo Microlith:**
+```bash
+curl -X POST http://localhost:8080/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "client",
+    "target": "echo",
+    "payload": "hello world"
+  }'
+```
+
+**What Happens:**
+1. Request arrives at Echo microlith (8080)
+2. Echo handler dispatches event to "upper" capability
+3. `HttpEventHandlerAdapter` makes HTTP POST to http://localhost:8081/events
+4. Upper microlith (8081) processes event and returns uppercased payload
+5. Echo handler receives result and prepends "Echo: "
+6. Response: `{"source":"client","target":"echo","payload":"Echo: HELLO WORLD"}`
+
 ## Testing
 
 Run tests:
@@ -105,15 +213,15 @@ mvn test
 This module is named `io.eventbob.spring` because:
 1. It's the **Spring Boot implementation** of EventBob (Bridge Pattern)
 2. It uses Spring's framework capabilities (DI, REST, JSON serialization)
-3. It enables peer implementations like `io.eventbob.dropwizard` to coexist
-4. The domain abstraction lives in `io.eventbob.core`
+3. The domain abstraction lives in `io.eventbob.core`
 
 ## Components
 
 ### EventBobConfig
 Spring configuration that:
 - Loads handlers from JAR files via `HandlerLoader`
-- Registers handlers with `EventBob` by capability name
+- Loads remote handlers via `RemoteHandlerLoader`
+- Registers all handlers with `EventBob` by capability name
 - Provides hard-coded `HealthcheckHandler` for system monitoring
 
 ### EventController
@@ -125,10 +233,26 @@ Spring REST controller that:
 - Non-blocking via `CompletableFuture`
 
 ### EventDto
-Data Transfer Object that:
+Data Transfer Object (Record) that:
 - Maps between JSON and domain `Event` objects
 - Keeps Jackson annotations out of domain model
-- Provides plain JavaBean getters/setters for Spring MVC
+- Located in `io.eventbob.spring.adapter` package
+- Immutable record type for type safety
+
+### HttpEventHandlerAdapter
+Remote handler adapter that:
+- Implements `EventHandler` interface
+- Routes events to remote microliths via HTTP POST
+- Posts to `{remoteEndpoint}/events` with `EventDto` JSON payload
+- Converts response back to domain `Event`
+- Enables inter-microlith communication without tight coupling
+
+### RemoteHandlerLoader
+Component that:
+- Loads remote handlers from `List<RemoteCapability>` bean
+- Creates `HttpEventHandlerAdapter` instances for each remote capability
+- Registers remote handlers with `EventBob` by capability name
+- Enables declarative remote handler configuration
 
 ### HealthcheckHandler
 Built-in handler that:
@@ -140,12 +264,3 @@ Built-in handler that:
 
 - **Spring Boot**: REST endpoints, dependency injection, JSON serialization
 - **EventBob Core**: Domain model and event processing logic
-
-## Alternative Implementations
-
-The Bridge Pattern enables multiple framework implementations:
-- `io.eventbob.spring` (this module) - Spring Boot + Spring MVC
-- `io.eventbob.dropwizard` (planned) - Dropwizard + Jersey
-- `io.eventbob.micronaut` (future) - Micronaut
-
-All implementations provide HTTP REST endpoints for event processing using different frameworks.

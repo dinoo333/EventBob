@@ -7,7 +7,7 @@ sequenceDiagram
     S->>R: handle(event)
     R->>R: lookup by event.target
     alt Handler found
-        R->>H: handle(event)
+        R->>H: handle(event, dispatcher)
         H-->>R: Event (response event)
         R-->>S: Event
     else No handler

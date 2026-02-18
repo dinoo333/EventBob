@@ -2,6 +2,7 @@ package io.eventbob.spring;
 
 import io.eventbob.core.Event;
 import io.eventbob.core.EventBob;
+import io.eventbob.spring.adapter.EventDto;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,40 +42,8 @@ public class EventController {
    */
   @PostMapping("/events")
   public CompletableFuture<EventDto> processEvent(@RequestBody EventDto eventDto) {
-    Event event = toEvent(eventDto);
+    Event event = eventDto.toEvent();
     return eventBob.processEvent(event, (error, originalEvent) -> null)
-        .thenApply(this::fromEvent);
-  }
-
-  /**
-   * Map EventDto to domain Event.
-   *
-   * @param dto The event DTO to map.
-   * @return The domain Event built from the DTO.
-   */
-  private Event toEvent(EventDto dto) {
-    return Event.builder()
-        .source(dto.getSource())
-        .target(dto.getTarget())
-        .parameters(dto.getParameters())
-        .metadata(dto.getMetadata())
-        .payload(dto.getPayload())
-        .build();
-  }
-
-  /**
-   * Map domain Event to EventDto.
-   *
-   * @param event The domain Event to map.
-   * @return The event DTO.
-   */
-  private EventDto fromEvent(Event event) {
-    return new EventDto(
-        event.getSource(),
-        event.getTarget(),
-        event.getParameters(),
-        event.getMetadata(),
-        event.getPayload()
-    );
+        .thenApply(EventDto::fromEvent);
   }
 }
