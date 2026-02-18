@@ -14,6 +14,8 @@ public class LowerHandler implements EventHandler {
     String lowercased = input.toLowerCase();
 
     return event.toBuilder()
+        .source("lower")
+        .target(event.getSource())
         .payload(lowercased)
         .build();
   }

@@ -14,6 +14,8 @@ public class UpperHandler implements EventHandler {
     String uppercased = input.toUpperCase();
 
     return event.toBuilder()
+        .source("upper")
+        .target(event.getSource())
         .payload(uppercased)
         .build();
   }
