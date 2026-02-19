@@ -30,6 +30,27 @@ EventBob remains **compliant with microservice architecture**. It just allows en
 
 ## Core Domain Principles
 
+### EventBob as Container
+
+EventBob is a **container** for microservice handlers, similar to how Servlet containers manage servlets or Spring containers manage beans. The container defines lifecycle contracts that handlers implement to integrate:
+
+- **Initialization**: Handlers are initialized with configuration, dependencies, and framework context
+- **Execution**: Handlers process events sent to their declared capabilities
+- **Shutdown**: Handlers release resources (database connections, thread pools, Spring contexts) on container shutdown
+
+**Container responsibilities:**
+- Load handler JARs with isolated class loaders
+- Discover handler capabilities via @Capability annotations
+- Invoke lifecycle methods at appropriate times (initialize, shutdown)
+- Route events to correct handlers based on capability name
+- Provide dispatcher for inter-handler communication
+
+**Handler responsibilities:**
+- Implement EventHandler interface (event processing)
+- Optionally implement HandlerLifecycle contract (initialization/cleanup)
+- Declare capabilities via @Capability annotations
+- Manage handler-specific resources and state
+
 ### Location Transparency
 
 Handlers can be local (loaded from JARs in-process) or remote (accessed via HTTP/gRPC). EventBob's routing layer treats both identically—the location is an implementation detail hidden behind the EventHandler interface.
@@ -93,6 +114,33 @@ public class CaseHandler implements EventHandler {
 **Uniqueness constraint:** Each capability identifier must be unique within a microlith. Two different handlers cannot declare the same capability name. A single handler cannot declare the same capability twice.
 
 **Note:** Future enhancements may add routing metadata (HTTP method, path, service grouping) to the annotation. Current implementation uses simple string identifiers.
+
+### HandlerLifecycle
+Lifecycle contract for handler initialization and cleanup. Like Servlet.init/destroy, this is the contract between the container (EventBob) and the handler for managing initialization, execution, and shutdown.
+
+**Domain truth:** HandlerLifecycle is a **domain concept**, not infrastructure. It's the contract that defines how handlers integrate with the EventBob container, just as Servlet defines how web components integrate with web containers.
+
+**Three lifecycle phases:**
+1. **initialize(LifecycleContext)**: Handler prepares itself with configuration, dependencies, and framework context
+2. **getHandler()**: Container retrieves the initialized EventHandler for event processing
+3. **shutdown()**: Handler releases resources (database connections, Spring contexts, thread pools)
+
+**Why abstract class instead of interface?** Evolution without breaking implementations. Future EventBob versions can add new lifecycle methods (health checks, metrics, config reload) with default implementations, preserving backward compatibility.
+
+**Framework-agnostic:** Core EventBob defines the contract. Implementations can use Spring, Dropwizard, Guice, manual wiring, or any other approach. The container doesn't care how handlers wire themselves.
+
+**Usage:** Handlers that need initialization (database connections, Spring contexts, configuration) provide a HandlerLifecycle implementation that knows how to initialize using their chosen framework. Simple POJO handlers can skip lifecycle and use no-arg constructors.
+
+### LifecycleContext
+Context provided to handlers during initialization. Contains everything a handler needs to wire itself:
+- **Configuration**: Handler-specific config from application.yml (currently empty map - YAML parsing not yet implemented)
+- **Dispatcher**: For sending events to other capabilities
+- **Framework Context**: Optional framework-specific context (Spring ApplicationContext, Dropwizard Environment, etc.)
+
+**Design truth:** LifecycleContext keeps core EventBob framework-agnostic. Core doesn't depend on Spring, Dropwizard, or any specific framework. The `getFrameworkContext(Class<T>)` method provides an extension point for microliths that use frameworks, but handlers can ignore it and wire themselves manually.
+
+**Current state:** Configuration loading from application.yml is not yet implemented. `getConfiguration()` currently returns empty map with TODO comment in implementation. Handlers must not depend on configuration until YAML parsing is implemented.
+
 ### RemoteCapability
 A mapping from capability name to remote endpoint URI, enabling inter-microlith communication. Represents a capability hosted in a different process or service.
 
@@ -107,8 +155,29 @@ The mechanism for loading microservices from JARs or remote endpoints. Discovers
 
 **Contract:** `Map<String, EventHandler> loadHandlers()` - parameterless method that uses constructor-injected configuration (JAR paths, remote endpoints) to discover and instantiate handlers.
 
+**Resource management:** HandlerLoader extends AutoCloseable for resource cleanup. Implementations that manage resources (class loaders, handler lifecycles, HTTP clients) release them in close(). This ensures proper cleanup when EventBob shuts down.
+
+**Two loading strategies:**
+
+1. **POJO Handler Loading (JarHandlerLoader)**:
+   - For simple handlers with no-arg constructors
+   - No lifecycle, no DI, no configuration
+   - Scans JARs for classes implementing EventHandler with @Capability
+   - Instantiates handlers via Class.newInstance()
+   - Factory method: `HandlerLoader.jarLoader(Collection<Path>)`
+
+2. **Lifecycle Handler Loading (LifecycleHandlerLoader)**:
+   - For full microservice handlers needing initialization
+   - Supports Spring, Dropwizard, manual wiring, etc.
+   - Reads META-INF/eventbob-handler.properties to find lifecycle class
+   - Loads configuration from application.yml (not yet implemented - empty map)
+   - Instantiates lifecycle, calls initialize(context), retrieves handler via getHandler()
+   - Tracks lifecycles for shutdown via close()
+   - Factory methods: `HandlerLoader.lifecycleLoader(jarPaths, dispatcher)` and `HandlerLoader.lifecycleLoader(jarPaths, dispatcher, frameworkContext)`
+
 **Implementations:**
-- **JarHandlerLoader** - loads handlers from JAR files using isolated class loaders
+- **JarHandlerLoader** - loads POJO handlers from JAR files using isolated class loaders
+- **LifecycleHandlerLoader** - loads lifecycle handlers from JARs with full initialization support
 - **RemoteHandlerLoader** - creates HTTP adapter wrappers for remote capability endpoints
 
 ### Event
@@ -147,18 +216,22 @@ The core defines domain concepts and port interfaces:
 - Microservice: Code in a JAR that integrates with EventBob via EventHandler implementations
 - EventHandler: Integration contract that microservices implement (single method: `handle(Event, Dispatcher)`)
 - Capability: Identifier (string + version) declared via @Capability annotation
+- HandlerLifecycle: Lifecycle contract for handler initialization and cleanup (like Servlet.init/destroy)
+- LifecycleContext: Context provided during handler initialization (config, dispatcher, framework context)
 - HandlerLoader: Mechanism for loading microservices from various sources (JARs, remote endpoints)
 - Event: Message envelope for in-process communication
 - Dispatcher: Facility provided to EventHandlers for sending events to other handlers
 
 **Core Components:**
 - EventBob: Routes events to handlers
-- HandlerLoader: Port interface for loading handlers from various sources
+- HandlerLoader: Port interface for loading handlers from various sources (POJO or lifecycle strategies)
 
 **Boundaries:**
 - Core has NO framework dependencies (no Spring, no database libraries)
 - Core does NOT know about HTTP, gRPC, PostgreSQL, or infrastructure details
 - Core defines WHAT (domain model), not HOW (implementation)
+
+**Module-level specification:** See `io.eventbob.core/docs/domain_spec.md` for detailed bounded context documentation, aggregates, invariants, and context boundary contracts.
 
 ### Infrastructure Implementations
 
@@ -189,6 +262,9 @@ The core defines domain concepts and port interfaces:
 1. **Capabilities are unique** — Each capability identifier (value + version) must be unique within a microlith
 2. **Microservices must implement EventHandler** — Integration with EventBob requires one or more EventHandler implementations annotated with @Capability
 3. **Location transparency preserved** — Remote handlers must implement the same EventHandler contract as local handlers. No special-case routing logic.
+4. **Lifecycle implementations must be framework-agnostic** — Core HandlerLifecycle contract has no framework dependencies. Implementations may use any framework, but the contract itself is pure Java.
+5. **Container manages lifecycle** — EventBob container controls when initialize() and shutdown() are called. Handlers do not self-initialize.
+6. **Handlers with lifecycle must provide lifecycle class** — JARs using lifecycle loading must include META-INF/eventbob-handler.properties declaring the lifecycle.class property.
 
 ---
 

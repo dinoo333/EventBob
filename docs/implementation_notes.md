@@ -51,19 +51,42 @@ EventBob follows a **simple, focused design:**
 
 ## JAR Loading Implementation
 
-**Resolved approach:** Dynamic JAR scanning using URLClassLoader (one per JAR).
+**Two loading strategies implemented:**
+
+### 1. POJO Handler Loading (JarHandlerLoader)
 
 **Pattern:**
-- `HandlerLoader` interface with constructor injection pattern
-- Factory method `HandlerLoader.jarLoader(Collection<Path>)` returns JAR-based implementation
-- Parameterless `loadHandlers()` method uses constructor-injected dependencies
-- `JarHandlerLoader` implementation (package-private)
-- Separate URLClassLoader per JAR, parent = `EventHandler.class.getClassLoader()`
-- Reflection-based handler instantiation via no-args constructor
-- Malformed JARs logged as warnings and skipped (ZipException detection)
-- Resource management: URLClassLoader in try-with-resources
+- Simple handler classes with no lifecycle
+- Scans JARs for classes annotated with `@Capability`
+- Instantiates handlers via no-args constructor reflection
+- No dependency injection support within handlers
+- Factory method: `HandlerLoader.jarLoader(Collection<Path>)`
 
-**Trade-offs:**
+**Use case:** Simple, stateless handlers with no framework dependencies.
+
+### 2. Lifecycle-Based Loading (LifecycleHandlerLoader)
+
+**Pattern:**
+- Full microservice handlers with initialization lifecycle
+- Supports dependency injection via constructor parameters
+- Handler JAR provides `HandlerLifecycle` implementation
+- Discovered via `META-INF/eventbob-handler.properties` (declares `lifecycle.class`)
+- Configuration loaded from `application.yml` (YAML parsing not yet implemented - returns empty map)
+- Factory method: `HandlerLoader.lifecycleLoader(Collection<Path>, Dispatcher)`
+
+**Initialization sequence:**
+1. Load JAR into isolated URLClassLoader
+2. Read `META-INF/eventbob-handler.properties` to find lifecycle class
+3. Load configuration from `application.yml` (TODO: YAML parsing implementation)
+4. Instantiate lifecycle class via no-args constructor
+5. Call `lifecycle.initialize(context)` with configuration and dispatcher
+6. Call `lifecycle.getHandler()` to retrieve initialized handler
+7. Extract capabilities from handler's `@Capability` annotations
+8. Track lifecycle for shutdown via `close()`
+
+**Use case:** Handlers requiring framework integration (Spring, Dropwizard), database connections, HTTP clients, or complex initialization.
+
+**Trade-offs (both loaders):**
 - Isolation: Each JAR gets its own class loader (prevents dependency conflicts)
 - Shared core: EventHandler and core classes visible to all handlers via parent delegation
 - Reflection cost: Instantiation uses `getDeclaredConstructor().newInstance()` (acceptable for bootstrap)

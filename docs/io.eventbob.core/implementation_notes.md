@@ -193,10 +193,216 @@ Simple stubs over mocks - verify behavior via recorded state.
 - Reflection vs ServiceLoader: Reflection chosen for simplicity and explicit control over class loading
 
 **Known Limitations:**
+
+**JarHandlerLoader (POJO strategy):**
 - Requires no-args constructor (no dependency injection within handlers)
+- No lifecycle management (no initialization or cleanup hooks)
 - Working directory dependency (JAR paths must be relative to cwd or absolute)
 - No hot-reloading (handlers loaded once at bootstrap)
 
+**LifecycleHandlerLoader (lifecycle strategy):**
+- Configuration loading from application.yml not yet implemented (returns empty map - YAML parsing is TODO)
+- Lifecycle class itself requires no-args constructor (handler can use constructor DI)
+- Working directory dependency (JAR paths must be relative to cwd or absolute)
+- No hot-reloading (handlers loaded once at bootstrap)
+
+## Lifecycle-Based Handler Loading
+
+### HandlerLifecycle Contract
+
+**Applied in:** HandlerLifecycle (abstract class), LifecycleContext (interface)
+
+**Pattern:**
+EventBob is a container for embedded microservices. Like other containers (Servlet, Spring, Dropwizard), it defines a lifecycle contract that handlers implement to integrate with the container.
+
+**HandlerLifecycle abstract class:**
+```java
+public abstract class HandlerLifecycle {
+    public abstract void initialize(LifecycleContext context) throws Exception;
+    public abstract EventHandler getHandler();
+    public abstract void shutdown() throws Exception;
+}
+```
+
+**LifecycleContext interface:**
+```java
+public interface LifecycleContext {
+    Map<String, Object> getConfiguration();
+    Dispatcher getDispatcher();
+    <T> Optional<T> getFrameworkContext(Class<T> type);
+}
+```
+
+**Design rationale:**
+- Abstract class (not interface) allows future evolution without breaking existing implementations
+- Future versions can add methods (health checks, metrics, config reload) with default implementations
+- Maintains backward compatibility as EventBob evolves
+
+### LifecycleHandlerLoader Implementation
+
+**Location:** `io.eventbob.core` package (package-private visibility)
+
+**Factory method:**
+```java
+HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher)
+HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher, Object frameworkContext)
+```
+
+**JAR Structure Convention:**
+```
+handler.jar
+├── com/example/MyHandlerLifecycle.class
+├── com/example/MyHandler.class (implements EventHandler)
+├── META-INF/
+│   └── eventbob-handler.properties (declares lifecycle.class)
+└── application.yml (handler-specific configuration)
+```
+
+**eventbob-handler.properties format:**
+```properties
+lifecycle.class=com.example.MyHandlerLifecycle
+```
+
+### Lifecycle Initialization Sequence
+
+**Eight-step loading process:**
+
+1. **Load JAR into isolated URLClassLoader**
+   - One URLClassLoader per JAR
+   - Parent: `HandlerLifecycle.class.getClassLoader()` (ensures core types are shared)
+   - Tracked in `List<URLClassLoader>` for cleanup
+
+2. **Read META-INF/eventbob-handler.properties**
+   - Properties file declares `lifecycle.class` property
+   - If missing: JAR is skipped (logged as warning, graceful degradation)
+
+3. **Load configuration from application.yml**
+   - Currently returns empty map (TODO: implement YAML parsing using SnakeYAML)
+   - Handlers must not depend on configuration until parsing is implemented
+
+4. **Instantiate lifecycle class**
+   - Via reflection: `lifecycleClass.getDeclaredConstructor().newInstance()`
+   - Requires no-args constructor on lifecycle class
+   - Validates lifecycle class extends `HandlerLifecycle`
+
+5. **Call lifecycle.initialize(context)**
+   - Provides `LifecycleContext` with configuration, dispatcher, and optional framework context
+   - Lifecycle implementation wires handler with dependencies (Spring context, DB connections, etc.)
+   - Initialization failures throw `IllegalStateException` (fail-fast)
+
+6. **Call lifecycle.getHandler()**
+   - Retrieves initialized `EventHandler` instance
+   - Null handler throws `IllegalStateException`
+
+7. **Extract capabilities from handler**
+   - Uses `handlerClass.getAnnotationsByType(Capability.class)` to find all `@Capability` annotations
+   - Supports multi-capability handlers (same instance registered for multiple capability names)
+   - Duplicate capabilities throw `IllegalStateException`
+
+8. **Track lifecycle for shutdown**
+   - Lifecycle added to `List<HandlerLifecycle>` for cleanup
+   - When `close()` is called, all lifecycles are shut down before class loaders are closed
+
+### Resource Management
+
+**Shutdown sequence (via close()):**
+1. Call `shutdown()` on all tracked lifecycles (handlers can reference classes during shutdown)
+2. Close all URLClassLoaders (releases JAR file handles and memory)
+3. First exception encountered is thrown (subsequent failures logged as warnings)
+
+**Design rationale:**
+- Lifecycles shut down before class loaders close (handlers may reference classes during cleanup)
+- Class loader closure is deferred to allow Spring context shutdown, DB connection cleanup, etc.
+- Resource cleanup is thorough: both handler resources and class loader resources released
+
+### Framework Integration
+
+**Framework-agnostic design:**
+- Core EventBob has zero framework dependencies
+- `LifecycleContext.getFrameworkContext<T>()` provides optional framework access
+- Handlers can optionally use microlith's framework context (Spring ApplicationContext, Dropwizard Environment, etc.)
+- If framework context is unavailable, handlers create standalone contexts
+
+**Example patterns:**
+
+**Spring handler using framework context:**
+```java
+public void initialize(LifecycleContext context) {
+    Optional<ApplicationContext> springContext =
+        context.getFrameworkContext(ApplicationContext.class);
+
+    if (springContext.isPresent()) {
+        // Use parent Spring context
+        this.handler = springContext.get().getBean(MyHandler.class);
+    } else {
+        // Create own Spring context
+        this.handler = createStandaloneSpringHandler(context);
+    }
+}
+```
+
+**Manual wiring (no framework):**
+```java
+public void initialize(LifecycleContext context) {
+    String dbUrl = (String) context.getConfiguration().get("database.url");
+    DataSource ds = createDataSource(dbUrl);
+    this.handler = new MyHandler(ds, context.getDispatcher());
+}
+```
+
+### Dependency Injection Support
+
+**Lifecycle class:**
+- Requires no-args constructor (instantiated via reflection)
+- Wires dependencies in `initialize()` method
+
+**Handler class:**
+- Can use constructor injection (lifecycle wires dependencies)
+- Example: `new MyHandler(dataSource, httpClient, context.getDispatcher())`
+
+**Contrast with JarHandlerLoader:**
+- JarHandlerLoader: Handler class needs no-args constructor, no DI
+- LifecycleHandlerLoader: Lifecycle class needs no-args constructor, handler can use DI
+
+### Error Handling
+
+**Graceful degradation:**
+- Missing JAR file: Logged as warning, other JARs continue loading
+- Missing eventbob-handler.properties: JAR skipped (logged as warning)
+- Malformed properties file: JAR skipped (logged as warning)
+- Invalid lifecycle class name: JAR skipped (logged as warning)
+
+**Fail-fast:**
+- Lifecycle initialization failure: Throws `IllegalStateException`
+- Null handler from `getHandler()`: Throws `IllegalStateException`
+- Handler with no `@Capability` annotations: Throws `IllegalStateException`
+- Duplicate capability names: Throws `IllegalStateException`
+
+**Design rationale:**
+- Graceful degradation for discovery phase (one bad JAR should not prevent loading others)
+- Fail-fast for contract violations (null handler, missing capabilities are programming errors)
+
+### Test Coverage
+
+**LifecycleHandlerLoaderTest:** 17 tests covering:
+- Missing JAR handling (graceful degradation)
+- Empty JAR list handling
+- Non-readable file handling
+- Missing properties file handling (graceful degradation)
+- Invalid lifecycle class name handling (graceful degradation)
+- Lifecycle initialization failure scenarios
+- Null handler from lifecycle detection
+- Handler with no capabilities detection
+- Duplicate capability detection (fail-fast)
+- Successful lifecycle loading with valid JAR
+- Multi-capability handler support
+- Resource cleanup (shutdown sequence verification)
+
+**Test strategy:**
+- Uses `@TempDir` for isolated JAR creation in tests
+- Stub `Dispatcher` for lifecycle initialization (sufficient for loading tests)
+- Tests both success paths and all error conditions
+- Verifies graceful degradation vs fail-fast behavior matches specification
 
 ## Multi-Capability Handler Support
 

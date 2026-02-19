@@ -403,3 +403,189 @@ Each infrastructure library:
 - May provide HandlerLoader.remoteLoader() implementation
 
 Core remains unchanged regardless of infrastructure choice.
+
+---
+
+## Handler Lifecycle
+
+### The Problem
+
+The original JAR loading mechanism (`HandlerLoader.jarLoader()`) works for simple POJO handlers with no-arg constructors. But real microservices need:
+- Configuration (database URLs, API keys)
+- Dependencies (DataSource, HTTP clients, repositories)
+- Framework integration (Spring contexts, Dropwizard environments)
+- Startup and shutdown hooks (resource management)
+
+POJOs with no-arg constructors cannot solve this. We need a lifecycle contract.
+
+### The Solution: HandlerLifecycle Contract
+
+EventBob is a container for embedded microservices. Like other containers (Servlet, Spring, Dropwizard), it defines a lifecycle contract that handlers implement to integrate with the container.
+
+**HandlerLifecycle is a domain contract.** It lives in core (`io.eventbob.core`) alongside Event and EventHandler. It is not infrastructure. It defines WHAT the lifecycle is, not HOW any particular framework implements it.
+
+Think of it like `javax.servlet.Servlet`. The servlet-api JAR defines the contract. Tomcat, Jetty, and Undertow provide different implementations. The contract itself is framework-agnostic.
+
+### Two Handler Loading Strategies
+
+HandlerLoader now provides two factory methods:
+
+```java
+// Strategy 1: POJO handlers (original)
+HandlerLoader.jarLoader(Collection<Path> jarPaths)
+
+// Strategy 2: Lifecycle handlers (new)
+HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher)
+HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher, Object frameworkContext)
+```
+
+**When to use jarLoader:**
+- Simple handlers with no dependencies
+- No configuration needed
+- No startup/shutdown requirements
+- No framework integration
+
+**When to use lifecycleLoader:**
+- Handlers need configuration (from application.yml)
+- Handlers depend on services, repositories, or HTTP clients
+- Handlers integrate with Spring, Dropwizard, or other frameworks
+- Handlers manage resources that require cleanup
+
+Both strategies produce the same result: `Map<String, EventHandler>`. The router does not care which strategy loaded the handler.
+
+### Handler Initialization Sequence
+
+For lifecycle handlers, initialization follows this sequence:
+
+```
+1. JAR loaded into isolated URLClassLoader
+       ↓
+2. Read META-INF/eventbob-handler.properties
+   - Find lifecycle.class property
+       ↓
+3. Load application.yml configuration (TODO: not yet implemented)
+   - Parsed into Map<String, Object>
+   - Provided to lifecycle via LifecycleContext
+       ↓
+4. Instantiate lifecycle class (no-arg constructor)
+       ↓
+5. Call lifecycle.initialize(LifecycleContext)
+   - Lifecycle receives: configuration, dispatcher, optional framework context
+   - Lifecycle creates services, connects to databases, initializes Spring contexts, etc.
+   - Lifecycle wires dependencies and constructs the handler
+       ↓
+6. Call lifecycle.getHandler()
+   - Returns fully-initialized EventHandler
+       ↓
+7. Extract @Capability annotations from handler
+   - Register handler with EventBob router
+       ↓
+8. Track lifecycle for shutdown
+   - When EventBob shuts down, lifecycle.shutdown() is called
+   - Then URLClassLoader is closed
+```
+
+**Ordering matters:** Class loaders are closed AFTER lifecycle shutdown. This allows handlers to reference classes during cleanup (closing Spring contexts, database connections, etc.).
+
+### Framework-Agnostic Context Mechanism
+
+The LifecycleContext provides three things:
+
+1. **Configuration:** `Map<String, Object> getConfiguration()`
+   - Loaded from handler JAR's application.yml (not yet implemented)
+   - Handler can parse it using Jackson, SnakeYAML, Spring's @ConfigurationProperties, etc.
+
+2. **Dispatcher:** `Dispatcher getDispatcher()`
+   - Used to invoke other capabilities during event processing
+
+3. **Framework Context:** `<T> Optional<T> getFrameworkContext(Class<T> type)`
+   - Generic access to framework-specific resources
+   - Example: `context.getFrameworkContext(ApplicationContext.class)` for Spring
+   - Returns empty if microlith doesn't use that framework
+   - Core has no dependency on Spring, Dropwizard, or any framework
+   - The generic type parameter preserves type safety while maintaining framework-agnosticism
+
+This is Dependency Inversion. The core defines the abstraction (`LifecycleContext`). The infrastructure layer (Spring microlith) provides the framework context. The handler (in an isolated JAR) optionally uses it.
+
+### Dependency Injection Pattern
+
+The lifecycle implementation demonstrates a three-layer dependency injection pattern:
+
+```
+LifecycleHandlerLifecycle (example JAR)
+    ↓ creates
+EchoService (example JAR)
+    ↓ wired to
+EchoHandler (example JAR)
+```
+
+**Example from echo handler:**
+
+```java
+public class EchoHandlerLifecycle extends HandlerLifecycle {
+    @Override
+    public void initialize(LifecycleContext context) {
+        // Create service with dispatcher from context
+        EchoService echoService = new EchoService(context.getDispatcher());
+        // Wire service to handler via constructor injection
+        this.handler = new EchoHandler(echoService);
+    }
+}
+```
+
+The handler depends on the service. The service depends on the dispatcher. The lifecycle wires everything together. This is manual dependency injection -- no framework required, but frameworks can be used if needed.
+
+### Resource Management
+
+HandlerLoader extends `AutoCloseable`. When EventBob shuts down, it calls `loader.close()`, which:
+
+1. Calls `lifecycle.shutdown()` on all tracked lifecycles
+   - Handlers close database connections, shutdown thread pools, close Spring contexts, etc.
+2. Closes all URLClassLoaders
+   - Releases class loader resources
+
+This ensures clean shutdown. Resources are released in the correct order (lifecycles first, then class loaders).
+
+### Current Limitations
+
+**Configuration loading is not yet implemented.** The `LifecycleContext.getConfiguration()` method currently returns an empty map. YAML parsing using SnakeYAML or similar will be added in a future commit.
+
+Handlers must not depend on configuration until this is implemented. Use hard-coded defaults or environment variables as temporary workarounds.
+
+### What Belongs Where (Updated)
+
+**Core (`io.eventbob.core`):**
+- Domain contracts: Event, EventHandler, Capability, **HandlerLifecycle, LifecycleContext**
+- Routing abstractions: Dispatcher
+- Loading abstractions and implementations: HandlerLoader, JarHandlerLoader, **LifecycleHandlerLoader**
+- NO framework dependencies (Spring, Dropwizard, etc.)
+- NO HTTP client dependencies (remote loading is infrastructure concern)
+
+**Spring Library (`io.eventbob.spring`):**
+- Generic EventBob configuration (constructor injection)
+- HTTP transport adapters (server-side, client-side)
+- Remote handler loading
+- REST endpoints
+- Framework-specific code (Spring Boot, Spring Web)
+- NO main class, NO hard-coded paths
+- **Can provide framework context via LifecycleContext.getFrameworkContext(ApplicationContext.class)**
+
+**Example Handlers (`io.eventbob.example.echo`, etc.):**
+- EventHandler implementations
+- **HandlerLifecycle implementations**
+- **Service layer (business logic extracted from handlers)**
+- META-INF/eventbob-handler.properties (declares lifecycle.class)
+- application.yml (handler configuration, not yet loaded)
+- NO dependencies on microliths (examples are isolated JARs)
+
+**Microlith Applications (`io.eventbob.example.microlith.*`):**
+- Spring Boot main class
+- Concrete JAR path configuration
+- Concrete remote endpoint configuration
+- Deployment-specific wiring
+- Runtime dependencies on handler JARs
+
+### Rule (Updated)
+
+Core defines WHAT (domain model + abstractions + lifecycle contract). Infrastructure library defines HOW (with specific frameworks). Applications define WHICH (which handlers to load, where to deploy). **Handler JARs define HOW THEY WIRE THEMSELVES (via lifecycle implementations).**
+

@@ -68,6 +68,12 @@ class JarHandlerLoader implements HandlerLoader {
         return instantiateHandlers(discoveredHandlers);
     }
 
+    @Override
+    public void close() {
+        // POJO handlers have no resources to clean up
+        // Class loaders are not explicitly closed (garbage collected when no longer referenced)
+    }
+
     /**
      * Discovers handlers from JAR files without instantiating them.
      * <p>

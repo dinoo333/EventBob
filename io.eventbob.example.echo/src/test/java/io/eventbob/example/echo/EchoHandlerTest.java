@@ -20,7 +20,7 @@ class EchoHandlerTest {
 
   @BeforeEach
   void setUp() {
-    handler = new EchoHandler();
+    // Handler will be created per-test with the appropriate dispatcher
   }
 
   @Test
@@ -32,6 +32,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(null, null);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -49,6 +51,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(null, null);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -64,6 +68,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(null, null);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -91,6 +97,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -119,6 +127,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     handler.handle(input, dispatcher);
 
@@ -147,6 +157,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     handler.handle(input, dispatcher);
 
@@ -175,6 +187,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     handler.handle(input, dispatcher);
 
@@ -203,6 +217,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -230,6 +246,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -257,6 +275,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -285,6 +305,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -313,6 +335,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -328,6 +352,8 @@ class EchoHandlerTest {
         .build();
 
     FailingDispatcher dispatcher = new FailingDispatcher(new RuntimeException("Dispatcher error"));
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     assertThatThrownBy(() -> handler.handle(input, dispatcher))
         .isInstanceOf(EventHandlingException.class)
@@ -344,6 +370,8 @@ class EchoHandlerTest {
         .build();
 
     TimeoutDispatcher dispatcher = new TimeoutDispatcher();
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     assertThatThrownBy(() -> handler.handle(input, dispatcher))
         .isInstanceOf(EventHandlingException.class)
@@ -372,6 +400,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
@@ -399,6 +429,8 @@ class EchoHandlerTest {
         .build();
 
     RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+    EchoService echoService = new EchoService(dispatcher);
+    handler = new EchoHandler(echoService);
 
     Event result = handler.handle(input, dispatcher);
 
