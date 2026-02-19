@@ -108,6 +108,12 @@ Data Transfer Object for Event serialization across HTTP boundaries. Translates 
 ### Dispatcher
 A facility provided to EventHandlers to send events to other handlers. The Dispatcher abstracts away the routing mechanism.
 
+**Two send semantics:**
+- **Async**: `CompletableFuture<Event> send(Event, BiFunction<Throwable, Event, Event>)` - returns immediately with a future, caller controls timeout and error handling
+- **Sync**: `Event send(Event, BiFunction<Throwable, Event, Event>, long)` - blocks until response or timeout, convenience method for synchronous request-response patterns
+
+**Timeout behavior:** The sync variant throws EventHandlingException on timeout, InterruptedException (with interrupt flag restored), or handler failure.
+
 ---
 
 ## Bounded Context

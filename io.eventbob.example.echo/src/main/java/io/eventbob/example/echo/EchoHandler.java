@@ -27,12 +27,7 @@ public class EchoHandler implements EventHandler {
         .target("upper")
         .payload(event.getPayload())
         .build();
-    try {
-      return dispatcher.send(upperRequest, (err, evt) -> null)
-          .get(1, TimeUnit.SECONDS);
-    } catch (Exception e) {
-      throw new EventHandlingException("Failed to call upper", e);
-    }
+    return dispatcher.send(upperRequest, (err, evt) -> null, 1000);
   }
 
   private Event getLower(Event event, Dispatcher dispatcher) {
@@ -41,11 +36,6 @@ public class EchoHandler implements EventHandler {
         .target("lower")
         .payload(event.getPayload())
         .build();
-    try {
-      return dispatcher.send(lowerRequest, (err, evt) -> null)
-          .get(1, TimeUnit.SECONDS);
-    } catch (Exception e) {
-      throw new EventHandlingException("Failed to call lower", e);
-    }
+    return dispatcher.send(lowerRequest, (err, evt) -> null, 1000);
   }
 }

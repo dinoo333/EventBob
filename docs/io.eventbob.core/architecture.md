@@ -84,6 +84,27 @@ Routes events by exact target match to registered handlers. Implements AutoClose
 
 **Design:** EventBob does NOT implement EventHandler. It exposes `processEvent()` which returns `CompletableFuture<Event>` for async processing. Handlers are executed on virtual threads.
 
+### Dispatcher
+
+Contract for sending events from within handlers. Provides two send methods:
+
+**Async variant:**
+```java
+CompletableFuture<Event> send(Event event, BiFunction<Throwable, Event, Event> onError)
+```
+Returns immediately with a future. Caller controls timeout via `future.get(timeout, unit)`.
+
+**Sync variant (default method):**
+```java
+Event send(Event event, BiFunction<Throwable, Event, Event> onError, long timeoutMillis)
+```
+Blocks until response or timeout. Convenience method for synchronous request-response. Handles three exception types explicitly:
+- `InterruptedException` - restores interrupt flag, wraps in EventHandlingException
+- `ExecutionException` - unwraps cause, wraps in EventHandlingException
+- `TimeoutException` - wraps in EventHandlingException
+
+**Design decision:** Sync method is a default interface method. Implementations only provide async variant. This keeps Dispatcher interface minimal while supporting both patterns.
+
 ### Capabilities Vocabulary
 
 Constants defining standard capability names and routing metadata keys:

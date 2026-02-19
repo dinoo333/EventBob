@@ -61,6 +61,27 @@ EventBob router = EventBob.builder()
 - Virtual threads: High concurrency without thread pool tuning
 - Error recovery: Errors converted to error events, not propagated as exceptions
 
+### Timeout Convenience Method
+
+**Applied in:** Dispatcher (default interface method)
+
+**Pattern:**
+```java
+default Event send(Event event, BiFunction<Throwable, Event, Event> onError, long timeoutMillis)
+```
+
+Synchronous wrapper over async `send()` for request-response patterns. Blocks until completion or timeout.
+
+**Exception handling strategy:**
+- `InterruptedException` - Restores interrupt flag via `Thread.currentThread().interrupt()` before wrapping. Preserves thread interruption semantics.
+- `ExecutionException` - Unwraps and passes cause to EventHandlingException. Avoids double-wrapping exceptions.
+- `TimeoutException` - Wraps with timeout-specific message.
+
+**Design rationale:**
+- Default method pattern: Only async variant needs implementation, sync variant provided automatically
+- Explicit exception types: No catch-all `Exception` block. Each failure mode handled distinctly
+- Interrupt flag restoration: Critical for correct behavior in interrupt-sensitive contexts (thread pools, executors)
+
 ## Testing Conventions (This Module)
 
 **Test structure:**

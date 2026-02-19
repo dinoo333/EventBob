@@ -39,8 +39,7 @@ public class EventBob implements AutoCloseable {
     return CompletableFuture.supplyAsync(() -> {
           EventHandler delegate = findHandler(event);
           return delegate.handle(event, dispatcher);
-        },
-        backgroundExecutor)
+        }, backgroundExecutor)
         .exceptionally(e -> {
           var errorEvent = onError.apply(e, event);
           if (errorEvent == null) {
