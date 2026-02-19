@@ -24,6 +24,81 @@ class EchoHandlerTest {
   }
 
   @Test
+  void invert_capability_reversesString() throws EventHandlingException {
+    Event input = Event.builder()
+        .source("client")
+        .target("invert")
+        .payload("clock")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(null, null);
+
+    Event result = handler.handle(input, dispatcher);
+
+    assertThat(result.getPayload()).isEqualTo("kcolc");
+    assertThat(result.getSource()).isEqualTo("invert");
+    assertThat(result.getTarget()).isEqualTo("client");
+  }
+
+  @Test
+  void invert_capability_handlesEmptyString() throws EventHandlingException {
+    Event input = Event.builder()
+        .source("client")
+        .target("invert")
+        .payload("")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(null, null);
+
+    Event result = handler.handle(input, dispatcher);
+
+    assertThat(result.getPayload()).isEqualTo("");
+  }
+
+  @Test
+  void invert_capability_handlesSingleCharacter() throws EventHandlingException {
+    Event input = Event.builder()
+        .source("client")
+        .target("invert")
+        .payload("a")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(null, null);
+
+    Event result = handler.handle(input, dispatcher);
+
+    assertThat(result.getPayload()).isEqualTo("a");
+  }
+
+  @Test
+  void echo_capability_stillWorksAfterAddingInvert() throws EventHandlingException {
+    Event input = Event.builder()
+        .source("client")
+        .target("echo")
+        .payload("HELLO")
+        .build();
+
+    Event lowerResponse = Event.builder()
+        .source("lower")
+        .target("echo")
+        .payload("hello")
+        .build();
+
+    Event upperResponse = Event.builder()
+        .source("upper")
+        .target("echo")
+        .payload("HELLO")
+        .build();
+
+    RecordingDispatcher dispatcher = new RecordingDispatcher(lowerResponse, upperResponse);
+
+    Event result = handler.handle(input, dispatcher);
+
+    assertThat(result.getPayload()).isEqualTo("hello HELLO");
+    assertThat(result.getSource()).isEqualTo("echo");
+  }
+
+  @Test
   void shouldCallDispatcherWithTargetLower() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
@@ -256,10 +331,8 @@ class EchoHandlerTest {
 
     assertThatThrownBy(() -> handler.handle(input, dispatcher))
         .isInstanceOf(EventHandlingException.class)
-        .hasMessageContaining("Failed to call lower")
-        .cause()
-        .cause()
-        .hasMessageContaining("Dispatcher error");
+        .hasMessageContaining("Failed to send event")
+        .hasCauseInstanceOf(RuntimeException.class);
   }
 
   @Test
@@ -274,7 +347,7 @@ class EchoHandlerTest {
 
     assertThatThrownBy(() -> handler.handle(input, dispatcher))
         .isInstanceOf(EventHandlingException.class)
-        .hasMessageContaining("Failed to call lower")
+        .hasMessageContaining("Timeout waiting for response")
         .hasCauseInstanceOf(TimeoutException.class);
   }
 

@@ -7,11 +7,38 @@ import io.eventbob.core.EventHandler;
 import io.eventbob.core.EventHandlingException;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Handler that supports both "echo" and "invert" capabilities.
+ *
+ * <p>Multi-capability pattern: A single handler can respond to multiple capability names.
+ * The handler branches on event.getTarget() to determine which behavior to execute.
+ *
+ * <ul>
+ *   <li>"echo" - Dispatches to "lower" and "upper" capabilities, returns combined result</li>
+ *   <li>"invert" - Reverses the input string without external dispatch</li>
+ * </ul>
+ */
 @Capability("echo")
+@Capability("invert")
 public class EchoHandler implements EventHandler {
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+    return "invert".equals(event.getTarget())
+        ? handleInvert(event)
+        : handleEcho(event, dispatcher);
+  }
 
+  private Event handleInvert(Event event) {
+    String input = (String) event.getPayload();
+    String reversed = new StringBuilder(input).reverse().toString();
+    return Event.builder()
+        .source("invert")
+        .target(event.getSource())
+        .payload(reversed)
+        .build();
+  }
+
+  private Event handleEcho(Event event, Dispatcher dispatcher) throws EventHandlingException {
     var lower = getLower(event, dispatcher);
     var upper = getUpper(event, dispatcher);
     return Event.builder()

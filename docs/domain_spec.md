@@ -69,12 +69,30 @@ What a microservice provides. A capability is declared via the @Capability annot
 - value: String - the capability identifier (e.g., "get-message-content", "create-message")
 - version: int - version of the capability contract (default: 1)
 
-**Declaration:** Microservices declare capabilities via @Capability annotation on EventHandler implementations.
+**Declaration:** Microservices declare capabilities via @Capability annotation on EventHandler implementations. A single handler may declare multiple capabilities using repeatable @Capability annotations (or the explicit @Capabilities container annotation).
 
-**Example:** A message-reading capability might be declared as `@Capability(value="get-message-content", version=1)` or simply `@Capability("get-message-content")` (version defaults to 1).
+**Multi-capability handlers:** When a handler declares multiple capabilities, a single handler instance serves all declared capabilities. The handler receives events with `Event.getTarget()` set to the invoked capability name, allowing it to distinguish which capability was called.
+
+**Example (single capability):** A message-reading capability declared as `@Capability(value="get-message-content", version=1)` or simply `@Capability("get-message-content")` (version defaults to 1).
+
+**Example (multi-capability handler):**
+```java
+@Capability("to-upper")
+@Capability("to-lower")
+public class CaseHandler implements EventHandler {
+    @Override
+    public Event handle(Event event, Dispatcher dispatcher) {
+        String input = (String) event.getPayload();
+        return "to-upper".equals(event.getTarget())
+            ? processUpper(input)
+            : processLower(input);
+    }
+}
+```
+
+**Uniqueness constraint:** Each capability identifier must be unique within a microlith. Two different handlers cannot declare the same capability name. A single handler cannot declare the same capability twice.
 
 **Note:** Future enhancements may add routing metadata (HTTP method, path, service grouping) to the annotation. Current implementation uses simple string identifiers.
-
 ### RemoteCapability
 A mapping from capability name to remote endpoint URI, enabling inter-microlith communication. Represents a capability hosted in a different process or service.
 

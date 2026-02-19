@@ -46,24 +46,27 @@ class CapabilityTest {
   }
 
   @Test
-  void capabilitiesAnnotationHasClassRetentionNotRuntime() {
-    // @Capabilities does not have @Retention(RUNTIME), so it defaults to CLASS retention
-    // This means the annotation is not available at runtime via reflection
+  void capabilitiesContainerAnnotationHasRuntimeRetention() {
     assertThat(MultiCapabilityHandler.class.isAnnotationPresent(Capabilities.class))
-        .isFalse();
+        .isTrue();
 
     Capabilities container = MultiCapabilityHandler.class.getAnnotation(Capabilities.class);
-    assertThat(container).isNull();
+    assertThat(container).isNotNull();
+    assertThat(container.value()).hasSize(3);
   }
 
   @Test
-  void capabilitiesContainerStructureDefinedInSource() {
-    // The @Capabilities annotation exists in source code and accepts an array of @Capability
-    // This test verifies the annotation can be applied without compilation errors
-    // Runtime reflection is not possible due to CLASS retention (not RUNTIME)
-    assertThat(MultiCapabilityHandler.class).isNotNull();
-    assertThat(MultiCapabilityHandler.class.getInterfaces())
-        .contains(EventHandler.class);
+  void capabilitiesContainerHoldsCapabilityValues() {
+    Capabilities container = MultiCapabilityHandler.class.getAnnotation(Capabilities.class);
+    assertThat(container).isNotNull();
+
+    Capability[] capabilities = container.value();
+    assertThat(capabilities[0].value()).isEqualTo("get-message");
+    assertThat(capabilities[0].version()).isEqualTo(1);
+    assertThat(capabilities[1].value()).isEqualTo("create-message");
+    assertThat(capabilities[1].version()).isEqualTo(1);
+    assertThat(capabilities[2].value()).isEqualTo("create-message");
+    assertThat(capabilities[2].version()).isEqualTo(2);
   }
 
   @Test

@@ -133,7 +133,7 @@ public interface HandlerLoader {
 
 **Contract:**
 - Input: Collection of JAR file paths
-- Output: Map of capability names to instantiated EventHandler instances
+- Output: Map of capability names to instantiated EventHandler instances. When a handler class provides multiple capabilities, multiple map entries point to the same handler instance.
 - Throws: IOException if JAR files cannot be read
 - Throws: IllegalStateException if duplicate capabilities found or instantiation fails
 
@@ -153,11 +153,12 @@ URLClassLoader-based implementation that loads handlers from JAR files with isol
    - Create isolated URLClassLoader
    - Scan all .class files
    - Load each class
-   - Check if class implements EventHandler AND has @Capability annotation
-   - Extract capability name from annotation
-   - Collect (capability, class) pairs
-2. Check for duplicate capabilities across all JARs
-3. Instantiate all discovered handlers using no-args constructors
+   - Check if class implements EventHandler AND has @Capability or @Capabilities annotation
+   - Extract capability names from annotation(s) using `getAnnotationsByType(Capability.class)`
+   - For multi-capability handlers, create multiple (capability, class) pairs - one per capability name
+   - Collect all (capability, class) pairs
+2. Check for duplicate capabilities across all JARs (at capability-name level, not class level)
+3. Instantiate all discovered handlers using no-args constructors (one instance per unique handler class)
 
 **Error handling:**
 - **Missing JAR:** IOException thrown immediately (fail fast)
@@ -186,6 +187,37 @@ record DiscoveredHandler(
 **Purpose:** Separates discovery phase from instantiation phase. Discovery collects metadata and validates uniqueness. Instantiation happens only after all handlers are discovered and validated.
 
 **Visibility:** Package-private. This is an internal structure used within JarHandlerLoader. Clients never see it.
+
+
+### Multi-Capability Handler Support
+
+Handlers may declare multiple capabilities using Java's repeatable annotation mechanism:
+
+```java
+@Capability("get-message")
+@Capability("create-message")
+@Capability("update-message")
+public class MessageHandler implements EventHandler {
+    // Single class, three capability registrations
+}
+```
+
+**Instance sharing:** When a handler class declares multiple capabilities, JarHandlerLoader creates a single instance and registers it under each capability name. The instantiation phase maintains an instance cache (`Map<Class<?>, EventHandler>`) to ensure each handler class is instantiated exactly once, regardless of how many capabilities it declares.
+
+**Map semantics:** The returned `Map<String, EventHandler>` contains multiple entries pointing to the same handler instance:
+```
+{
+  "get-message" -> messageHandlerInstance,
+  "create-message" -> messageHandlerInstance,
+  "update-message" -> messageHandlerInstance
+}
+```
+
+**Thread-safety requirement:** Handlers must be thread-safe. This was always required (EventBob routes concurrent requests to handlers), but the shared instance pattern makes it explicit. A single handler instance services all requests for all its declared capabilities.
+
+**Duplicate detection:** Enforced at capability-name level, not class level. Two handler classes cannot declare the same capability name, but one handler class can declare multiple distinct capability names. If `MessageHandler` declares "get-message" and `UserHandler` also declares "get-message", instantiation fails with `IllegalStateException`.
+
+**Boundary preservation:** This is entirely a package-private implementation detail within JarHandlerLoader. The public HandlerLoader interface contract (`Map<String, EventHandler> loadHandlers()`) remains unchanged. Infrastructure code cannot observe whether multiple map entries share the same instance - it sees only the capability-to-handler mapping.
 
 ### DefaultErrorEvent Factory (Package-Private)
 

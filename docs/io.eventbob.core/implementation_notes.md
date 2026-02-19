@@ -197,6 +197,81 @@ Simple stubs over mocks - verify behavior via recorded state.
 - Working directory dependency (JAR paths must be relative to cwd or absolute)
 - No hot-reloading (handlers loaded once at bootstrap)
 
+
+## Multi-Capability Handler Support
+
+### Pattern Overview
+
+EventBob supports handlers that declare multiple capabilities. A single handler class can be annotated with multiple `@Capability` annotations (using Java's repeatable annotation mechanism) or an explicit `@Capabilities` container annotation.
+
+### Discovery and Registration
+
+**Uniform extraction via `getAnnotationsByType`:**
+- `JarHandlerLoader` uses `handlerClass.getAnnotationsByType(Capability.class)` to extract all capabilities
+- This method handles both single `@Capability` and multiple `@Capability` annotations uniformly
+- Also recognizes explicit `@Capabilities` container annotation
+- Returns all `@Capability` annotations regardless of declaration style
+
+**Discovery phase behavior:**
+- For each discovered handler class, all capability names are extracted
+- Each capability generates a `DiscoveredHandler(capability, handlerClass)` record
+- A multi-capability handler produces multiple `DiscoveredHandler` records with the same `handlerClass`
+- Duplicate capability names across different handlers throw `IllegalStateException`
+
+### Instance Sharing
+
+**Single instance per handler class:**
+```java
+Map<Class<? extends EventHandler>, EventHandler> instanceCache = new HashMap<>();
+
+for (DiscoveredHandler discovered : discoveredHandlers) {
+    EventHandler handler = instanceCache.computeIfAbsent(
+        discovered.handlerClass(), this::instantiateHandler);
+    handlers.put(discovered.capability(), handler);
+}
+```
+
+**Result:** The returned map contains multiple capability names pointing to the same handler instance:
+```java
+{
+  "to-upper": caseHandlerInstance,
+  "to-lower": caseHandlerInstance  // same object reference
+}
+```
+
+### Domain Implications
+
+**Shared state:** Since one instance serves all capabilities, any instance state is shared across all capability invocations. Handlers must be thread-safe (already required by EventBob contract).
+
+**Capability discrimination:** The handler receives `Event.getTarget()` with the invoked capability name, allowing it to branch behavior based on which capability was called.
+
+**Example pattern:**
+```java
+@Capability("to-upper")
+@Capability("to-lower")
+public class CaseHandler implements EventHandler {
+    @Override
+    public Event handle(Event event, Dispatcher dispatcher) {
+        String input = (String) event.getPayload();
+        String result = "to-upper".equals(event.getTarget())
+            ? input.toUpperCase()
+            : input.toLowerCase();
+        return event.toBuilder()
+            .payload(result)
+            .build();
+    }
+}
+```
+
+### Uniqueness Enforcement
+
+**Domain invariant preserved:** Each capability identifier must be unique within the microlith. Enforcement happens during discovery:
+- Capability names are tracked in `Set<String> seenCapabilities`
+- Duplicate capability name throws `IllegalStateException` immediately
+- This prevents both:
+  - Two different handlers declaring the same capability
+  - Single handler declaring the same capability twice (repeatable annotation with duplicate values)
+
 ## Performance Characteristics
 
 **Router:** O(1) map lookup by target string

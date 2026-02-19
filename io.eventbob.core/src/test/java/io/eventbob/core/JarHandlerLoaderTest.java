@@ -68,12 +68,16 @@ class JarHandlerLoaderTest {
         HandlerLoader loader = HandlerLoader.jarLoader(jarPaths);
         Map<String, EventHandler> handlers = loader.loadHandlers();
 
-        assertThat(handlers).hasSize(2);
-        assertThat(handlers).containsKeys("lower", "echo");
+        assertThat(handlers).hasSize(3);
+        assertThat(handlers).containsKeys("lower", "echo", "invert");
 
         // Verify handlers are actually instantiated (not null)
         assertThat(handlers.get("lower")).isNotNull().isInstanceOf(EventHandler.class);
         assertThat(handlers.get("echo")).isNotNull().isInstanceOf(EventHandler.class);
+        assertThat(handlers.get("invert")).isNotNull().isInstanceOf(EventHandler.class);
+
+        // Verify echo and invert share the same instance (multi-capability pattern)
+        assertThat(handlers.get("echo")).isSameAs(handlers.get("invert"));
     }
 
     @Test
@@ -131,5 +135,78 @@ class JarHandlerLoaderTest {
         Map<String, EventHandler> handlers = loader.loadHandlers();
 
         assertThat(handlers).isEmpty();
+    }
+
+    @Test
+    void loadHandlers_withMultiCapabilityHandler_registersUnderAllCapabilities() throws IOException {
+        Path multiJar = Paths.get("io.eventbob.example.multi/target/io.eventbob.example.multi-1.0.0-SNAPSHOT.jar");
+
+        if (!Files.exists(multiJar)) {
+            return; // Gracefully skip if example JAR not built
+        }
+
+        HandlerLoader loader = HandlerLoader.jarLoader(List.of(multiJar));
+        Map<String, EventHandler> handlers = loader.loadHandlers();
+
+        assertThat(handlers).hasSize(2);
+        assertThat(handlers).containsKeys("to-upper", "to-lower");
+        assertThat(handlers.get("to-upper")).isNotNull().isInstanceOf(EventHandler.class);
+        assertThat(handlers.get("to-lower")).isNotNull().isInstanceOf(EventHandler.class);
+    }
+
+    @Test
+    void loadHandlers_withMultiCapabilityHandler_sharesSameInstance() throws IOException {
+        Path multiJar = Paths.get("io.eventbob.example.multi/target/io.eventbob.example.multi-1.0.0-SNAPSHOT.jar");
+
+        if (!Files.exists(multiJar)) {
+            return; // Gracefully skip if example JAR not built
+        }
+
+        HandlerLoader loader = HandlerLoader.jarLoader(List.of(multiJar));
+        Map<String, EventHandler> handlers = loader.loadHandlers();
+
+        // Both capabilities must reference the exact same handler instance
+        assertThat(handlers.get("to-upper")).isSameAs(handlers.get("to-lower"));
+    }
+
+    @Test
+    void loadHandlers_withMultiCapabilityAndSingleCapabilityHandlers_loadsAll() throws IOException {
+        Path multiJar = Paths.get("io.eventbob.example.multi/target/io.eventbob.example.multi-1.0.0-SNAPSHOT.jar");
+        Path lowerJar = Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar");
+
+        if (!Files.exists(multiJar) || !Files.exists(lowerJar)) {
+            return; // Gracefully skip if example JARs not built
+        }
+
+        HandlerLoader loader = HandlerLoader.jarLoader(List.of(multiJar, lowerJar));
+        Map<String, EventHandler> handlers = loader.loadHandlers();
+
+        assertThat(handlers).hasSize(3);
+        assertThat(handlers).containsKeys("to-upper", "to-lower", "lower");
+
+        // Multi-capability handler shares instance; single-capability handler is separate
+        assertThat(handlers.get("to-upper")).isSameAs(handlers.get("to-lower"));
+        assertThat(handlers.get("lower")).isNotSameAs(handlers.get("to-upper"));
+    }
+
+    @Test
+    void loadHandlers_withDuplicateCapabilityAcrossMultiAndSingleHandlers_throwsException() {
+        // The multi handler declares "to-lower". If we also load a JAR with a handler
+        // declaring the same capability, it should throw.
+        Path multiJar = Paths.get("io.eventbob.example.multi/target/io.eventbob.example.multi-1.0.0-SNAPSHOT.jar");
+
+        if (!Files.exists(multiJar)) {
+            return; // Gracefully skip if example JAR not built
+        }
+
+        // Loading the same multi JAR twice causes "to-upper" (or "to-lower") to appear twice
+        List<Path> jarPaths = List.of(multiJar, multiJar);
+
+        assertThatThrownBy(() -> {
+            HandlerLoader loader = HandlerLoader.jarLoader(jarPaths);
+            loader.loadHandlers();
+        })
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Duplicate capability");
     }
 }
