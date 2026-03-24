@@ -65,9 +65,6 @@ public class LowerHandlerLifecycle extends HandlerLifecycle {
 
     /**
      * Spring configuration for Lower handler dependencies.
-     * <p>
-     * Defines beans for LowerService and LowerHandler.
-     * </p>
      */
     @Configuration
     static class LowerHandlerConfiguration {

@@ -26,12 +26,11 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Handler implementation (runtime dependency for JAR loading) -->
+        <!-- Handler implementation (compile dep: lifecycle class references handler/service types) -->
         <dependency>
             <groupId>io.eventbob</groupId>
             <artifactId>io.eventbob.example.upper</artifactId>
             <version>${project.version}</version>
-            <scope>runtime</scope>
         </dependency>
 
         <!-- Test Dependencies -->

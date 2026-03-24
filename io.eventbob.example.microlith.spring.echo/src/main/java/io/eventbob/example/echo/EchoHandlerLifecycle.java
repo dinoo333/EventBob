@@ -1,4 +1,4 @@
-package io.eventbob.example.upper;
+package io.eventbob.example.echo;
 
 import io.eventbob.core.EventHandler;
 import io.eventbob.core.HandlerLifecycle;
@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Lifecycle implementation for UpperHandler with Spring dependency injection.
+ * Lifecycle implementation for EchoHandler with Spring dependency injection.
  * <p>
  * Demonstrates Spring integration pattern. The lifecycle creates an isolated
  * ApplicationContext and retrieves the fully-wired handler from Spring.
@@ -23,8 +23,8 @@ import org.springframework.context.annotation.Configuration;
  * wiring happens here in the lifecycle via @Configuration and @Bean methods.
  * </p>
  */
-public class UpperHandlerLifecycle extends HandlerLifecycle {
-    private volatile UpperHandler handler;
+public class EchoHandlerLifecycle extends HandlerLifecycle {
+    private volatile EchoHandler handler;
     private volatile AnnotationConfigApplicationContext applicationContext;
 
     @Override
@@ -37,9 +37,9 @@ public class UpperHandlerLifecycle extends HandlerLifecycle {
         AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
         boolean success = false;
         try {
-            ctx.register(UpperHandlerConfiguration.class);
+            ctx.register(EchoHandlerConfiguration.class);
             ctx.refresh();
-            handler = ctx.getBean(UpperHandler.class);
+            handler = ctx.getBean(EchoHandler.class);
             applicationContext = ctx;
             success = true;
         } finally {
@@ -64,21 +64,18 @@ public class UpperHandlerLifecycle extends HandlerLifecycle {
     }
 
     /**
-     * Spring configuration for Upper handler dependencies.
-     * <p>
-     * Defines beans for UpperService and UpperHandler.
-     * </p>
+     * Spring configuration for Echo handler dependencies.
      */
     @Configuration
-    static class UpperHandlerConfiguration {
+    static class EchoHandlerConfiguration {
         @Bean
-        public UpperService upperService() {
-            return new UpperService();
+        public EchoService echoService() {
+            return new EchoService();
         }
 
         @Bean
-        public UpperHandler upperHandler(UpperService upperService) {
-            return new UpperHandler(upperService);
+        public EchoHandler echoHandler(EchoService echoService) {
+            return new EchoHandler(echoService);
         }
     }
 }

@@ -1,5 +1,7 @@
 package io.eventbob.example.microlith.spring.echo;
 
+import io.eventbob.example.echo.EchoHandlerLifecycle;
+import io.eventbob.example.lower.LowerHandlerLifecycle;
 import io.eventbob.spring.EventBobConfig;
 import io.eventbob.spring.adapter.RemoteCapability;
 import org.springframework.boot.SpringApplication;
@@ -9,21 +11,16 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
 
 import java.net.URI;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 /**
  * Echo microlith application.
  *
- * <p>This Spring Boot microlith provides echo and lower capabilities locally,
- * and delegates to the upper microlith remotely via HTTP. It demonstrates:
+ * <p>This Spring Boot microlith provides echo, invert, and lower capabilities
+ * locally via inline lifecycle wiring, and delegates upper to a remote microlith.
+ * It demonstrates the microlithic microservice pattern: multiple capabilities
+ * co-located in a single deployable unit.
  * </p>
- * <ul>
- *   <li>Loading local handlers from JAR files (echo, lower)</li>
- *   <li>Configuring remote handlers via HTTP endpoints (upper)</li>
- *   <li>Location transparency: EventBob treats both identically</li>
- * </ul>
  */
 @SpringBootApplication
 @ComponentScan(basePackages = {"io.eventbob.spring", "io.eventbob.example.microlith.spring.echo"})
@@ -34,31 +31,16 @@ public class EchoApplication {
     SpringApplication.run(EchoApplication.class, args);
   }
 
-  /**
-   * Provide the list of local handler JAR paths to load.
-   *
-   * <p>This configuration specifies which capabilities this microlith provides locally.
-   * JAR paths are relative to the project root directory.
-   *
-   * @return list of paths to handler JAR files
-   */
   @Bean
-  public List<Path> handlerJarPaths() {
-    return List.of(
-        Paths.get("io.eventbob.example.echo-spring/target/io.eventbob.example.echo-spring-1.0.0-SNAPSHOT.jar"),
-        Paths.get("io.eventbob.example.lower-spring/target/io.eventbob.example.lower-spring-1.0.0-SNAPSHOT.jar")
-    );
+  public EchoHandlerLifecycle echoHandlerLifecycle() {
+    return new EchoHandlerLifecycle();
   }
 
-  /**
-   * Provide the list of remote capability endpoints.
-   *
-   * <p>This configuration specifies which capabilities this microlith delegates
-   * to remote services. Each RemoteCapability maps a capability name to a remote
-   * endpoint URI.
-   *
-   * @return list of remote capability endpoints
-   */
+  @Bean
+  public LowerHandlerLifecycle lowerHandlerLifecycle() {
+    return new LowerHandlerLifecycle();
+  }
+
   @Bean
   public List<RemoteCapability> remoteCapabilities() {
     return List.of(

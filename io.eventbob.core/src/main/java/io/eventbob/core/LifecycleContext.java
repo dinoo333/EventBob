@@ -1,6 +1,7 @@
 package io.eventbob.core;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -52,13 +53,14 @@ public interface LifecycleContext {
     /**
      * Returns handler-specific configuration.
      * <p>
-     * Configuration is loaded from the handler JAR's {@code application.yml} file
-     * and provided as a Map. Handlers can parse this configuration into typed objects
-     * using their chosen framework (Spring's @ConfigurationProperties, Dropwizard's
-     * Configuration classes, Jackson ObjectMapper, etc.).
+     * When loading from a JAR, configuration is read from the handler JAR's
+     * {@code application.yml} and provided as a Map. Handlers can parse it using
+     * their chosen framework (Spring's @ConfigurationProperties, Jackson, etc.).
+     * When initialized inline (no JAR), the caller provides the map directly —
+     * typically {@code Map.of()} when no configuration is required.
      * </p>
      * <p>
-     * Example application.yml:
+     * Example application.yml (JAR path):
      * </p>
      * <pre>
      * database:
@@ -127,4 +129,21 @@ public interface LifecycleContext {
      * @return the framework context if available and matches the requested type, otherwise empty
      */
     <T> Optional<T> getFrameworkContext(Class<T> type);
+
+    /**
+     * Creates a lifecycle context with the given configuration and dispatcher.
+     * <p>
+     * Use this factory to create a context when initializing lifecycles directly
+     * (not via JAR loading). Pass {@code null} for dispatcher when handlers receive
+     * it at event-processing time via {@link EventHandler#handle(Event, Dispatcher)}.
+     * </p>
+     *
+     * @param configuration handler-specific configuration (never null; use {@code Map.of()} for empty)
+     * @param dispatcher the dispatcher, or {@code null} if not needed at init time
+     * @return a new LifecycleContext
+     */
+    static LifecycleContext of(Map<String, Object> configuration, Dispatcher dispatcher) {
+        Objects.requireNonNull(configuration, "configuration must not be null; use Map.of() for empty");
+        return new LifecycleContextImpl(configuration, dispatcher);
+    }
 }
