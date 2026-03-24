@@ -38,7 +38,7 @@ public class UpperApplication {
   @Bean
   public List<Path> handlerJarPaths() {
     return List.of(
-        Paths.get("io.eventbob.example.upper/target/io.eventbob.example.upper-1.0.0-SNAPSHOT.jar")
+        Paths.get("io.eventbob.example.upper-spring/target/io.eventbob.example.upper-spring-1.0.0-SNAPSHOT.jar")
     );
   }
 }

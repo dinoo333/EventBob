@@ -45,8 +45,8 @@ public class EchoApplication {
   @Bean
   public List<Path> handlerJarPaths() {
     return List.of(
-        Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar"),
-        Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar")
+        Paths.get("io.eventbob.example.echo-spring/target/io.eventbob.example.echo-spring-1.0.0-SNAPSHOT.jar"),
+        Paths.get("io.eventbob.example.lower-spring/target/io.eventbob.example.lower-spring-1.0.0-SNAPSHOT.jar")
     );
   }
 
