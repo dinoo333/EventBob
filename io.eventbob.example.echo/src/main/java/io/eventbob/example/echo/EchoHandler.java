@@ -45,13 +45,13 @@ public class EchoHandler implements EventHandler {
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
     return "invert".equals(event.getTarget())
-        ? handleInvert(event)
-        : handleEcho(event);
+        ? handleInvert(event, dispatcher)
+        : handleEcho(event, dispatcher);
   }
 
-  private Event handleInvert(Event event) {
+  private Event handleInvert(Event event, Dispatcher dispatcher) {
     String input = (String) event.getPayload();
-    String reversed = echoService.processInvert(input);
+    String reversed = echoService.processInvert(input, dispatcher);
     return Event.builder()
         .source("invert")
         .target(event.getSource())
@@ -59,8 +59,8 @@ public class EchoHandler implements EventHandler {
         .build();
   }
 
-  private Event handleEcho(Event event) throws EventHandlingException {
-    String result = echoService.processEcho(event);
+  private Event handleEcho(Event event, Dispatcher dispatcher) throws EventHandlingException {
+    String result = echoService.processEcho(event, dispatcher);
     return Event.builder()
         .source("echo")
         .target(event.getSource())

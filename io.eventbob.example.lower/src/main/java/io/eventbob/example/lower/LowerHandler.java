@@ -35,7 +35,7 @@ public class LowerHandler implements EventHandler {
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
     String input = (String) event.getPayload();
-    String lowercased = lowerService.processLowercase(input);
+    String lowercased = lowerService.processLowercase(input, dispatcher);
 
     return event.toBuilder()
         .source("lower")

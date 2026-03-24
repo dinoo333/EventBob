@@ -80,7 +80,9 @@ public interface LifecycleContext {
      * The dispatcher handles routing (local or remote) transparently.
      * </p>
      *
-     * @return the dispatcher for this microlith (never null)
+     * @return the dispatcher for this microlith
+     * @throws IllegalStateException if no dispatcher was provided at initialization time;
+     *     in that case, use the dispatcher passed to {@link EventHandler#handle(Event, Dispatcher)}
      */
     Dispatcher getDispatcher();
 

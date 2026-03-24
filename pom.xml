@@ -15,6 +15,9 @@
         <module>io.eventbob.example.lower</module>
         <module>io.eventbob.example.upper</module>
         <module>io.eventbob.example.echo</module>
+        <module>io.eventbob.example.lower-spring</module>
+        <module>io.eventbob.example.upper-spring</module>
+        <module>io.eventbob.example.echo-spring</module>
         <module>io.eventbob.example.microlith.spring.echo</module>
         <module>io.eventbob.example.microlith.spring.upper</module>
     </modules>

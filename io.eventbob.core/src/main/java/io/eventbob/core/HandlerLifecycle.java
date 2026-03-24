@@ -45,7 +45,26 @@ package io.eventbob.core;
  *     }
  * }
  *
- * // Manual wiring
+ * // Manual wiring (dispatcher received at event-processing time, not at init)
+ * public class SimpleHandlerLifecycle extends HandlerLifecycle {
+ *     private SimpleHandler handler;
+ *
+ *     public void initialize(LifecycleContext context) {
+ *         String config = (String) context.getConfiguration().get("someKey");
+ *         // Dispatcher is not stored here; it arrives per-event via handle(Event, Dispatcher)
+ *         this.handler = new SimpleHandler(config);
+ *     }
+ *
+ *     public EventHandler getHandler() {
+ *         return handler;
+ *     }
+ *
+ *     public void shutdown() {
+ *         // No cleanup needed
+ *     }
+ * }
+ *
+ * // Manual wiring with init-time dispatcher (requires loader to provide a non-null dispatcher)
  * public class SimpleHandlerLifecycle extends HandlerLifecycle {
  *     private SimpleHandler handler;
  *

@@ -17,7 +17,7 @@ class UpperHandlerTest {
   @BeforeEach
   void setUp() {
     // Create service with null dispatcher (not used by upper service)
-    UpperService upperService = new UpperService(null);
+    UpperService upperService = new UpperService();
     handler = new UpperHandler(upperService);
   }
 

@@ -35,7 +35,7 @@ public class UpperHandler implements EventHandler {
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
     String input = (String) event.getPayload();
-    String uppercased = upperService.processUppercase(input);
+    String uppercased = upperService.processUppercase(input, dispatcher);
 
     return event.toBuilder()
         .source("upper")

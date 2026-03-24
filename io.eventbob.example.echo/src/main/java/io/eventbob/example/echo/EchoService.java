@@ -13,17 +13,6 @@ import io.eventbob.core.EventHandlingException;
  * </p>
  */
 public class EchoService {
-    private final Dispatcher dispatcher;
-
-    /**
-     * Creates an echo service with the specified dispatcher.
-     *
-     * @param dispatcher dispatcher for calling other capabilities
-     */
-    public EchoService(Dispatcher dispatcher) {
-        this.dispatcher = dispatcher;
-    }
-
     /**
      * Processes echo request by calling lower and upper capabilities.
      *
@@ -31,7 +20,7 @@ public class EchoService {
      * @return combined result from lower and upper
      * @throws EventHandlingException if dispatch fails
      */
-    public String processEcho(Event event) throws EventHandlingException {
+    public String processEcho(Event event, Dispatcher dispatcher) throws EventHandlingException {
         Event lowerRequest = Event.builder()
             .source("echo")
             .target("lower")
@@ -53,9 +42,10 @@ public class EchoService {
      * Processes invert request by reversing the string.
      *
      * @param input the string to reverse
+     * @param dispatcher the dispatcher (not used by this method)
      * @return reversed string
      */
-    public String processInvert(String input) {
+    public String processInvert(String input, Dispatcher dispatcher) {
         return new StringBuilder(input).reverse().toString();
     }
 }

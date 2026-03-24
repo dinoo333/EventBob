@@ -45,6 +45,11 @@ class LifecycleContextImpl implements LifecycleContext {
 
     @Override
     public Dispatcher getDispatcher() {
+        if (dispatcher == null) {
+            throw new IllegalStateException(
+                "No dispatcher was provided at initialization time. " +
+                "Use the Dispatcher passed to EventHandler.handle(Event, Dispatcher) instead.");
+        }
         return dispatcher;
     }
 

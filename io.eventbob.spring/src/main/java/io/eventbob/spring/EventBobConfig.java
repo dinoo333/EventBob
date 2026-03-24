@@ -136,9 +136,13 @@ public class EventBobConfig {
   private Map<String, EventHandler> loadAllHandlers(HttpClient httpClient) throws IOException {
     Map<String, EventHandler> allHandlers = new HashMap<>();
 
-    // Load JAR-based handlers
-    HandlerLoader jarLoader = HandlerLoader.jarLoader(handlerJarPaths);
-    Map<String, EventHandler> jarHandlers = jarLoader.loadHandlers();
+    // Load lifecycle-based handlers from JARs.
+    // Dispatcher is intentionally null: handlers in this configuration receive the
+    // dispatcher at event-processing time via EventHandler.handle(Event, Dispatcher),
+    // not at initialization time. Lifecycles that require a dispatcher at init must
+    // use a different loader or obtain it from the framework context.
+    HandlerLoader lifecycleLoader = HandlerLoader.lifecycleLoader(handlerJarPaths, null);
+    Map<String, EventHandler> jarHandlers = lifecycleLoader.loadHandlers();
     logger.info("Loaded {} handler(s) from JARs", jarHandlers.size());
     allHandlers.putAll(jarHandlers);
 

@@ -54,7 +54,7 @@ class EventBobConfigTest {
 
     // We need to test the loadAllHandlers method indirectly through eventBob()
     // by creating a scenario with duplicate capabilities.
-    // Since we can't easily mock HandlerLoader.jarLoader (static method),
+    // Since we can't easily mock HandlerLoader.lifecycleLoader (static method),
     // we'll create a test that demonstrates the duplicate detection works
     // by examining the code path.
 
