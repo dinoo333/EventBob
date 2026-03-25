@@ -18,6 +18,18 @@
     <name>EventBob Dropwizard Implementation</name>
     <description>Dropwizard implementation of EventBob infrastructure (Bundle, capability registration, JAX-RS resource)</description>
 
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.dropwizard</groupId>
+                <artifactId>dropwizard-dependencies</artifactId>
+                <version>${dropwizard.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <!-- EventBob Core (only dependency — no Spring) -->
         <dependency>
@@ -26,7 +38,7 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Dropwizard (version managed by dropwizard-dependencies BOM in parent) -->
+        <!-- Dropwizard (version managed by dropwizard-dependencies BOM in this module's dependencyManagement) -->
         <dependency>
             <groupId>io.dropwizard</groupId>
             <artifactId>dropwizard-core</artifactId>

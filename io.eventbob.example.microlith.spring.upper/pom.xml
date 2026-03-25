@@ -18,6 +18,18 @@
     <name>EventBob Upper Microlith (Spring)</name>
     <description>Spring Boot microlith application with upper capability</description>
 
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <!-- Spring Boot infrastructure -->
         <dependency>

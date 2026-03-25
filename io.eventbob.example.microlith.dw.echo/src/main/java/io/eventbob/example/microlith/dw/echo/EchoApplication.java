@@ -26,7 +26,7 @@ public class EchoApplication extends Application<Configuration> {
     private final EventBobBundle bundle = new EventBobBundle(
         null,
         List.of(new EchoHandlerLifecycle(), new LowerHandlerLifecycle()),
-        List.of(new RemoteCapability("upper", URI.create("http://localhost:8081")))
+        List.of(new RemoteCapability("upper", URI.create("http://localhost:8082")))
     );
 
     @Override
