@@ -8,28 +8,45 @@ EventBob's location transparency enables configuration-only reorganization of mi
 
 ## Configuration Mechanics
 
-EventBob microliths are configured via Spring Boot application properties:
+EventBob microliths are configured via Spring `@Bean` declarations in the application class, not via `application.yml` property binding. There are three bean types:
 
-### Local Handlers (JAR-loaded)
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/echo.jar
-    - /opt/handlers/lower.jar
+### Inline Handlers (`HandlerLifecycle`)
+
+Declare one bean per inline handler. These execute in-process without JAR loading.
+
+```java
+@Bean
+public EchoHandlerLifecycle echoHandlerLifecycle() {
+    return new EchoHandlerLifecycle();
+}
 ```
 
-Handlers in these JARs are loaded locally and execute in-process.
+### JAR-based Handlers (`List<Path>` named `handlerJarPaths`)
 
-### Remote Handlers (HTTP-wrapped)
-```yaml
-eventbob:
-  remoteCapabilities:
-    upper:
-      url: http://microlith-b:8080
-      timeout: 5000
+Declare a `List<Path>` bean named exactly `handlerJarPaths`. Each path is loaded as an isolated handler JAR at startup.
+
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(
+        Path.of("/opt/handlers/echo.jar"),
+        Path.of("/opt/handlers/lower.jar")
+    );
+}
 ```
 
-Events targeting these capabilities are forwarded via HTTP to the configured microlith.
+### Remote Capabilities (`List<RemoteCapability>`)
+
+Declare a `List<RemoteCapability>` bean. Events targeting these capabilities are forwarded via HTTP to the configured microlith.
+
+```java
+@Bean
+public List<RemoteCapability> remoteCapabilities() {
+    return List.of(
+        new RemoteCapability("upper", URI.create("http://microlith-b:8080"))
+    );
+}
+```
 
 ## Refactoring Scenarios
 
@@ -50,25 +67,30 @@ Microlith B (port 8081)
 ```
 
 **Microlith A configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/echo.jar
-    - /opt/handlers/lower.jar
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(
+        Path.of("/opt/handlers/echo.jar"),
+        Path.of("/opt/handlers/lower.jar")
+    );
+}
 ```
 
 **Microlith B configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/upper.jar
-  remoteCapabilities:
-    echo:
-      url: http://microlith-a:8080
-      timeout: 5000
-    lower:
-      url: http://microlith-a:8080
-      timeout: 5000
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(Path.of("/opt/handlers/upper.jar"));
+}
+
+@Bean
+public List<RemoteCapability> remoteCapabilities() {
+    return List.of(
+        new RemoteCapability("echo",  URI.create("http://microlith-a:8080")),
+        new RemoteCapability("lower", URI.create("http://microlith-a:8080"))
+    );
+}
 ```
 
 #### Target State
@@ -82,30 +104,35 @@ Microlith B (port 8081)
 ```
 
 **Microlith A configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/lower.jar
-  remoteCapabilities:
-    echo:
-      url: http://microlith-b:8081
-      timeout: 5000
-    upper:
-      url: http://microlith-b:8081
-      timeout: 5000
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(Path.of("/opt/handlers/lower.jar"));
+}
+
+@Bean
+public List<RemoteCapability> remoteCapabilities() {
+    return List.of(
+        new RemoteCapability("echo",  URI.create("http://microlith-b:8081")),
+        new RemoteCapability("upper", URI.create("http://microlith-b:8081"))
+    );
+}
 ```
 
 **Microlith B configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/upper.jar
-    - /opt/handlers/echo.jar
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(
+        Path.of("/opt/handlers/upper.jar"),
+        Path.of("/opt/handlers/echo.jar")
+    );
+}
 ```
 
 #### Configuration Changes
-- **Microlith A:** Remove `echo.jar` from `handlerJarPaths`, add `echo` to `remoteCapabilities` pointing to B
-- **Microlith B:** Add `echo.jar` to `handlerJarPaths`, remove `echo` from `remoteCapabilities`
+- **Microlith A:** Remove `echo.jar` from the `handlerJarPaths` bean, add an `"echo"` entry to the `remoteCapabilities` bean pointing to B
+- **Microlith B:** Add `echo.jar` to the `handlerJarPaths` bean, remove the `"echo"` entry from the `remoteCapabilities` bean
 
 **Zero code changes to handlers.** Routing layer adapts automatically.
 
@@ -138,16 +165,20 @@ Microlith B (decommissioned)
 ```
 
 **Microlith A configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/echo.jar
-    - /opt/handlers/lower.jar
-    - /opt/handlers/upper.jar
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(
+        Path.of("/opt/handlers/echo.jar"),
+        Path.of("/opt/handlers/lower.jar"),
+        Path.of("/opt/handlers/upper.jar")
+    );
+}
+// remoteCapabilities bean removed entirely
 ```
 
 #### Configuration Changes
-- **Microlith A:** Add `upper.jar` to `handlerJarPaths`, remove `upper` from `remoteCapabilities` (if present)
+- **Microlith A:** Add `upper.jar` to the `handlerJarPaths` bean; remove the `remoteCapabilities` bean (or remove the `"upper"` entry from it if other remote capabilities remain)
 - **Microlith B:** Decommission after cutover
 
 **Result:** All capabilities now local in Microlith A. No inter-service HTTP calls for these capabilities.
@@ -179,27 +210,34 @@ Microlith C (port 8082)
 ```
 
 **Microlith A configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/echo.jar
-    - /opt/handlers/lower.jar
-  remoteCapabilities:
-    upper:
-      url: http://microlith-c:8082
-      timeout: 5000
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(
+        Path.of("/opt/handlers/echo.jar"),
+        Path.of("/opt/handlers/lower.jar")
+    );
+}
+
+@Bean
+public List<RemoteCapability> remoteCapabilities() {
+    return List.of(
+        new RemoteCapability("upper", URI.create("http://microlith-c:8082"))
+    );
+}
 ```
 
 **Microlith C configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/upper.jar
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(Path.of("/opt/handlers/upper.jar"));
+}
 ```
 
 #### Configuration Changes
-- **Microlith A:** Remove `upper.jar` from `handlerJarPaths`, add `upper` to `remoteCapabilities` pointing to C
-- **Microlith C:** New microlith with `upper.jar` in `handlerJarPaths`
+- **Microlith A:** Remove `upper.jar` from the `handlerJarPaths` bean; add a `"upper"` entry to the `remoteCapabilities` bean pointing to C
+- **Microlith C:** New microlith with a `handlerJarPaths` bean containing `upper.jar`
 
 **Use case:** Microlith C can now scale independently. If `upper` handles CPU-intensive transformations, it can run on larger instances without affecting `echo` and `lower`.
 
@@ -238,30 +276,35 @@ Microlith C (decommissioned)
 ```
 
 **Microlith A configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/echo.jar
-  remoteCapabilities:
-    lower:
-      url: http://microlith-b:8081
-      timeout: 5000
-    upper:
-      url: http://microlith-b:8081
-      timeout: 5000
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(Path.of("/opt/handlers/echo.jar"));
+}
+
+@Bean
+public List<RemoteCapability> remoteCapabilities() {
+    return List.of(
+        new RemoteCapability("lower", URI.create("http://microlith-b:8081")),
+        new RemoteCapability("upper", URI.create("http://microlith-b:8081"))
+    );
+}
 ```
 
 **Microlith B configuration:**
-```yaml
-eventbob:
-  handlerJarPaths:
-    - /opt/handlers/lower.jar
-    - /opt/handlers/upper.jar
+```java
+@Bean
+public List<Path> handlerJarPaths() {
+    return List.of(
+        Path.of("/opt/handlers/lower.jar"),
+        Path.of("/opt/handlers/upper.jar")
+    );
+}
 ```
 
 #### Configuration Changes
-- **Microlith B:** Add `upper.jar` to `handlerJarPaths`
-- **Microlith A:** Update `upper` remote URL to point to B instead of C
+- **Microlith B:** Add `upper.jar` to the `handlerJarPaths` bean
+- **Microlith A:** Update the `"upper"` entry in the `remoteCapabilities` bean to point to B instead of C
 - **Microlith C:** Decommission
 
 **Result:** When `echo` calls `lower` and `upper`, both are now handled in Microlith B. If they share data or state, they can do so in-process.
@@ -391,40 +434,7 @@ For environments with blue-green infrastructure:
 
 ### Health Checks
 
-Configure Spring Boot Actuator health endpoints:
-
-```yaml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health
-  health:
-    livenessState:
-      enabled: true
-    readinessState:
-      enabled: true
-```
-
-**Liveness probe:** Is the microlith running?
-**Readiness probe:** Can it handle traffic? (JARs loaded, handlers registered)
-
-Load balancers should use readiness probes to determine instance availability during rolling restarts.
-
-### Gradual Rollout
-
-For high-traffic capabilities, consider gradual percentage-based cutover:
-
-```
-1. Deploy destination with capability
-2. Configure source to route 10% of traffic to destination, 90% local
-3. Monitor metrics (latency, error rate, throughput)
-4. Increase to 50%, then 100% over time
-5. Remove local capability after full cutover
-
-Note: EventBob doesn't support percentage routing natively.
-Requires custom dispatcher or A/B testing framework.
-```
+EventBob provides a built-in `healthcheck` capability registered unconditionally on every microlith. Load balancers and orchestrators can verify microlith availability by routing an event to the `healthcheck` target and checking for a successful response.
 
 ### Monitoring
 

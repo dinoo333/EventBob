@@ -1,127 +1,111 @@
 # io.eventbob.core Domain Specification
 
-## Module Domain Scope
+## 1. Domain Purpose and Scope
 
-This module implements the **Event Routing** bounded context - the core abstractions for routing events between handlers and loading microservices from various sources.
+### Business problem being modeled
 
-## Domain Concepts (Implemented)
+The `io.eventbob.core` module solves the problem of wiring multiple capability handlers into a single routing process without introducing framework dependencies or coupling loading strategies to routing logic. It provides the stable contracts that every handler, loader, and lifecycle implementation must satisfy, plus the concrete loading and routing machinery that implements those contracts using only the JDK.
 
-### Event
-A routable message carrying source, target, routing metadata, parameters, and payload. Immutable value object.
+Within the EventBob system, this module is the Event Routing Core bounded context: the innermost layer that owns the routing envelope, capability declaration mechanism, handler loading strategies, and handler lifecycle protocol. All other modules depend inward on these contracts; this module depends on nothing outside the JDK.
 
-**Invariants:**
-- source and target must be non-blank strings
-- metadata and parameters are unmodifiable after construction
-- Events can be transformed via toBuilder() (copy-on-write)
+### Explicit non-goals
 
-### EventHandler
-The integration contract that microservices must implement to integrate with EventBob. Single method: `Event handle(Event, Dispatcher)`.
+- Not responsible for HTTP, JSON serialization, or any transport-layer concern
+- Not a dependency injection container; the lifecycle protocol delegates wiring responsibility entirely to the handler JAR
+- Not a general-purpose class loader framework; the isolated class loader strategy is internal and not extensible from outside this module
+- Not responsible for distributed tracing infrastructure; the standard metadata vocabulary defines key names only, not collection or propagation mechanics
 
-**Contract:** Synchronous, throws EventHandlingException on failure, returns Event response. The Dispatcher is provided so handlers can send events to other micro-services in the same or other microliths.
+---
 
-**Discovery:** EventBob discovers EventHandler implementations via @Capability annotations declared on the implementation class.
+## 2. Ubiquitous Language
 
-**Location transparency:** EventHandler implementations can be local (loaded from JARs) or remote (HTTP adapters wrapping remote endpoints). EventBob routing logic treats both identically.
+### Core Terms
 
-### Dispatcher
-A facility provided to EventHandlers in order to send events to other micro-services in the same or other microliths. The Dispatcher abstracts away the underlying transport mechanism (HTTP, gRPC, message queues) and provides a simple API for outbound event emission.
+| Term (synonyms) | Definition | Context | Canonical Definition |
+|---|---|---|---|
+| Capability declaration (capability marker) | A repeatable annotation placed on a handler implementation class that binds that class to one or more capability names | Discovery, routing | The mechanism by which a handler class advertises the capability identifiers it can serve; a single class may carry multiple declarations, each naming a distinct capability |
+| Handler descriptor (handler properties file) | The convention-based descriptor that a lifecycle-enabled handler JAR provides to identify the lifecycle implementation to instantiate | Lifecycle loading | The convention-based contract between a lifecycle-enabled handler JAR and the lifecycle loader; its presence signals that the JAR uses lifecycle-managed initialization |
+| Isolated class loader (per-JAR class loader) | A dedicated class loader created for a single handler JAR, scoped to that JAR's classes while sharing core contracts | Class isolation, loading | The mechanism that keeps each handler JAR's classes separate from other JARs while sharing core contracts; one isolated class loader is created per JAR |
+| Discovery phase | The first phase of plain handler loading, in which handler JARs are scanned and capability-annotated classes are identified without instantiation | Plain loading | The separation of class scanning from object creation inside the plain loader; produces a list of discovered handler records |
+| Instantiation phase | The second phase of plain handler loading, in which discovered handler classes are instantiated exactly once and mapped to their declared capabilities | Plain loading | The object-creation step that follows the discovery phase; a handler class declaring multiple capabilities is instantiated once and shared across all its registrations |
+| Error envelope (default error event) | A fallback routing envelope produced when no handler is registered for the target capability and the caller's error callback returns null or itself fails | Error handling | The guarantee that the router always returns a valid event; the error envelope carries the original event, the error message, and the error type in its payload |
+| Standard metadata vocabulary | The set of well-known metadata key names defined by the core module for routing, correlation, and observability | Routing, observability | Canonical string keys carried in an event's Metadata map: `correlation-id`, `reply-to`, `method`, `path`, `trace-id`, `span-id` |
 
-**Contract:** `CompletableFuture<Event> send(Event, BiFunction<Throwable, Event, Event> onError)` -- asynchronous send with error handling callback.
+### Commands
 
-**Distinction from Router:** The Router routes inbound events to the correct handler within EventBob. The Dispatcher sends outbound events from within a handler to other services (whether co-located in the same microlith or remote).
+- DeclareCapability: bind a handler class to one or more capability names by placing capability declarations on the class at compile time
+- ScanJarForHandlers: traverse all class files in a handler JAR using an isolated class loader, identifying classes that carry capability declarations and implement the handler contract
+- InstantiateHandler: construct a single handler instance from a discovered handler class; share the instance across all capability registrations for that class
+- ReadHandlerDescriptor: read the handler descriptor from a lifecycle-enabled JAR to determine the lifecycle implementation to instantiate
+- ProduceErrorEnvelope: construct a fallback routing envelope from the original event and the routing failure when the error callback returns null or fails
 
-### Capability (Annotation)
-Metadata annotation that microservices use to declare what they provide.
+### Domain Events
 
-**Current structure:**
-- value: String - the capability identifier (e.g., "get-message-content", "create-message")
-- version: int - version of the capability contract (default: 1)
+- HandlerDiscovered: a class carrying at least one capability declaration and implementing the handler contract was found during JAR scanning
+- CapabilityBound: a handler instance was successfully mapped to a capability name in the capability-to-handler registry
+- HandlerDescriptorRead: a handler descriptor was found in a handler JAR and the lifecycle class name was extracted
+- IsolatedClassLoaderCreated: an isolated class loader was created for a handler JAR during loading
+- IsolatedClassLoaderReleased: a per-JAR isolated class loader was closed during microlith shutdown after all lifecycle shutdown phases completed
+- ErrorEnvelopeProduced: a fallback routing envelope was constructed because the error callback returned null or itself threw
 
-**Purpose:** EventBob scans for @Capability annotations to discover which EventHandler implementations exist in loaded microservices.
+### Queries
 
-**Example:** `@Capability(value="get-message-content", version=1)` or simply `@Capability("get-message-content")`.
+- InspectCapabilityDeclarations: read all capability declarations from a handler class to determine its declared capability names
+- LookupHandlerDescriptor: check whether a handler JAR's class loader exposes a handler descriptor resource and return its contents
 
-**Note:** Current implementation uses simple string identifiers. Future enhancements may add routing metadata (service, method, path) to the annotation structure.
+---
 
-### HandlerLoader (Interface)
-The domain abstraction for loading microservices from various sources. Responsible for:
-- Loading handlers from JARs, remote endpoints, or other sources
-- Discovering EventHandler implementations annotated with @Capability
-- Instantiating discovered handlers (or creating adapters for remote handlers)
+## 3. Bounded Contexts
 
-**Contract:** `Map<String, EventHandler> loadHandlers()` - parameterless method that uses constructor-injected dependencies (JAR paths, remote endpoints, HTTP clients) to discover and instantiate handlers.
+```mermaid
+graph LR
+  Core["Event Routing Core\n(io.eventbob.core)"]
+  Spring["HTTP Integration\n(io.eventbob.spring)"]
+  HandlerJAR["Handler JAR\n(microservice)"]
+  RemoteMicrolith["Remote Microlith\n(another EventBob process)"]
 
-**Return value:** Map is keyed by capability name (from @Capability annotation value), not by handler class. This allows multiple handlers per source, each with a unique capability identifier.
+  Spring -->|depends on contracts from| Core
+  HandlerJAR -->|implements contracts from| Core
+  Spring -->|adapts HTTP to/from| Core
+  Spring -->|routes remote events to| RemoteMicrolith
+```
 
-**Implementations:**
-- **JarHandlerLoader** - loads handlers from JAR files using isolated class loaders
-- **RemoteHandlerLoader** (io.eventbob.spring) - creates HTTP adapter wrappers for remote capabilities
+### Context: Event Routing Core
 
-**Design rationale:** Parameterless `loadHandlers()` with constructor injection enables different loader implementations to accept different configuration types (Collection<Path> for JARs, List<RemoteCapability> for remote endpoints) without forcing a common parameter type.
+Description: The innermost domain layer. Defines the routing envelope, capability declaration mechanism, handler integration contract, loader abstraction, and lifecycle protocol. Carries no framework dependencies. Provides concrete loading machinery (plain JAR loading and lifecycle JAR loading) hidden behind factory methods. All other modules depend on this context; it depends on none of them.
 
-### Microservice (Concept)
-Code packaged in a JAR that integrates with EventBob by implementing EventHandler interface(s).
+Business capability: capability-based in-process event routing, handler discovery from JARs, and handler lifecycle coordination
 
-**Not a class:** "Microservice" is the conceptual term for what lives in the JAR. The JAR contains one or more EventHandler implementations.
+---
 
-**Integration requirement:** A JAR may contain multiple EventHandler implementations, each annotated with a unique @Capability value. At least one handler is required for the JAR to be valid.
+## 4. Domain Model
 
-### Routing Semantics (MetadataKeys)
-- **correlation-id** - UUID tracking request/response across boundaries
-- **reply-to** - Address for response routing
-- **method** - Operation type (POST, GET, UpdateItem, etc.)
-- **path** - Resource path template
+```mermaid
+classDiagram
+  Router "1" --> "*" Capability : resolves
+  Capability "1" --> "1" EventHandler : routes to
+  EventHandler ..> Event : handles
+  EventHandler ..> Dispatcher : uses
+  Dispatcher --> Router : delegates through
+  HandlerLoader ..> Capability : produces
+  HandlerLoader ..> EventHandler : instantiates
+  HandlerLoader ..> IsolatedClassLoader : creates per JAR
+  HandlerLifecycle --> EventHandler : produces
+  HandlerLifecycle ..> LifecycleContext : initialized with
+  HandlerLifecycle ..> HandlerDescriptor : located via
+  EventHandler ..> CapabilityDeclaration : carries
+  Router ..> ErrorEnvelope : produces on routing failure
+```
 
-### Trace Context (MetadataKeys)
-- **trace-id** - Distributed trace identifier
-- **span-id** - Span identifier within trace
+---
 
-## Domain Principles
+## 5. AI Invariants: intention, purpose
 
-### Location Transparency
-
-Handlers can be local (loaded from JARs in-process) or remote (accessed via HTTP/gRPC). EventBob's routing layer treats both identically—the location is an implementation detail hidden behind the EventHandler interface.
-
-**Enforcement:** All handlers must implement the same EventHandler contract. Remote handlers use the Adapter pattern (HttpEventHandlerAdapter wraps remote calls and implements EventHandler).
-
-**Consequence:** Capabilities can be relocated between microliths without changing EventBob routing logic. Only configuration changes (which HandlerLoader to use).
-
-**Vocabulary:** Core domain says "handler" and "capability," not "local handler" or "remote capability." Location is infrastructure concern.
-
-## Domain Concepts (Future)
-
-### Microlith-Service
-**Status:** Not yet modeled in code. Deployment concept only.
-
-A process containing multiple microservices communicating via EventBob.
-
-### Adapter
-**Status:** Partially implemented in io.eventbob.spring.
-
-Translation layer between EventBob and external transports (HTTP, gRPC, queues). HttpEventHandlerAdapter is the first adapter implementation.
-
-## Ubiquitous Language (This Module)
-
-- **Microservice** - code in a JAR that integrates via EventHandler implementations (not just "service")
-- **EventHandler** - the integration contract microservices implement (not "processor", not "service")
-- **Capability** - what a handler provides, declared via @Capability annotation (not "operation", not "endpoint")
-- **HandlerLoader** - loads handlers from various sources (not "ServiceLoader", not "JarLoader")
-- **Event** - not "message", not "request" (the vocabulary is intentionally event-based)
-- **Router** - routes inbound events to the correct handler within EventBob; not "gateway"
-- **Dispatcher** - provided to EventHandlers for sending events to other micro-services in the same or other microliths; not "emitter", not "sender"
-- **Metadata** - infrastructure concerns (routing, observability)
-- **Parameters** - business data
-- **Location transparency** - remote and local handlers are indistinguishable at the routing level
-
-## Domain Invariants
-
-1. **EventHandler contract is universal** - All handlers (local or remote) must implement `Event handle(Event, Dispatcher)`. No exceptions.
-2. **Capability names are unique within a microlith** - Two handlers cannot declare the same capability identifier (value + version).
-3. **HandlerLoader uses constructor injection** - All configuration (JAR paths, remote endpoints) provided via constructor. `loadHandlers()` is parameterless.
-4. **Remote handlers use Adapter pattern** - Remote capabilities are wrapped in EventHandler implementations (e.g., HttpEventHandlerAdapter). Core routing logic never knows about HTTP.
-
-## Anti-Corruption Layers
-
-**Remote handler communication:** HttpEventHandlerAdapter + EventDto (in io.eventbob.spring) translate between HTTP and domain Event at the boundary. Core Event routing logic remains unchanged.
-
-**Not yet applicable for other transports:** When gRPC, JMS, or Kafka adapters are added, they will follow the same pattern: implement EventHandler, translate at boundary, keep transport details out of core.
+- Capability declarations are the sole discovery mechanism: the loader must not register any handler that does not carry at least one capability declaration on its class; annotation absence must cause the class to be silently skipped, not a hard failure
+- One isolated class loader per JAR: the plain and lifecycle loaders must create exactly one isolated class loader per JAR file; sharing class loaders across JARs is forbidden
+- Discovery precedes instantiation in plain loading: the discovery phase must complete across all JARs before any handler is instantiated; duplicate capability names must be detected and cause a hard failure before instantiation begins
+- Handler descriptor is optional for plain loading, required for lifecycle loading: the plain loader must skip any class that lacks capability declarations; the lifecycle loader must skip any JAR that lacks a handler descriptor
+- Error envelope is unconditional: the router must never propagate an unhandled exception to the caller; if the error callback returns null or itself throws, an error envelope must be produced from the original event
+- Standard metadata vocabulary is additive and non-prescriptive: the core module defines key names as a shared vocabulary; handlers and infrastructure may add further metadata keys without violating any invariant; the core module must not validate metadata key presence
+- Lifecycle shutdown precedes class loader release: for every lifecycle loader, all lifecycle shutdown phases must complete before any isolated class loader is closed; releasing a class loader before its lifecycle shuts down places handler classes in an undefined state
+- Inline lifecycle loading shares the same lifecycle contract: handlers initialized inline (without a JAR) must satisfy the same three-phase lifecycle contract as JAR-loaded handlers; the container must not distinguish inline from JAR-loaded when invoking initialize, getHandler, or shutdown

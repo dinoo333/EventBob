@@ -1,331 +1,160 @@
 # io.eventbob.core Architecture
 
-## Module Purpose
+## 1. High Level Architectural Purpose
 
-The core domain module defining event routing abstractions, JAR handler loading, and primitives. This is the innermost layer - all other modules depend on core, core depends on nothing (except JDK).
-
----
-
-## Current Implementation Status
-
-**Implemented:**
-- Event data structure (immutable value object)
-- EventHandler interface (universal contract)
-- EventBob (string-based routing, implements AutoCloseable)
-- Dispatcher interface (event dispatch contract)
-- HandlerLoader interface (JAR loading abstraction)
-- JarHandlerLoader implementation (URLClassLoader-based loading)
-- DiscoveredHandler record (internal discovery structure)
-- DefaultErrorEvent factory (internal error handling)
-- Exception hierarchy
-- Capability annotation and Capabilities vocabulary
-
-**Not Yet Implemented:**
-- Hierarchical routing (wildcards, patterns)
-- Route registry abstraction
-- Adapters (separate modules)
+This module is the innermost domain layer of EventBob. It defines the event routing abstractions, handler loading contracts, and lifecycle primitives that every other module depends on. It carries no framework dependencies and establishes no outbound module references; all dependency arrows point inward toward this module.
 
 ---
 
-## Package Structure (Flat)
+## 2. Architectural Borders
 
-All classes live in `io.eventbob.core` - no subpackages. This flat structure reflects the cohesive nature of the domain.
+```mermaid
+graph TD
+    subgraph core["io.eventbob.core"]
+        Router["Router"]
+        LoadHandlers["Load Handlers"]
+        ManageLifecycle["Manage Handler Lifecycle"]
+        RouteEvent["Route Event to Handler"]
+        DispatchEvent["Dispatch Event from Handler"]
+    end
 
-```
-io.eventbob.core
-├── Event                          (public - domain model)
-├── EventHandler                   (public - core abstraction)
-├── EventBob                       (public - router)
-├── Dispatcher                     (public - dispatch contract)
-├── HandlerLoader                  (public - loading abstraction)
-├── JarHandlerLoader              (package-private - loading implementation)
-├── DiscoveredHandler             (package-private - internal structure)
-├── DefaultErrorEvent             (package-private - error handling)
-├── Capability                     (public - annotation)
-├── Capabilities                   (public - vocabulary)
-├── EventHandlingException         (public - checked exception)
-└── HandlerNotFoundException       (public - runtime exception)
+    Infrastructure["Infrastructure\n(io.eventbob.spring, adapters)"] -->|depends on| core
+    HandlerJAR["Handler JAR\n(microservice)"] -->|fulfils contracts of| core
 ```
 
-**Why flat?** Core is small and operates at a single abstraction level. All classes are domain primitives, routing logic, or handler loading. Subpackages would create artificial boundaries without clarity gains.
+### Border: Domain Kernel
+
+The core module is isolated from all infrastructure. It exposes contracts — handler integration interfaces, lifecycle abstractions, and capability declaration markers — and hides all implementations behind factory methods. Infrastructure modules and handler JARs both depend on this boundary; the boundary never depends on them.
+
+**Interactors:**
+
+- Interactor: Load Handlers
+  - Summary: Discovers and instantiates capability handlers from a set of JAR files, either as plain handlers or as lifecycle-managed handlers.
+  - Flow: loader receives JAR paths at construction; for each JAR an isolated class loader is created and class files are scanned; capability-declaring handler implementations are identified; the loading strategy is resolved (plain or lifecycle); handlers are instantiated; duplicate capability names cause a hard failure; the resulting capability-to-handler map is returned; on close, class loaders are released and lifecycle shutdown is invoked in registration order.
+
+- Interactor: Manage Handler Lifecycle
+  - Summary: Coordinates the three-phase container lifecycle (initialise, retrieve, shutdown) for handlers that require dependency injection or resource management.
+  - Flow: caller supplies a lifecycle context carrying a configuration map, an optional dispatcher, and an optional framework context; the lifecycle holder is initialised once with that context; the initialised handler instance is retrieved from the lifecycle holder; on container shutdown the lifecycle holder releases its resources before the associated class loader is closed.
+
+- Interactor: Route Event to Handler
+  - Summary: Matches an inbound event's target field against the registered capability map and delivers the event to the matching handler on a virtual thread.
+  - Flow: an event is received; the router looks up the handler registered under the event's target capability name; if no registration exists an error path is taken and a fallback error event is produced; the matched handler is executed on a virtual thread pool; any handler failure is passed to the error callback; the result is returned as an asynchronous future.
+
+- Interactor: Dispatch Event from Handler
+  - Summary: Allows a running handler to send an outbound event to another capability, either asynchronously or synchronously.
+  - Flow: the handler submits an outbound event through the dispatcher; the async path returns a future immediately; the sync path blocks until the future resolves or the timeout expires; interruption restores the interrupt flag and surfaces as a handling failure; execution failure unwraps the underlying cause; timeout surfaces as a handling failure.
 
 ---
 
-## Key Abstractions
+## 3. Layers
 
-### EventHandler Interface
+```mermaid
+graph TD
+    PublicContracts["Public Contracts"]
+    Router["Router"]
+    LoadingImplementations["Loading Implementations"]
 
-The universal contract for event processing:
-
-```java
-public interface EventHandler {
-  Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException;
-}
+    Router -->|depends on| PublicContracts
+    LoadingImplementations -->|depends on| PublicContracts
 ```
 
-**Design:** Synchronous request-response. Single method. Composable. Handlers receive a Dispatcher to enable event delegation during processing.
+### Layer: Public Contracts
 
-### Event Structure
+**Description:** The stable surface exported to all dependents. Defines what the module provides without revealing how.
 
-Immutable value object with builder:
-- `source` - Producer identifier
-- `target` - Consumer identifier
-- `metadata` - Routing and observability metadata
-- `parameters` - Business data
-- `payload` - Request body
+**Components:**
+- Handler integration contract: the single-method contract that all capabilities — local or remote — must satisfy; receives a dispatcher for outbound delegation.
+- Dispatcher: the outbound-event facility provided to handlers at call time; supports async and sync send semantics.
+- Handler loader contract: the loading abstraction whose factory methods hide all concrete implementations; manages its own resources via a close contract.
+- Lifecycle holder contract: the container-side lifecycle contract for handlers needing initialisation and cleanup; expressed as an abstract type to preserve binary compatibility across future lifecycle additions.
+- Lifecycle context: a context carrier for handler initialisation supplying a configuration map, an optional dispatcher, and an optional framework context.
+- Routing envelope: an immutable message carrying source, target, metadata, parameters, and payload.
+- Capability marker: a repeatable declaration that binds a handler implementation to one or more capability identifiers.
+- Standard metadata vocabulary: a vocabulary of well-known metadata key names for routing and observability.
+- Failure types: a hierarchy of typed failures covering handler errors and routing misses.
 
-**Key invariant:** Metadata carries infrastructure concerns (correlation-id, method, path). Parameters carry business data.
+**Inbound dependencies:** none — this is the innermost layer.
+**Outbound dependencies:** JDK only.
 
-### EventBob
+### Layer: Loading Implementations
 
-Routes events by exact target match to registered handlers. Implements AutoCloseable for resource cleanup (shuts down background executor).
+**Description:** Hidden implementations that fulfil the handler loader contract. Not reachable by external callers directly; accessed via factory methods on the public contracts.
 
-**Current limitation:** No hierarchical routing, no wildcards. Flat string lookup.
+**Components:**
+- Plain handler loader: scans handler JARs using per-JAR isolated class loaders, discovers capability-declaring handlers, detects duplicates, and instantiates them.
+- Lifecycle handler loader: reads a JAR's handler descriptor, instantiates the declared lifecycle holder, invokes initialisation, and tracks instances for ordered shutdown.
 
-**Design:** EventBob does NOT implement EventHandler. It exposes `processEvent()` which returns `CompletableFuture<Event>` for async processing. Handlers are executed on virtual threads.
+**Inbound dependencies:** Public Contracts layer.
+**Outbound dependencies:** JDK only.
 
-### Dispatcher
+### Layer: Router
 
-Contract for sending events from within handlers. Provides two send methods:
+**Description:** The single public entry point for event processing. Holds the capability-to-handler map, owns the virtual thread executor, and exposes itself as a dispatcher.
 
-**Async variant:**
-```java
-CompletableFuture<Event> send(Event event, BiFunction<Throwable, Event, Event> onError)
-```
-Returns immediately with a future. Caller controls timeout via `future.get(timeout, unit)`.
+**Components:**
+- Event router: routes events by exact capability-name match; shuts down cleanly by awaiting in-flight handler completion before releasing resources.
 
-**Sync variant (default method):**
-```java
-Event send(Event event, BiFunction<Throwable, Event, Event> onError, long timeoutMillis)
-```
-Blocks until response or timeout. Convenience method for synchronous request-response. Handles three exception types explicitly:
-- `InterruptedException` - restores interrupt flag, wraps in EventHandlingException
-- `ExecutionException` - unwraps cause, wraps in EventHandlingException
-- `TimeoutException` - wraps in EventHandlingException
-
-**Design decision:** Sync method is a default interface method. Implementations only provide async variant. This keeps Dispatcher interface minimal while supporting both patterns.
-
-### Capabilities Vocabulary
-
-Constants defining standard capability names and routing metadata keys:
-- Routing: CORRELATION_ID, REPLY_TO, METHOD, PATH
-- Observability: TRACE_ID, SPAN_ID
-
-**Design decision:** Core defines only universal keys. Transport-specific keys (http.*, grpc.*) belong in adapter modules.
+**Inbound dependencies:** Public Contracts layer.
+**Outbound dependencies:** JDK only.
 
 ---
 
-## JAR Handler Loading
+## 4. Use Cases
 
-### HandlerLoader Interface (Public API)
+```mermaid
+graph LR
+    StartMicrolith["Start Microlith"]
+    RouteInboundEvent["Route Inbound Event"]
+    DelegateToCapability["Delegate to Capability"]
+    ShutdownMicrolith["Shut Down Microlith"]
 
-The abstraction for loading handlers from external sources:
-
-```java
-public interface HandlerLoader {
-    Map<String, EventHandler> loadHandlers(Collection<Path> jarPaths) throws IOException;
-    
-    static HandlerLoader jarLoader() {
-        return new JarHandlerLoader();
-    }
-}
+    StartMicrolith --> RouteInboundEvent
+    RouteInboundEvent --> DelegateToCapability
+    ShutdownMicrolith
 ```
 
-**Contract:**
-- Input: Collection of JAR file paths
-- Output: Map of capability names to instantiated EventHandler instances. When a handler class provides multiple capabilities, multiple map entries point to the same handler instance.
-- Throws: IOException if JAR files cannot be read
-- Throws: IllegalStateException if duplicate capabilities found or instantiation fails
+### Use Case: Start Microlith
 
-**Factory method pattern:** The static `jarLoader()` method hides the implementation (JarHandlerLoader) from clients. Infrastructure code depends only on this interface.
+**Description:** Infrastructure creates a router instance, loads handlers from one or more sources, and registers them before accepting events.
 
-### JarHandlerLoader Implementation (Package-Private)
+**Scenarios:**
+- Scenario: plain JAR loading → infrastructure uses the plain loader factory with JAR paths, obtains a capability map, registers each entry with the router builder, and completes startup.
+- Scenario: lifecycle JAR loading → infrastructure uses the lifecycle loader factory with JAR paths and a dispatcher; the loader reads each JAR's handler descriptor, invokes initialisation, retrieves the handler instance, returns a capability map; infrastructure registers entries and completes startup.
+- Alternate: inline lifecycle loading → infrastructure constructs a lifecycle context with an empty configuration and no framework context, invokes initialisation on each inline lifecycle holder, reads capability declarations from the resulting handler, registers entries, and completes startup.
 
-URLClassLoader-based implementation that loads handlers from JAR files with isolation.
+### Use Case: Route Inbound Event
 
-**ClassLoader strategy:**
-- One URLClassLoader per JAR file
-- Parent class loader: the loader that loaded EventHandler
-- Result: Core classes shared, JAR dependencies isolated
+**Description:** The router receives an event, resolves the target capability, and delivers the event to the registered handler.
 
-**Discovery algorithm:**
-1. For each JAR file:
-   - Create isolated URLClassLoader
-   - Scan all .class files
-   - Load each class
-   - Check if class implements EventHandler AND has @Capability or @Capabilities annotation
-   - Extract capability names from annotation(s) using `getAnnotationsByType(Capability.class)`
-   - For multi-capability handlers, create multiple (capability, class) pairs - one per capability name
-   - Collect all (capability, class) pairs
-2. Check for duplicate capabilities across all JARs (at capability-name level, not class level)
-3. Instantiate all discovered handlers using no-args constructors (one instance per unique handler class)
+**Scenarios:**
+- Scenario: known target → handler found by capability name; executed on a virtual thread; result event returned asynchronously.
+- Alternate: unknown target → no registration for the target name; error callback invoked; if callback returns a non-null event that becomes the result; otherwise a fallback error event is produced and returned.
+- Alternate: handler fails → failure propagates; error callback invoked; error event returned.
 
-**Error handling:**
-- **Missing JAR:** IOException thrown immediately (fail fast)
-- **Malformed JAR:** Warning logged, JAR skipped, continue with other JARs
-- **Duplicate capabilities:** IllegalStateException thrown (fail fast)
-- **Class loading failures:** Fine-level logging, class skipped, continue scanning
-- **Instantiation failures:** IllegalStateException thrown (fail fast)
+### Use Case: Delegate to Capability
 
-**Why this error strategy?**
-- Missing/malformed JARs: Infrastructure misconfiguration, should be detected at startup
-- Duplicate capabilities: Semantic conflict, cannot proceed safely
-- Class loading failures: Expected (JARs may reference unavailable classes), gracefully skip
-- Instantiation failures: Handler contract violation, cannot proceed
+**Description:** A running handler dispatches an outbound event to another capability within the same microlith.
 
-### DiscoveredHandler Record (Package-Private)
+**Scenarios:**
+- Scenario: async dispatch → outbound event submitted to dispatcher; future returned immediately; caller controls timeout via the future.
+- Alternate: sync dispatch → outbound event submitted; caller blocks until result or timeout; handling failure raised on timeout, interruption, or handler failure.
 
-Internal data structure capturing discovery results:
+### Use Case: Shut Down Microlith
 
-```java
-record DiscoveredHandler(
-    String capability,
-    Class<? extends EventHandler> handlerClass
-) { }
-```
+**Description:** Infrastructure closes the router and all handler loaders, completing in-flight events before releasing resources.
 
-**Purpose:** Separates discovery phase from instantiation phase. Discovery collects metadata and validates uniqueness. Instantiation happens only after all handlers are discovered and validated.
-
-**Visibility:** Package-private. This is an internal structure used within JarHandlerLoader. Clients never see it.
-
-
-### Multi-Capability Handler Support
-
-Handlers may declare multiple capabilities using Java's repeatable annotation mechanism:
-
-```java
-@Capability("get-message")
-@Capability("create-message")
-@Capability("update-message")
-public class MessageHandler implements EventHandler {
-    // Single class, three capability registrations
-}
-```
-
-**Instance sharing:** When a handler class declares multiple capabilities, JarHandlerLoader creates a single instance and registers it under each capability name. The instantiation phase maintains an instance cache (`Map<Class<?>, EventHandler>`) to ensure each handler class is instantiated exactly once, regardless of how many capabilities it declares.
-
-**Map semantics:** The returned `Map<String, EventHandler>` contains multiple entries pointing to the same handler instance:
-```
-{
-  "get-message" -> messageHandlerInstance,
-  "create-message" -> messageHandlerInstance,
-  "update-message" -> messageHandlerInstance
-}
-```
-
-**Thread-safety requirement:** Handlers must be thread-safe. This was always required (EventBob routes concurrent requests to handlers), but the shared instance pattern makes it explicit. A single handler instance services all requests for all its declared capabilities.
-
-**Duplicate detection:** Enforced at capability-name level, not class level. Two handler classes cannot declare the same capability name, but one handler class can declare multiple distinct capability names. If `MessageHandler` declares "get-message" and `UserHandler` also declares "get-message", instantiation fails with `IllegalStateException`.
-
-**Boundary preservation:** This is entirely a package-private implementation detail within JarHandlerLoader. The public HandlerLoader interface contract (`Map<String, EventHandler> loadHandlers()`) remains unchanged. Infrastructure code cannot observe whether multiple map entries share the same instance - it sees only the capability-to-handler mapping.
-
-### DefaultErrorEvent Factory (Package-Private)
-
-Factory for creating error events when error handlers fail or return null:
-
-```java
-class DefaultErrorEvent {
-  static Event create(Throwable error, Event originalEvent) { ... }
-}
-```
-
-**Purpose:** Ensures EventBob always returns an Event, even when error handling fails. Prevents null returns from propagating.
-
-**Visibility:** Package-private. Internal error handling mechanism. Clients never invoke this directly.
+**Scenarios:**
+- Scenario: ordered shutdown → router close is called; the virtual thread executor is shut down and the caller blocks until in-flight handlers complete; handler loaders are then closed; lifecycle-based loaders invoke each lifecycle holder's shutdown phase before releasing isolated class loaders.
+- Alternate: interrupted shutdown → the await is interrupted; the interrupt flag is restored; the caller proceeds.
 
 ---
 
-## Visibility Boundaries
+## 5. AI Invariants: structure, boundaries, dependency direction
 
-### Public API (Infrastructure Depends On)
-- Event, Event.Builder
-- EventHandler
-- EventBob, EventBob.Builder
-- Dispatcher
-- HandlerLoader (interface only)
-- Capability (annotation)
-- Capabilities (constants)
-- EventHandlingException, HandlerNotFoundException
-
-### Package-Private Internals (Hidden from Infrastructure)
-- JarHandlerLoader (implementation hidden by factory method)
-- DiscoveredHandler (internal structure)
-- DefaultErrorEvent (internal error handling)
-
-**Enforcement:** Java access modifiers. Infrastructure cannot import package-private classes.
-
-**Rationale:** Public API is stable and minimal. Internal implementations can change without affecting infrastructure. This is Information Hiding - a foundational principle of modular design.
-
----
-
-## Dependencies
-
-**External dependencies:** ZERO runtime dependencies
-
-**JDK classes used:**
-- `java.util.*` (collections, maps)
-- `java.nio.file.*` (Path for JAR location)
-- `java.net.*` (URLClassLoader, URL)
-- `java.util.jar.*` (JarFile, JarEntry)
-- `java.lang.reflect.*` (Constructor, Class)
-- `java.util.logging.*` (Logger)
-- `java.util.concurrent.*` (CompletableFuture, ExecutorService)
-
-**Why no dependencies?** Core is domain logic. Domain logic must not depend on frameworks, libraries, or infrastructure. This keeps the domain testable, portable, and stable.
-
-**Dependents:** `io.eventbob.spring` depends on this module. Future adapter modules will also depend on this module.
-
----
-
-## Testing Strategy
-
-- Unit tests for each component
-- Behavioral tests using @DisplayName("Given... when... then...")
-- Simple stubs over mocks (e.g., RecordingHandler)
-- No infrastructure dependencies in tests
-- Tests verify contracts, not implementations
-
-**Loader testing:**
-- Test JAR isolation (handlers cannot see each other's classes)
-- Test duplicate detection (duplicate capabilities throw IllegalStateException)
-- Test error resilience (malformed JARs do not stop processing)
-- Test instantiation (handlers are created correctly)
-
----
-
-## Future Evolution
-
-### When Adapters Are Added
-- Adapters will implement EventHandler
-- Adapters will use Capabilities vocabulary
-- Core module remains unchanged
-
-### When Routing Grows Complex
-- May extract Router interface
-- May add pattern-based routing (wildcards, regex)
-- May add route registry abstraction
-- Current EventBob remains for simple cases
-
-### When Async Is Needed
-- May add AsyncEventHandler interface
-- May add EventPublisher for fire-and-forget
-- Current EventHandler remains for sync cases
-
-### When Loader Becomes Configurable
-- May add LoaderConfig interface
-- May add filtering strategies (include/exclude patterns)
-- Current HandlerLoader remains as default
-
-**Restraint principle:** Do not build these until they are needed. Extract patterns reactively, not proactively.
-
----
-
-## Architectural Invariants (Must Never Violate)
-
-1. **Zero external dependencies** - Core depends only on JDK
-2. **Inward-only dependencies** - Core never imports from infrastructure
-3. **Package-private implementations** - Only abstractions are public
-4. **Immutable domain objects** - Event is immutable, builders create new instances
-5. **Flat package structure** - All classes in `io.eventbob.core`, no subpackages
-
-**Enforcement:** Maven module boundaries provide structural enforcement. Automated tests planned.
+- Zero external dependencies: this module depends only on the JDK. No framework, library, or infrastructure import is permitted.
+- Inward dependency direction only: no type in this module may import from io.eventbob.spring or any other module. All dependency arrows point into this module.
+- Public API minimal and stable: only handler contracts, lifecycle abstractions, capability markers, and value objects are public. All loader implementations are hidden and reachable only through factory methods.
+- Immutable routing envelopes: event instances are immutable after construction. Copy-on-write via a builder is the only mutation path.
+- Blocking close contract: the router's close operation must await completion of in-flight handlers before returning so callers can safely invoke lifecycle shutdown and release class loaders without use-after-free on handler classes.
+- Capability uniqueness enforced at load time: duplicate capability names across JARs or inline registrations must cause a hard failure before the router is built.
+- Lifecycle ordering: each lifecycle holder's shutdown phase must be invoked before the corresponding isolated class loader is closed so handlers can reference their own classes during cleanup.

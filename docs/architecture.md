@@ -1,591 +1,198 @@
-# EventBob Architecture
+# EventBob
 
-## System Purpose
+## 1. High Level Architectural Purpose
 
-EventBob bundles multiple microservices into a microlith to solve the chatty-application anti-pattern. When too many microservices cause network saturation and poor performance, EventBob loads their JARs into a single server for in-process communication.
+EventBob is a container framework for bundling multiple microservices into a single deployable process (a microlith) to eliminate the chatty-application anti-pattern caused by excessive inter-microservice network calls. It loads microservice JARs in-process, discovers their declared capabilities, and routes events to them without network overhead. It also supports location transparency: capabilities hosted in remote microliths are registered and routed identically to local ones, so the routing layer is agnostic to handler location.
 
-**Location Transparency Extension:** EventBob also supports remote handler loading via HTTP, enabling hybrid architectures where some handlers run in-process (from JARs) and others run remotely (via HTTP endpoints). The routing layer treats both types identically — clients see a unified capability namespace regardless of handler location.
-
----
-
-## Three-Layer Architecture
-
-EventBob follows Clean Architecture with three layers:
-
-```
-┌──────────────────────────────────────┐
-│   io.eventbob.core                   │  Domain Layer (Innermost)
-│   - Domain model (Event)             │
-│   - Abstractions (EventHandler)      │
-│   - JAR loading (HandlerLoader)      │
-│   - Routing (EventBob)               │
-│   - NO framework dependencies        │
-└──────────────────────────────────────┘
-              ↑ implements
-              │
-┌──────────────────────────────────────┐
-│   io.eventbob.spring                 │  Infrastructure Library (Middle)
-│   - Spring Boot wiring               │
-│   - HTTP transport adapters          │
-│   - Remote handler loading adapters  │
-│   - EventBobConfig (generic)         │
-│   - NO main class (library)          │
-│   - NO hard-coded paths              │
-└──────────────────────────────────────┘
-              ↑ imports & configures
-              │
-┌──────────────────────────────────────┐
-│   io.eventbob.example.microlith.*   │  Application Layer (Outermost)
-│   - Spring Boot main class           │
-│   - Concrete JAR path configuration  │
-│   - Concrete remote endpoint config  │
-│   - Deployment-specific wiring       │
-│   - Example: microlith.echo          │
-└──────────────────────────────────────┘
-```
-
-**Dependency Rule:** Each layer depends only on layers inside it. Applications depend on infrastructure library, which depends on core. Core depends on nothing (except JDK).
-
-**Why three layers:**
-- **Core:** Framework-agnostic domain logic (what EventBob IS)
-- **Spring library:** Reusable infrastructure (how to deploy with Spring Boot)
-- **Microlith applications:** Concrete configurations (which handlers to load)
+The system is composed of three Maven modules with a strict inward dependency direction: a framework-agnostic domain core, a reusable Spring Boot infrastructure library, and one or more concrete deployable microlith applications.
 
 ---
 
-## Dependency Inversion at Boundaries
+## 2. Architectural Borders
 
-### Core → Spring Boundary
+```mermaid
+graph TD
+    subgraph EventBob["EventBob System"]
+        Bootstrap["Bootstrap Microlith"]
+        RouteEvent["Route Inbound Event"]
+        DelegateRemote["Delegate to Remote Capability"]
+        ShutdownMicrolith["Shut Down Microlith"]
+    end
 
-Core defines HandlerLoader interface with factory methods:
-
-```java
-public interface HandlerLoader {
-    /**
-     * Load handlers from the configured source.
-     * 
-     * @return Map of capability name to EventHandler
-     * @throws IOException if loading fails
-     */
-    Map<String, EventHandler> loadHandlers() throws IOException;
-    
-    /**
-     * Factory method: Create a JAR-based handler loader.
-     * 
-     * @param jarPaths Collection of JAR file paths to load handlers from
-     * @return HandlerLoader that loads from the specified JARs
-     */
-    static HandlerLoader jarLoader(Collection<Path> jarPaths) {
-        return new JarHandlerLoader(jarPaths);  // package-private implementation
-    }
-    
-    /**
-     * Factory method: Create a remote HTTP-based handler loader.
-     * Implementation provided by infrastructure layer (io.eventbob.spring).
-     * 
-     * @param remoteEndpoint URL of remote EventBob server
-     * @param capabilities Set of capability names available at remote endpoint
-     * @return HandlerLoader that proxies to remote handlers via HTTP
-     */
-    static HandlerLoader remoteLoader(String remoteEndpoint, Set<String> capabilities) {
-        // Implementation discovered via ServiceLoader mechanism
-        // This allows core to define the contract without depending on HTTP infrastructure
-        throw new UnsupportedOperationException("Remote loader requires io.eventbob.spring on classpath");
-    }
-}
+    HTTPClient["HTTP Client"] -->|POST /events| EventBob
+    EventBob -->|HTTP POST /events| RemoteMicrolith["Remote Microlith"]
+    OperatorOrOrchestrator["Operator / Orchestrator"] -->|starts / stops process| EventBob
 ```
 
-Spring infrastructure depends only on the interface:
+### Border: Microlith Process
 
-```java
-@Configuration
-public class EventBobConfig {
-    private final List<Path> handlerJarPaths;
-    private final List<RemoteCapability> remoteCapabilities;
-    
-    public EventBobConfig(
-            List<Path> handlerJarPaths,
-            @Autowired(required = false) List<RemoteCapability> remoteCapabilities) {
-        this.handlerJarPaths = handlerJarPaths;
-        this.remoteCapabilities = remoteCapabilities != null ? remoteCapabilities : List.of();
-    }
-    
-    private Map<String, EventHandler> loadHandlersFromJars() throws IOException {
-        HandlerLoader loader = HandlerLoader.jarLoader(handlerJarPaths);  // Factory method
-        return loader.loadHandlers();
-    }
-    
-    private Map<String, EventHandler> loadRemoteHandlers(HttpClient httpClient) throws IOException {
-        HandlerLoader remoteLoader = new RemoteHandlerLoader(remoteCapabilities, httpClient);
-        return remoteLoader.loadHandlers();
-    }
-}
-```
+Description: The system boundary is the running microlith process. External actors interact with it over HTTP. The system sends outbound HTTP calls only when delegating to remote capabilities.
 
-**Key insight:** Spring never sees JarHandlerLoader (package-private). It depends only on the public HandlerLoader interface. This is Dependency Inversion Principle in practice.
+Interactors:
+- HTTP Client
+  - Summary: Any caller that sends events to the microlith for processing.
+  - Flow:
+    - caller sends HTTP POST to the events endpoint with a wire-format event body
+    - the inbound adapter deserialises the body into a domain event
+    - the router resolves the target capability name from the event
+    - if no handler is registered for the target then an error event is returned
+    - if the target is a remote capability then the event is forwarded via HTTP to the remote microlith
+    - otherwise the event is delivered to the local handler in-process
+    - the handler result is serialised to wire format and returned in the HTTP response
+    - on error: if the handler raises a failure the error callback is applied and the error event is returned
 
-**Remote loading insight:** The `remoteLoader()` factory method is defined in core but implemented in infrastructure layer via ServiceLoader pattern. This preserves dependency direction (Spring → Core) while allowing infrastructure-specific implementations.
+- Remote Microlith
+  - Summary: A peer microlith that hosts capabilities declared as remote in this microlith's configuration.
+  - Flow:
+    - the router delivers an event to a remote handler adapter registered under a capability name
+    - the adapter converts the domain event to wire format and posts it to the remote endpoint
+    - the remote microlith processes the event and returns a wire-format response
+    - the adapter converts the wire-format response back to a domain event and returns it to the router
+    - on error: HTTP error status or transport exception is surfaced as a handling failure to the caller
 
-### Spring → Application Boundary
-
-Spring library defines EventBobConfig that accepts configuration via constructor injection:
-
-```java
-// In EventBobConfig (io.eventbob.spring) - generic library
-public EventBobConfig(List<Path> handlerJarPaths) {
-    this.handlerJarPaths = handlerJarPaths;
-}
-```
-
-Application provides concrete configuration:
-
-```java
-// In EchoApplication (io.eventbob.example.microlith.spring.echo) - concrete app
-@Bean
-public List<Path> handlerJarPaths() {
-    return List.of(
-        Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar"),
-        Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar")
-    );
-}
-```
-
-**Key insight:** Spring library has no hard-coded paths, no main class. It is purely infrastructure. Applications decide which handlers to load.
+- Operator / Orchestrator
+  - Summary: Starts and stops the microlith process.
+  - Flow:
+    - operator starts the process; the application entry point bootstraps the framework runtime
+    - the wiring configuration collects all handler sources and initialises them
+    - each local capability is registered with the router; each remote capability is registered as an HTTP adapter
+    - the inbound HTTP endpoint is bound and the embedded server starts
+    - operator stops the process; the framework runtime closes the wiring configuration
+    - inline lifecycle holders are shut down in registration order; each releases its resources
+    - on error: if a lifecycle initialisation fails the startup aborts and the process exits
 
 ---
 
-## Package Structure
+## 3. Layers
 
-### Core (Flat Structure)
+```mermaid
+graph TD
+    MicrolithApp["io.eventbob.example.microlith.*\n(Application Layer)"]
+    SpringLib["io.eventbob.spring\n(Infrastructure Library Layer)"]
+    Core["io.eventbob.core\n(Domain Layer)"]
 
-All classes live in `io.eventbob.core` - no subpackages:
-
-```
-io.eventbob.core
-├── Event                          (public - domain model)
-├── EventHandler                   (public - core abstraction)
-├── EventBob                       (public - router)
-├── Dispatcher                     (public - dispatch contract)
-├── HandlerLoader                  (public - loading abstraction)
-├── JarHandlerLoader              (package-private - loading implementation)
-├── DiscoveredHandler             (package-private - internal structure)
-├── DefaultErrorEvent             (package-private - error handling)
-├── Capability                     (public - annotation)
-├── Capabilities                   (public - vocabulary)
-├── EventHandlingException         (public - checked exception)
-└── HandlerNotFoundException       (public - runtime exception)
+    MicrolithApp -->|imports and configures| SpringLib
+    SpringLib -->|depends on| Core
 ```
 
-**Visibility boundaries:**
-- **Public API:** Event, EventHandler, EventBob, Dispatcher, HandlerLoader, Capability, Capabilities, exceptions
-- **Package-private internals:** JarHandlerLoader, DiscoveredHandler, DefaultErrorEvent
+### Layer: Domain Layer — io.eventbob.core
 
-**Rationale for flat structure:** Core is small and cohesive. All classes operate at the same abstraction level (domain primitives and routing). Subpackages would add complexity without clarity gains.
+Description: The innermost layer. Defines the domain model, routing abstractions, handler integration contracts, lifecycle contracts, and all handler loading strategies. Carries no framework dependencies. All other modules depend inward on this layer; this layer depends on nothing outside the JDK.
 
-### Spring (Library Structure)
+Components:
+- Event router: holds the capability-to-handler map, routes events by capability name, executes handlers on virtual threads, exposes itself as a dispatcher.
+- Handler integration contract: the single-method contract all capabilities must satisfy; receives a dispatcher for outbound delegation.
+- Dispatcher: the outbound-event facility provided to handlers at call time; supports async and sync send semantics.
+- Handler loader contract: the loading abstraction whose factory methods hide all concrete implementations; manages resources via a close contract.
+- Lifecycle holder contract: the three-phase lifecycle contract (initialise, retrieve, shutdown) for handlers that require dependency injection or resource management.
+- Lifecycle context: a context carrier for handler initialisation supplying a configuration map, an optional dispatcher, and an optional framework context.
+- Capability marker: a repeatable annotation that binds a handler to one or more capability identifiers.
+- Plain handler loader: discovers and instantiates capability handlers from JARs using per-JAR isolation.
+- Lifecycle handler loader: loads lifecycle-managed handlers from JARs, coordinates their initialisation, and tracks instances for ordered shutdown.
 
-```
-io.eventbob.spring
-├── EventBobConfig                 (Spring configuration - constructor injection)
-├── EventController                (REST endpoint adapter)
-├── EventDto                       (HTTP/Event boundary DTO - anti-corruption layer)
-├── adapter/
-│   └── http/
-│       ├── HttpEventHandlerAdapter (EventHandler → HTTP adapter)
-│       └── RemoteEventDto          (Remote HTTP DTO - separate from local EventDto)
-├── loader/
-│   └── RemoteHandlerLoader        (HandlerLoader implementation for remote endpoints)
-└── handlers/
-    └── HealthcheckHandler         (Built-in system handler)
-```
+Inbound Layer Dependencies: io.eventbob.spring, io.eventbob.example.microlith.*
+Outbound Layer Dependencies: JDK only
 
-**Package structure rationale:**
-- **Top-level:** Configuration and local REST endpoint (EventBobConfig, EventController, EventDto)
-- **adapter/http/:** HTTP client-side adapters for remote handler invocation
-- **loader/:** HandlerLoader implementations beyond core's JarHandlerLoader
-- **handlers/:** Built-in system handlers
+### Layer: Infrastructure Library Layer — io.eventbob.spring
 
-**No main class.** This is a library module. Applications import and configure it.
+Description: The middle layer. A reusable library that bridges the framework-agnostic core to the Spring Boot runtime. Provides an HTTP server adapter for inbound event processing, an HTTP client adapter for outbound remote-capability delegation, Spring-aware wiring that aggregates multiple handler sources, and a built-in healthcheck capability. Ships no entry point and no hard-coded configuration; all handler sources are provided by the importing application.
 
-### Microlith Applications (Example: Echo with Spring)
+Components:
+- Wiring configuration: collects inline lifecycle holders, JAR-based lifecycle holders, and remote capability declarations via constructor injection; initialises them; detects duplicates; produces the router bean; tears down lifecycle holders on context close.
+- Inbound HTTP endpoint: exposes the events HTTP endpoint; translates wire-format bodies to domain events, delegates to the router, translates results back to wire format.
+- Wire transfer object: the anti-corruption DTO for the HTTP boundary; carries serialisation metadata; translates to and from the domain routing envelope; never crosses into core.
+- Remote handler adapter: implements the handler integration contract; converts domain events to wire format, posts to a remote endpoint, converts wire-format responses back to domain events.
+- Remote loader: implements the handler loader contract; creates one remote handler adapter per remote capability declaration.
+- Remote capability declaration: a configuration value object mapping a capability name to a remote endpoint URI.
+- Healthcheck handler: a built-in capability registered unconditionally by the wiring configuration.
 
-```
-io.eventbob.example.microlith.spring.echo
-└── EchoApplication                 (Spring Boot main class + JAR path config)
-```
+Inbound Layer Dependencies: io.eventbob.example.microlith.*
+Outbound Layer Dependencies: io.eventbob.core
 
-More microlith applications will follow this pattern (e.g., `io.eventbob.example.microlith.spring.upper` for testing remote invocation, or `io.eventbob.example.microlith.dropwizard.echo` for alternative framework).
+### Layer: Application Layer — io.eventbob.example.microlith.*
+
+Description: The outermost layer. Concrete deployable microlith processes. Each application declares which capabilities to serve locally (via lifecycle holder beans), which to serve remotely (via remote capability declaration beans), and on which port to listen. Contains no domain logic and no infrastructure code — only framework bean declarations and lifecycle holder wiring.
+
+Components:
+- Application entry point: declares handler source beans and imports the library wiring configuration; provides the component scan scope for the inbound endpoint.
+- Lifecycle holders: fulfil the lifecycle holder contract for each locally-hosted capability; create isolated framework contexts so capabilities share no beans.
+
+Inbound Layer Dependencies: none — this is the outermost layer.
+Outbound Layer Dependencies: io.eventbob.spring, io.eventbob.core (lifecycle holder contract, lifecycle context)
 
 ---
 
-## Component Diagram
+## 4. Use Cases
 
-### Local Handler Loading (Original)
+```mermaid
+graph LR
+    Bootstrap["Bootstrap Microlith"]
+    ProcessEvent["Process Inbound Event"]
+    ForwardRemote["Forward Event to Remote Capability"]
+    DispatchBetweenCapabilities["Dispatch Between Local Capabilities"]
+    Shutdown["Shut Down Microlith"]
 
-```
-┌─────────────────────────────────────────┐
-│  Microlith Process                      │
-│  (e.g., echo-microlith)                 │
-│                                         │
-│  ┌────────────────────────────────┐    │
-│  │  EventBob Server (Spring)      │    │
-│  │                                │    │
-│  │  [HandlerLoader]               │    │
-│  │     ↓                          │    │
-│  │  echo.jar                      │    │
-│  │  lower.jar                     │    │
-│  │     ↓                          │    │
-│  │  [EventBob Router]             │    │
-│  │     → in-process calls         │    │
-│  └────────────────────────────────┘    │
-│                                         │
-│  Configured in:                         │
-│  EchoApplication                        │
-└─────────────────────────────────────────┘
+    Bootstrap --> ProcessEvent
+    ProcessEvent --> ForwardRemote
+    ProcessEvent --> DispatchBetweenCapabilities
+    Shutdown
 ```
 
-### Remote Handler Loading (New)
+### Use Case: Bootstrap Microlith
 
-```
-┌───────────────────────────────┐        ┌───────────────────────────────┐
-│  Microlith A                  │        │  Microlith B                  │
-│                               │        │                               │
-│  ┌─────────────────────┐     │        │  ┌─────────────────────┐     │
-│  │  EventBob Router    │     │  HTTP  │  │  EventBob Server    │     │
-│  │                     │ ────┼───────>│  │                     │     │
-│  │  [RemoteLoader]     │     │        │  │  [upper.jar]        │     │
-│  │  capability: upper  │     │        │  │                     │     │
-│  │                     │     │        │  │  POST /events       │     │
-│  └─────────────────────┘     │        │  └─────────────────────┘     │
-│                               │        │                               │
-└───────────────────────────────┘        └───────────────────────────────┘
+Description: The process starts; all capability sources are initialised and the HTTP server begins accepting requests.
 
-Microlith A sees "upper" capability in its namespace.
-At runtime, "upper" events are proxied to Microlith B via HTTP.
-Domain code in Microlith A is unaware of the location — it just calls EventHandler.
-```
+Scenarios:
+- Scenario: all sources available then the framework runtime initialises; lifecycle holders are created and initialised; JAR-based capabilities are loaded; remote capability HTTP adapters are created; the healthcheck is registered; the router is built; the inbound endpoint is bound; the server starts accepting requests.
+- Alternate scenario: lifecycle initialisation failure then a lifecycle holder raises an error during initialisation; startup aborts; the process exits without accepting requests.
+- Alternate scenario: duplicate capability names across sources then the wiring configuration detects the conflict before building the router; startup aborts.
 
-**Location transparency:** The EventBob router in Microlith A treats remote handlers identically to local handlers. Both implement EventHandler interface. Clients cannot tell the difference.
+### Use Case: Process Inbound Event
+
+Description: An HTTP client sends an event to the microlith; the system routes it to the appropriate capability and returns the result.
+
+Scenarios:
+- Scenario: known local capability then the inbound adapter translates the wire-format body to a domain event; the router resolves the capability and dispatches to the local handler in-process; the handler result is translated to wire format and returned as an HTTP response.
+- Alternate scenario: known remote capability then the router delivers the event to the remote handler adapter, which forwards it via HTTP to the remote microlith; the remote result is returned to the original caller.
+- Alternate scenario: unknown capability then the router applies the error callback; an error event is returned to the caller.
+- Alternate scenario: handler raises a failure then the error callback is applied; the error event is serialised and returned.
+
+### Use Case: Forward Event to Remote Capability
+
+Description: The router transparently delegates an event to a capability hosted in a peer microlith.
+
+Scenarios:
+- Scenario: remote microlith available then the remote handler adapter converts the domain event to wire format; posts it to the remote endpoint; receives a 2xx response; converts the wire-format body back to a domain event; returns the result to the router.
+- Alternate scenario: remote microlith returns HTTP error then the adapter surfaces a handling failure; the router applies the error callback; the error event is returned to the original caller.
+- Alternate scenario: network failure then the transport exception is wrapped in a handling failure; if interrupted the interrupt flag is restored; the error is propagated to the caller.
+
+### Use Case: Dispatch Between Local Capabilities
+
+Description: A running handler sends an outbound event to another capability within the same microlith using the dispatcher.
+
+Scenarios:
+- Scenario: async dispatch then the handler calls the dispatcher with an outbound event; the future is returned immediately; the caller controls the timeout via the future.
+- Alternate scenario: sync dispatch then the handler calls the dispatcher with a timeout; execution blocks until the result is available or the timeout expires; on timeout a handling failure is raised.
+
+### Use Case: Shut Down Microlith
+
+Description: The process is stopped; all lifecycle holders are shut down cleanly before resources are released.
+
+Scenarios:
+- Scenario: clean shutdown then the framework runtime closes the wiring configuration; inline lifecycle holders are shut down in registration order; each releases its resources (database connections, Spring contexts, thread pools); class loaders are closed after lifecycle shutdown completes.
+- Alternate scenario: partial lifecycle failure then one lifecycle holder's shutdown raises an error; the error is logged; shutdown continues for the remaining holders.
 
 ---
 
-## Dependency Rules
-
-**✅ Allowed:**
-- `io.eventbob.example.microlith.*` → `io.eventbob.spring`
-- `io.eventbob.spring` → `io.eventbob.core`
-- `io.eventbob.spring.adapter.*` → `io.eventbob.core` (adapters depend on domain)
-- `io.eventbob.spring.loader.*` → `io.eventbob.core` (loaders implement HandlerLoader)
-- Applications → Library → Domain
-
-**❌ Forbidden:**
-- `io.eventbob.core` → `io.eventbob.spring`
-- `io.eventbob.spring` → `io.eventbob.example.*`
-- Domain → Infrastructure
-- Library → Applications
-
-**Enforcement mechanism:** Maven module boundaries provide structural enforcement. Automated tests planned.
-
----
-
-## What Belongs Where
-
-### Core (`io.eventbob.core`)
-- Domain concepts (Event, EventHandler, Capability)
-- Routing abstractions (Dispatcher)
-- JAR loading abstractions and implementation (HandlerLoader, JarHandlerLoader)
-- **NO framework dependencies** (Spring, Dropwizard, etc.)
-- **NO HTTP client dependencies** (remote loading is infrastructure concern)
-
-### Spring Library (`io.eventbob.spring`)
-- Generic EventBob configuration (constructor injection)
-- HTTP transport adapters (server-side: EventController, client-side: HttpEventHandlerAdapter)
-- Remote handler loading (RemoteHandlerLoader, RemoteEventDto)
-- REST endpoints
-- Framework-specific code (Spring Boot, Spring Web)
-- **NO main class, NO hard-coded paths**
-
-### Microlith Applications (`io.eventbob.example.microlith.*`)
-- Spring Boot main class
-- Concrete JAR path configuration
-- Concrete remote endpoint configuration
-- Deployment-specific wiring
-- Runtime dependencies on handler JARs
-
-### Rule
-Core defines WHAT (domain model + abstractions). Infrastructure library defines HOW (with specific frameworks). Applications define WHICH (which handlers to load, where to deploy).
-
----
-
-## Location Transparency Architecture
-
-### Design Goal
-
-Domain code should be agnostic to handler location. Whether a handler runs in the same JVM (loaded from JAR) or in a remote process (accessed via HTTP) is a deployment decision, not a domain concern.
-
-### How It Works
-
-1. **Unified Interface:** Both local and remote handlers implement the same EventHandler interface from core
-2. **Adapter Pattern:** HttpEventHandlerAdapter wraps HTTP client logic and exposes EventHandler interface
-3. **Transparent Routing:** EventBob router treats all handlers identically — it calls `handle(Event)` regardless of implementation
-4. **Anti-Corruption Layer:** EventDto and RemoteEventDto prevent HTTP types from leaking into domain
-
-### Remote Handler Loading Sequence
-
-```
-Application configures remote endpoint
-        ↓
-RemoteHandlerLoader creates HttpEventHandlerAdapter
-        ↓
-HttpEventHandlerAdapter registered with EventBob router
-        ↓
-Client code calls eventBob.processEvent(event)
-        ↓
-EventBob routes to HttpEventHandlerAdapter (transparent)
-        ↓
-HttpEventHandlerAdapter converts Event → RemoteEventDto → HTTP POST
-        ↓
-Remote server responds with RemoteEventDto → Event
-        ↓
-Client receives Event (indistinguishable from local handler)
-```
-
-**Key insight:** The adapter lives in infrastructure layer. Core remains pure. Remote complexity is encapsulated.
-
----
-
-## Multiple Microlith Deployments
-
-The three-layer architecture enables multiple concrete microlith deployments from a single infrastructure library:
-
-```
-                io.eventbob.core
-                       ↑
-                       │
-                io.eventbob.spring
-                       ↑
-         ┌─────────────┼─────────────┐
-         │             │             │
-   microlith.echo  microlith.upper  microlith.messages
-   (lower + echo)  (upper + ...)   (read + write + ...)
-   (+ remote upper) (local only)    (+ remote archive)
-```
-
-Each microlith:
-- Imports io.eventbob.spring library
-- Provides @Bean for List<Path> handlerJarPaths
-- Optionally provides @Bean for List<RemoteCapability> remoteCapabilities
-- Has its own Spring Boot main class
-- Loads different combinations of handlers (local and/or remote)
-
-The infrastructure library remains unchanged regardless of which handlers are loaded.
-
----
-
-## Future: Additional Infrastructure Implementations
-
-The architecture also allows for alternative infrastructure implementations beyond Spring Boot:
-
-```
-                io.eventbob.core
-                       ↑
-         ┌─────────────┼─────────────┐
-         │             │             │
-io.eventbob.spring  io.eventbob.dropwizard  io.eventbob.quarkus
-   (current)           (future)              (future)
-```
-
-Each infrastructure library:
-- Depends on core
-- Never depends on other infrastructure modules
-- Provides framework-specific wiring
-- Uses HandlerLoader.jarLoader(Collection<Path>) factory method
-- May provide HandlerLoader.remoteLoader() implementation
-
-Core remains unchanged regardless of infrastructure choice.
-
----
-
-## Handler Lifecycle
-
-### The Problem
-
-The original JAR loading mechanism (`HandlerLoader.jarLoader()`) works for simple POJO handlers with no-arg constructors. But real microservices need:
-- Configuration (database URLs, API keys)
-- Dependencies (DataSource, HTTP clients, repositories)
-- Framework integration (Spring contexts, Dropwizard environments)
-- Startup and shutdown hooks (resource management)
-
-POJOs with no-arg constructors cannot solve this. We need a lifecycle contract.
-
-### The Solution: HandlerLifecycle Contract
-
-EventBob is a container for embedded microservices. Like other containers (Servlet, Spring, Dropwizard), it defines a lifecycle contract that handlers implement to integrate with the container.
-
-**HandlerLifecycle is a domain contract.** It lives in core (`io.eventbob.core`) alongside Event and EventHandler. It is not infrastructure. It defines WHAT the lifecycle is, not HOW any particular framework implements it.
-
-Think of it like `javax.servlet.Servlet`. The servlet-api JAR defines the contract. Tomcat, Jetty, and Undertow provide different implementations. The contract itself is framework-agnostic.
-
-### Two Handler Loading Strategies
-
-HandlerLoader now provides two factory methods:
-
-```java
-// Strategy 1: POJO handlers (original)
-HandlerLoader.jarLoader(Collection<Path> jarPaths)
-
-// Strategy 2: Lifecycle handlers (new)
-HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher)
-HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher, Object frameworkContext)
-```
-
-**When to use jarLoader:**
-- Simple handlers with no dependencies
-- No configuration needed
-- No startup/shutdown requirements
-- No framework integration
-
-**When to use lifecycleLoader:**
-- Handlers need configuration (from application.yml)
-- Handlers depend on services, repositories, or HTTP clients
-- Handlers integrate with Spring, Dropwizard, or other frameworks
-- Handlers manage resources that require cleanup
-
-Both strategies produce the same result: `Map<String, EventHandler>`. The router does not care which strategy loaded the handler.
-
-### Handler Initialization Sequence
-
-For lifecycle handlers, initialization follows this sequence:
-
-```
-1. JAR loaded into isolated URLClassLoader
-       ↓
-2. Read META-INF/eventbob-handler.properties
-   - Find lifecycle.class property
-       ↓
-3. Load application.yml configuration (TODO: not yet implemented)
-   - Parsed into Map<String, Object>
-   - Provided to lifecycle via LifecycleContext
-       ↓
-4. Instantiate lifecycle class (no-arg constructor)
-       ↓
-5. Call lifecycle.initialize(LifecycleContext)
-   - Lifecycle receives: configuration, dispatcher, optional framework context
-   - Lifecycle creates services, connects to databases, initializes Spring contexts, etc.
-   - Lifecycle wires dependencies and constructs the handler
-       ↓
-6. Call lifecycle.getHandler()
-   - Returns fully-initialized EventHandler
-       ↓
-7. Extract @Capability annotations from handler
-   - Register handler with EventBob router
-       ↓
-8. Track lifecycle for shutdown
-   - When EventBob shuts down, lifecycle.shutdown() is called
-   - Then URLClassLoader is closed
-```
-
-**Ordering matters:** Class loaders are closed AFTER lifecycle shutdown. This allows handlers to reference classes during cleanup (closing Spring contexts, database connections, etc.).
-
-### Framework-Agnostic Context Mechanism
-
-The LifecycleContext provides three things:
-
-1. **Configuration:** `Map<String, Object> getConfiguration()`
-   - Loaded from handler JAR's application.yml (not yet implemented)
-   - Handler can parse it using Jackson, SnakeYAML, Spring's @ConfigurationProperties, etc.
-
-2. **Dispatcher:** `Dispatcher getDispatcher()`
-   - Used to invoke other capabilities during event processing
-
-3. **Framework Context:** `<T> Optional<T> getFrameworkContext(Class<T> type)`
-   - Generic access to framework-specific resources
-   - Example: `context.getFrameworkContext(ApplicationContext.class)` for Spring
-   - Returns empty if microlith doesn't use that framework
-   - Core has no dependency on Spring, Dropwizard, or any framework
-   - The generic type parameter preserves type safety while maintaining framework-agnosticism
-
-This is Dependency Inversion. The core defines the abstraction (`LifecycleContext`). The infrastructure layer (Spring microlith) provides the framework context. The handler (in an isolated JAR) optionally uses it.
-
-### Dependency Injection Pattern
-
-The lifecycle implementation demonstrates a three-layer dependency injection pattern:
-
-```
-LifecycleHandlerLifecycle (example JAR)
-    ↓ creates
-EchoService (example JAR)
-    ↓ wired to
-EchoHandler (example JAR)
-```
-
-**Example from echo handler:**
-
-```java
-public class EchoHandlerLifecycle extends HandlerLifecycle {
-    @Override
-    public void initialize(LifecycleContext context) {
-        // Create service with dispatcher from context
-        EchoService echoService = new EchoService(context.getDispatcher());
-        // Wire service to handler via constructor injection
-        this.handler = new EchoHandler(echoService);
-    }
-}
-```
-
-The handler depends on the service. The service depends on the dispatcher. The lifecycle wires everything together. This is manual dependency injection -- no framework required, but frameworks can be used if needed.
-
-### Resource Management
-
-HandlerLoader extends `AutoCloseable`. When EventBob shuts down, it calls `loader.close()`, which:
-
-1. Calls `lifecycle.shutdown()` on all tracked lifecycles
-   - Handlers close database connections, shutdown thread pools, close Spring contexts, etc.
-2. Closes all URLClassLoaders
-   - Releases class loader resources
-
-This ensures clean shutdown. Resources are released in the correct order (lifecycles first, then class loaders).
-
-### Current Limitations
-
-**Configuration loading is not yet implemented.** The `LifecycleContext.getConfiguration()` method currently returns an empty map. YAML parsing using SnakeYAML or similar will be added in a future commit.
-
-Handlers must not depend on configuration until this is implemented. Use hard-coded defaults or environment variables as temporary workarounds.
-
-### What Belongs Where (Updated)
-
-**Core (`io.eventbob.core`):**
-- Domain contracts: Event, EventHandler, Capability, **HandlerLifecycle, LifecycleContext**
-- Routing abstractions: Dispatcher
-- Loading abstractions and implementations: HandlerLoader, JarHandlerLoader, **LifecycleHandlerLoader**
-- NO framework dependencies (Spring, Dropwizard, etc.)
-- NO HTTP client dependencies (remote loading is infrastructure concern)
-
-**Spring Library (`io.eventbob.spring`):**
-- Generic EventBob configuration (constructor injection)
-- HTTP transport adapters (server-side, client-side)
-- Remote handler loading
-- REST endpoints
-- Framework-specific code (Spring Boot, Spring Web)
-- NO main class, NO hard-coded paths
-- **Can provide framework context via LifecycleContext.getFrameworkContext(ApplicationContext.class)**
-
-**Example Handlers (`io.eventbob.example.echo`, etc.):**
-- EventHandler implementations
-- **HandlerLifecycle implementations**
-- **Service layer (business logic extracted from handlers)**
-- META-INF/eventbob-handler.properties (declares lifecycle.class)
-- application.yml (handler configuration, not yet loaded)
-- NO dependencies on microliths (examples are isolated JARs)
-
-**Microlith Applications (`io.eventbob.example.microlith.*`):**
-- Spring Boot main class
-- Concrete JAR path configuration
-- Concrete remote endpoint configuration
-- Deployment-specific wiring
-- Runtime dependencies on handler JARs
-
-### Rule (Updated)
-
-Core defines WHAT (domain model + abstractions + lifecycle contract). Infrastructure library defines HOW (with specific frameworks). Applications define WHICH (which handlers to load, where to deploy). **Handler JARs define HOW THEY WIRE THEMSELVES (via lifecycle implementations).**
-
+## 5. AI Invariants: structure, boundaries, dependency direction
+
+- Inward dependency direction: io.eventbob.core must not depend on io.eventbob.spring or any microlith application module. io.eventbob.spring must not depend on any microlith application module. Dependency arrows point inward toward core only.
+- Core carries no framework dependencies: no Spring, Dropwizard, HTTP client, or serialisation library import is permitted in io.eventbob.core. Its only allowed dependency is the JDK.
+- No framework leakage across the core boundary: framework types, serialisation annotations, and HTTP client types must never appear in io.eventbob.core. All translation between wire format and domain types occurs in the infrastructure library layer.
+- Infrastructure library ships no entry point: io.eventbob.spring must not contain a main class or hard-coded handler configuration. All handler sources are provided by the importing application via constructor injection.
+- Application layer contains no domain logic and no infrastructure code: microlith application modules declare beans and lifecycle holder wiring only.
+- Location transparency: remote handler adapters are registered under capability names indistinguishable from local handler registrations. The router must not and cannot observe the difference between a local and a remote handler.
+- Capability uniqueness enforced before router construction: duplicate capability names across all handler sources must cause a hard failure before the router is built, not at routing time.
+- Lifecycle ordering at shutdown: each lifecycle holder's shutdown phase must be invoked before the corresponding class loader is closed, so handlers can reference their own classes during cleanup.
+- Blocking close contract: the router's close operation must await completion of in-flight handlers before returning, so callers can safely invoke lifecycle shutdown and release class loaders without use-after-free on handler classes.
+- Isolated lifecycle contexts per capability: each lifecycle holder in a microlith application creates its own isolated framework context; no beans are shared between lifecycle holders.
