@@ -17,6 +17,9 @@
         <module>io.eventbob.example.echo</module>
         <module>io.eventbob.example.microlith.spring.echo</module>
         <module>io.eventbob.example.microlith.spring.upper</module>
+        <module>io.eventbob.dropwizard</module>
+        <module>io.eventbob.example.microlith.dw.echo</module>
+        <module>io.eventbob.example.microlith.dw.upper</module>
     </modules>
 
     <properties>
@@ -30,6 +33,7 @@
         <testcontainers.version>1.19.3</testcontainers.version>
         <slf4j.version>2.0.11</slf4j.version>
         <archunit.version>1.2.1</archunit.version>
+        <dropwizard.version>5.0.1</dropwizard.version>
     </properties>
 
     <dependencyManagement>
@@ -48,6 +52,15 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
                 <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Dropwizard BOM -->
+            <dependency>
+                <groupId>io.dropwizard</groupId>
+                <artifactId>dropwizard-dependencies</artifactId>
+                <version>${dropwizard.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
