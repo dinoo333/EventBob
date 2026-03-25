@@ -1,0 +1,12 @@
+# EchoHandler Configuration
+# This handler has no configuration needs (stateless, no dependencies)
+# More complex handlers would define configuration here:
+#
+# database:
+#   url: jdbc:postgresql://localhost/mydb
+#   username: user
+#   password: ${DB_PASSWORD}
+#
+# api:
+#   key: ${API_KEY}
+#   timeout: 5000

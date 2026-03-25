@@ -1,464 +1,307 @@
-# Core Module Architecture
+# Core Module Architecture (io.eventbob.core)
 
-## Module: io.eventbob.core
+## Purpose
 
-**Purpose:** Define the event routing domain model with two cohesive subdomains: event routing and endpoint resolution.
+The core module contains the domain model and abstractions for EventBob. It is framework-agnostic. It defines WHAT EventBob is, not HOW it is deployed.
 
-**Version:** 1.0.0-SNAPSHOT
-
-**Last Updated:** 2026-02-12
+Core has no dependencies beyond the JDK. No Spring. No Dropwizard. No HTTP clients. No YAML parsers. This keeps the domain pure and testable.
 
 ---
 
-## Core as Abstraction (Bridge Pattern)
+## Layer Assignment
 
-This module is the **abstraction** in the Bridge Pattern. It defines WHAT EventBob does, not HOW it's implemented.
+**Domain Layer (innermost):**
+- Event (domain model)
+- EventHandler (core abstraction)
+- EventBob (routing logic)
+- Dispatcher (dispatch contract)
+- HandlerLifecycle (lifecycle contract)
+- LifecycleContext (initialization context contract)
+- Capability (annotation)
+- Capabilities (vocabulary constants)
+- Exceptions (EventHandlingException, HandlerNotFoundException)
 
-### What Core Provides
+**Adapters (internal, package-private):**
+- JarHandlerLoader (JAR → EventHandler adapter for POJOs)
+- LifecycleHandlerLoader (JAR → EventHandler adapter for lifecycle handlers)
+- DiscoveredHandler (internal structure for tracking capability metadata)
+- DefaultErrorEvent (error event adapter)
+- LifecycleContextImpl (implementation of LifecycleContext interface)
 
-**Domain Model:**
-- `Event` - Immutable routing envelope with source, target, metadata, parameters, payload
-- `EventHandler` - Universal interface for event processing
-- `Capability` - Operation types (READ, WRITE, ADMIN)
-- `MetadataKeys` - Standard routing vocabulary (correlation-id, method, path, trace-id)
+These adapters live in the core because they bridge the JDK (URLClassLoader, reflection) to the domain (EventHandler). They do not depend on external frameworks. They are package-private because external code should use the HandlerLoader factory methods, not construct them directly.
 
-**Ports (Interfaces for Implementation):**
-- `CapabilityResolver` - Resolve service capabilities to physical endpoints
-- `EventHandler` - Implemented by services, routers, decorators, adapters
+---
 
-**Routing Logic:**
-- `EventBob` - Routes events by target to handlers
-- `DecoratedEventHandler` - Wraps handlers with cross-cutting concerns
+## Public API Surface
 
-### What Core Does NOT Provide
+**Classes and interfaces that other modules depend on:**
 
-**Infrastructure (Implementation Concern):**
-- ❌ Database access (Spring JDBC, JDBI) - implemented by framework modules
-- ❌ JAR scanning - implemented by framework modules
-- ❌ HTTP/gRPC/Queue adapters - separate adapter modules
-- ❌ Configuration loading - implemented by framework modules
-- ❌ Deployment lifecycle - implemented by framework modules
+| Type | Visibility | Purpose |
+|------|-----------|---------|
+| Event | public | Domain model for events |
+| EventHandler | public | Core abstraction for event processing |
+| EventBob | public | Router for dispatching events to handlers |
+| Dispatcher | public | Contract for sending events to capabilities |
+| HandlerLifecycle | public | Lifecycle contract for handler initialization |
+| LifecycleContext | public | Context provided to handlers during initialization |
+| HandlerLoader | public | Abstraction for loading handlers from various sources |
+| Capability | public | Annotation for declaring handler capabilities |
+| Capabilities | public | Vocabulary constants for common capabilities |
+| EventHandlingException | public | Checked exception for handler failures |
+| HandlerNotFoundException | public | Runtime exception when capability not found |
 
-**Framework-Specific:**
-- ❌ Spring annotations (@Service, @Autowired, @Transactional)
-- ❌ Dropwizard resources (Resource, Environment, Application)
-- ❌ Any framework types whatsoever
+**Internal implementations (package-private):**
 
-### Dependency Contract
+| Type | Visibility | Purpose |
+|------|-----------|---------|
+| JarHandlerLoader | package-private | POJO handler loading from JARs |
+| LifecycleHandlerLoader | package-private | Lifecycle handler loading from JARs |
+| LifecycleContextImpl | package-private | Implementation of LifecycleContext |
+| DiscoveredHandler | package-private | Internal structure for capability metadata |
+| DefaultErrorEvent | package-private | Error event construction |
 
-**Core Dependencies:**
-- ✅ JDK only (java.*, javax.*)
-- ✅ SLF4J for logging abstraction
-- ❌ No frameworks
-- ❌ No external libraries
+---
 
-**Who Depends on Core:**
-- Framework implementations (`io.eventbob.spring`, `io.eventbob.dropwizard`)
-- Transport adapters (`io.eventbob.adapter.http`, `io.eventbob.adapter.grpc`)
-- Business services (implement `EventHandler`)
+## Two Loading Strategies
 
-**Who Core Depends On:**
-- Nobody (zero outgoing dependencies)
+HandlerLoader provides two factory methods:
 
-### Multiple Implementations Pattern
+### Strategy 1: jarLoader (POJO Handlers)
 
 ```
-┌─────────────────────────────────────────────┐
-│        io.eventbob.core                     │
-│        (Abstraction Layer)                  │
-│                                             │
-│  Defines:                                   │
-│  - Event, EventHandler, Capability          │
-│  - CapabilityResolver port                  │
-│  - Routing logic, decoration                │
-└─────────────────────────────────────────────┘
-                      ↑
-        ┌─────────────┴─────────────┐
-        │                           │
-┌───────────────────┐     ┌───────────────────┐
-│  io.eventbob      │     │  io.eventbob      │
-│    .spring        │     │  .dropwizard      │
-│                   │     │                   │
-│ Implementation 1  │     │ Implementation 2  │
-│ - Spring Boot     │     │ - Dropwizard      │
-│ - Spring JDBC     │     │ - JDBI            │
-│ - ClassGraph      │     │ - ClassGraph      │
-│ - PostgreSQL      │     │ - PostgreSQL      │
-│                   │     │                   │
-│ Implements:       │     │ Implements:       │
-│ CapabilityResolver│     │ CapabilityResolver│
-└───────────────────┘     └───────────────────┘
+HandlerLoader.jarLoader(Collection<Path> jarPaths)
+    ↓
+JarHandlerLoader (package-private)
+    ↓ scans JARs for
+EventHandler implementations with @Capability
+    ↓ calls
+Class.getDeclaredConstructor().newInstance() (no-arg constructor)
+    ↓
+Map<String, EventHandler>
 ```
 
-**Both implementations provide identical capabilities from core's perspective:**
-- Implement `CapabilityResolver` port
-- Return `Endpoint` objects (logical endpoint addresses)
-- Use core's ubiquitous language (Capability, RoutingKey)
+**Use case:** Simple handlers with no dependencies, no configuration, no startup/shutdown requirements.
 
-**Implementations differ in HOW:**
-- Spring uses Spring JDBC, Dropwizard uses JDBI
-- Spring uses @Service/@Autowired, Dropwizard uses manual wiring
-- Internal deployment states (GRAY/RETIRED) never cross to core
+### Strategy 2: lifecycleLoader (Full Microservice Handlers)
 
-### Port Contract Guidelines
+```
+HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher)
+    or
+HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher, Object frameworkContext)
+    ↓
+LifecycleHandlerLoader (package-private)
+    ↓ reads
+META-INF/eventbob-handler.properties (lifecycle.class property)
+    ↓ loads
+application.yml (configuration - TODO: not yet implemented)
+    ↓ instantiates
+HandlerLifecycle subclass (no-arg constructor)
+    ↓ calls
+lifecycle.initialize(LifecycleContext)
+    ↓ calls
+lifecycle.getHandler()
+    ↓
+EventHandler (fully initialized with dependencies)
+    ↓
+Map<String, EventHandler>
+```
 
-When core defines a port (interface), it must:
+**Use case:** Handlers that need configuration, dependencies (DataSource, HTTP clients), framework integration (Spring, Dropwizard), or startup/shutdown hooks.
 
-1. **Use core types only** - No framework types in method signatures
-2. **Be framework-agnostic** - Assume multiple implementations will exist
-3. **Return core domain objects** - Not primitives or framework types
-4. **Document contract clearly** - JavaDoc explains semantics, not implementation
+Both strategies produce the same result: `Map<String, EventHandler>`. The EventBob router does not know or care which strategy loaded a handler.
 
-**Example: CapabilityResolver Port**
+---
+
+## Dependency Inversion at Boundaries
+
+### External Modules → Core
+
+```
+io.eventbob.spring      → HandlerLoader (interface)
+                        → EventHandler (interface)
+                        → Event (class)
+                        → Capability (annotation)
+                        → HandlerLifecycle (abstract class)
+                        → LifecycleContext (interface)
+
+io.eventbob.example.echo → EventHandler (interface)
+                         → HandlerLifecycle (abstract class)
+                         → LifecycleContext (interface)
+                         → Capability (annotation)
+```
+
+External modules depend only on public interfaces and abstractions. They never see JarHandlerLoader, LifecycleHandlerLoader, or DiscoveredHandler (all package-private).
+
+### Core → JDK Only
+
+Core has no outward dependencies. It depends only on:
+- `java.nio.file.*` (for Path)
+- `java.net.*` (for URLClassLoader)
+- `java.lang.reflect.*` (for reflection)
+- `java.util.*` (for collections)
+- `java.util.logging.*` (for logging)
+
+No Spring. No Jackson. No SnakeYAML. No HTTP clients.
+
+---
+
+## Resource Management
+
+HandlerLoader extends `AutoCloseable`. This enables try-with-resources and ensures cleanup:
 
 ```java
-/**
- * Resolves service capabilities to physical endpoints.
- *
- * <p>Implementations query their backing store (database, service registry, etc.)
- * to find which physical endpoints provide the requested capability operation.
- *
- * <p>Supports progressive deployments by returning endpoints with deployment state
- * (GREEN = production, BLUE = canary).
- */
-public interface CapabilityResolver {
-    /**
-     * Resolve the given routing key to a list of available endpoints.
-     *
-     * @param key Routing key identifying the service capability operation
-     * @return List of endpoints providing this capability, empty if none found
-     * @throws EndpointResolutionException if resolution fails
-     */
-    List<Endpoint> resolveEndpoints(RoutingKey key) throws EndpointResolutionException;
+try (HandlerLoader loader = HandlerLoader.lifecycleLoader(jarPaths, dispatcher)) {
+    Map<String, EventHandler> handlers = loader.loadHandlers();
+    // Use handlers...
+} // loader.close() called automatically
+```
+
+**What close() does:**
+
+### For JarHandlerLoader (POJOs)
+- No resources to clean up
+- Empty implementation (no-op)
+
+### For LifecycleHandlerLoader
+1. Call `lifecycle.shutdown()` on all tracked lifecycles
+   - Handlers close database connections, shutdown thread pools, close Spring contexts, etc.
+2. Close all URLClassLoaders
+   - Releases class loader resources
+
+**Ordering matters:** Lifecycles are shut down BEFORE class loaders are closed. This allows handlers to reference classes during shutdown (e.g., Spring context close needs to access bean classes).
+
+---
+
+## Framework-Agnostic Context Mechanism
+
+LifecycleContext provides optional access to framework-specific resources via `getFrameworkContext<T>(Class<T> type)`.
+
+**How it works:**
+
+1. **Core defines the abstraction** (LifecycleContext interface with generic method)
+2. **Core provides a package-private implementation** (LifecycleContextImpl)
+3. **Infrastructure layer optionally provides framework context** (e.g., Spring microlith passes ApplicationContext)
+4. **Handler optionally uses it** (e.g., Spring-based handler requests ApplicationContext)
+
+**Example:**
+
+```java
+// In Spring microlith (infrastructure layer)
+HandlerLoader loader = HandlerLoader.lifecycleLoader(
+    jarPaths, 
+    dispatcher, 
+    applicationContext  // Spring's ApplicationContext passed here
+);
+
+// In handler JAR (isolated, no framework dependency)
+public void initialize(LifecycleContext context) {
+    Optional<ApplicationContext> spring = 
+        context.getFrameworkContext(ApplicationContext.class);
+    
+    if (spring.isPresent()) {
+        // Use parent Spring context
+    } else {
+        // Manual wiring
+    }
 }
 ```
 
-**What makes this a good port:**
-- ✅ Only core types: `RoutingKey`, `Endpoint`, `EndpointResolutionException`
-- ✅ No mention of Spring, JDBI, PostgreSQL
-- ✅ JavaDoc describes WHAT, not HOW
-- ✅ Multiple implementations can provide this differently
+**Key insight:** Core has no dependency on Spring. The generic type parameter (`<T>`) preserves type safety while maintaining framework-agnosticism. The handler JAR can depend on Spring if it wants to, but it does not have to. The core does not care.
 
-### Anti-Corruption Layer Responsibility
+---
 
-**Core does NOT translate framework types** - that's the implementation's job via Anti-Corruption Layer (ACL).
+## Visibility Boundaries
 
-**Implementation ACL pattern:**
+**Why package-private implementations?**
+
+JarHandlerLoader and LifecycleHandlerLoader are package-private because external code should use the HandlerLoader factory methods, not construct loaders directly.
+
+**The pattern:**
+
 ```java
-// In io.eventbob.spring (NOT in core)
-@Service
-public class SpringCapabilityResolver implements CapabilityResolver {
+// ✅ Correct (uses public factory method)
+HandlerLoader loader = HandlerLoader.jarLoader(jarPaths);
 
-    @Override
-    public List<Endpoint> resolveEndpoints(RoutingKey key) {
-        // 1. Query using Spring JDBC (framework-specific)
-        List<EndpointRow> rows = jdbcTemplate.query(...);
-
-        // 2. ACL: Translate Spring types → Core types
-        return rows.stream()
-            .map(this::toEndpoint) // ACL translation method
-            .collect(Collectors.toList());
-    }
-
-    // ACL: Spring-specific type → Core type
-    private Endpoint toEndpoint(EndpointRow row) {
-        return new Endpoint(
-            row.getUri(),
-            row.getDeploymentVersion(),
-            translateState(row.getState()) // Filter GRAY/RETIRED
-        );
-    }
-}
+// ❌ Wrong (implementation detail, not accessible)
+JarHandlerLoader loader = new JarHandlerLoader(jarPaths);
 ```
 
-**Core never sees:**
-- `EndpointRow` (Spring JDBC type)
-- `JdbcTemplate` (Spring type)
-- Internal deployment states like GRAY/RETIRED
+This is the Static Factory Method pattern. The interface exposes the contract. The factory method decides which implementation to return. The implementation remains hidden. This allows the implementation to change without breaking external code.
 
-### Evolution Strategy
-
-**When adding new abstractions to core:**
-
-1. **Evaluate need across implementations** - Will both Spring and Dropwizard need this?
-2. **Start framework-agnostic** - Design without frameworks in mind
-3. **Add port, not implementation** - Core defines interface, implementations provide concrete behavior
-4. **Document contract clearly** - What does this abstraction mean? What are its invariants?
-5. **Update tests** - ArchUnit should verify no framework leakage
-
-**When NOT to add to core:**
-
-- Implementation detail only one framework needs (keep in that implementation)
-- Framework-specific optimization (keep in that implementation)
-- Internal state that doesn't cross boundary (GRAY/RETIRED deployment states)
+**Public abstractions, package-private implementations.** This is the Dependency Inversion Principle at the package level.
 
 ---
 
-## Package Structure
+## Component Diagram
 
 ```
-io.eventbob.core
-├── eventrouting/                      # Event Routing Subdomain
-│   ├── Event.java
-│   ├── EventHandler.java
-│   ├── EventBob.java
-│   ├── DecoratedEventHandler.java
-│   ├── EventHandlerCapability.java
-│   ├── MetadataKeys.java
-│   ├── EventHandlingException.java
-│   ├── HandlerNotFoundException.java
-│   └── UnexpectedEventHandlingException.java
-└── endpointresolution/                # Endpoint Resolution Subdomain
-    ├── Capability.java
-    ├── CapabilityResolver.java
-    ├── RoutingKey.java
-    └── Endpoint.java
+┌────────────────────────────────────────────────────┐
+│  io.eventbob.core (domain layer)                   │
+│                                                     │
+│  PUBLIC API:                                        │
+│  ┌──────────────────────────────────────────────┐ │
+│  │ Event                                        │ │
+│  │ EventHandler                                 │ │
+│  │ EventBob (router)                            │ │
+│  │ Dispatcher                                   │ │
+│  │ HandlerLifecycle (abstract)                  │ │
+│  │ LifecycleContext (interface)                 │ │
+│  │ HandlerLoader (interface + factory methods)  │ │
+│  │ Capability, Capabilities                     │ │
+│  │ Exceptions                                   │ │
+│  └──────────────────────────────────────────────┘ │
+│                 ↑                                   │
+│                 │ depends on                        │
+│  PACKAGE-PRIVATE IMPLEMENTATIONS:                  │
+│  ┌──────────────────────────────────────────────┐ │
+│  │ JarHandlerLoader (POJO loading)              │ │
+│  │ LifecycleHandlerLoader (lifecycle loading)   │ │
+│  │ LifecycleContextImpl                         │ │
+│  │ DiscoveredHandler                            │ │
+│  │ DefaultErrorEvent                            │ │
+│  └──────────────────────────────────────────────┘ │
+│                                                     │
+│  DEPENDS ON: JDK only (java.nio, java.net,         │
+│              java.lang.reflect, java.util)          │
+└────────────────────────────────────────────────────┘
+              ↑
+              │ depends on public API only
+              │
+┌─────────────────────────────────────────────────────┐
+│  External modules (Spring, examples, microliths)    │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Subdomains
+## Current State and Future Work
 
-### Event Routing (`eventrouting`)
+**Implemented:**
+- HandlerLifecycle abstract class
+- LifecycleContext interface
+- LifecycleHandlerLoader implementation
+- Factory methods in HandlerLoader
+- Resource management via AutoCloseable
+- Framework-agnostic context mechanism
 
-**Responsibility:** Route events by target to handlers. Manage event lifecycle, decoration, and exception handling.
+**Not Yet Implemented:**
+- YAML configuration parsing (LifecycleContext.getConfiguration() returns empty map)
+- Environment variable substitution in configuration
+- Configuration validation
 
-**Key Types:**
-- **Event** — Immutable event data structure (source, target, metadata, parameters, payload)
-- **EventHandler** — Universal interface for event processing
-- **EventBob** — Routes events by target string to specific handlers
-- **DecoratedEventHandler** — Wraps handlers with cross-cutting concerns (logging, metrics, error handling)
-- **MetadataKeys** — Standard metadata vocabulary (correlation-id, method, path, trace-id, etc.)
-- **Exception hierarchy** — EventHandlingException, HandlerNotFoundException, UnexpectedEventHandlingException
+**Design Decision: Defer YAML parsing to avoid dependency on SnakeYAML or Jackson in core.**
 
-**Dependencies:**
-- → `endpointresolution.Capability` (EventHandlerCapability annotation references Capability enum)
-- No other internal dependencies
+Future options:
+1. Add YAML library dependency to core (simple, but adds dependency)
+2. Pass configuration parser as parameter to lifecycleLoader (clean, but complex API)
+3. Provide configuration externally to microlith, which passes it to loader (flexible, defers decision)
 
-**Stability:** Instability = 1.00 (maximally unstable, depends on stable abstractions)
-
----
-
-### Endpoint Resolution (`endpointresolution`)
-
-**Responsibility:** Define the port/abstraction for resolving service capabilities to physical endpoints. Support progressive deployment states.
-
-**Key Types:**
-- **Capability** — Enum of operation types (READ, WRITE, ADMIN)
-- **CapabilityResolver** — Interface (port) for resolving routing keys to endpoints
-- **RoutingKey** — Immutable identifier for a service operation (service + capability + method + path)
-- **Endpoint** — Logical endpoint address (e.g., "messages-service")
-
-**Dependencies:**
-- None (zero outgoing dependencies within core)
-
-**Stability:** Instability = 0.00 (maximally stable, pure abstraction/port layer)
+This decision is deferred. The lifecycle contract is in place. Configuration mechanism can be added later without breaking existing handlers.
 
 ---
 
-## Dependency Rules
+## Summary
 
-**Enforced by:** `CoreArchitectureTest` (ArchUnit)
+The core module defines the domain contracts and provides two loading strategies: simple POJO loading and lifecycle-based loading for full microservices. External modules depend only on public abstractions. Implementations are package-private and accessed via factory methods. The module has no dependencies beyond the JDK.
 
-### Rule 1: Event Routing → Endpoint Resolution (ONE-WAY)
-
-✅ **Allowed:** `eventrouting` can depend on `endpointresolution`
-- EventHandlerCapability annotation references Capability enum
-
-❌ **Blocked:** `endpointresolution` cannot depend on `eventrouting`
-- Endpoint resolution is a stable port, routing is an unstable implementation
-
-### Rule 2: No Cyclic Dependencies
-
-✅ **Enforced:** All packages within core must be acyclic
-- Prevents hidden coupling and ensures clean boundaries
-
-### Rule 3: Zero External Dependencies
-
-✅ **Enforced:** Core can only depend on:
-- JDK (`java.**`)
-- SLF4J (`org.slf4j.**`) — logging abstraction only
-
-❌ **Blocked:** No frameworks, no HTTP libraries, no external dependencies
-
-### Rule 4: Package Naming Convention
-
-✅ **Enforced:** All classes must reside in recognized packages:
-- `io.eventbob.core.eventrouting.**`
-- `io.eventbob.core.endpointresolution.**`
-
----
-
-
-## Design Rationale
-
-### Why Two Subdomains?
-
-**Event Routing** and **Endpoint Resolution** serve different purposes:
-
-1. **Event Routing** is about dispatching events to handlers
-   - In-process concern: which handler receives this event?
-   - Uses target string for simple lookup
-   - Manages exception handling and decoration
-
-2. **Endpoint Resolution** is about finding physical locations
-   - Cross-process concern: where is this capability hosted?
-   - Uses capability metadata (READ/WRITE/ADMIN) + operation signature
-   - Supports progressive deployment (GREEN/BLUE endpoints)
-
-**Are they separate bounded contexts?**
-No. They share ubiquitous language (no terms change meaning across boundary). They are **subdomains within ONE bounded context** (Event Routing), separated for dependency management and architectural clarity.
-
-### Why Flatten Exceptions?
-
-Previously exceptions were in `eventrouting/exceptions/` subpackage. They were moved into `eventrouting/` directly because:
-
-1. **Domain language:** Exceptions describe routing failures (HandlerNotFoundException), not general resolution failures. They are part of routing vocabulary.
-2. **Eliminate cycles:** Separate exceptions package created bidirectional dependency (routing → exceptions → routing for Event reference).
-3. **Simplicity:** Fewer layers, cohesive domain concepts in one package.
-
-### Why Allow eventrouting → endpointresolution?
-
-The `EventHandlerCapability` annotation (in eventrouting) references `Capability` enum (in endpointresolution). This dependency exists because:
-
-1. **Purpose:** The annotation declares what capabilities a handler provides (metadata for registration)
-2. **Stable dependency:** eventrouting (unstable, I=1.00) depends on endpointresolution (stable, I=0.00) — correct direction
-3. **Acceptable coupling:** The annotation is about registration metadata, not core routing logic
-
-**Alternative considered:** Move EventHandlerCapability to endpointresolution. Rejected because the annotation marks EventHandlers (routing concept), not endpoints (resolution concept).
-
----
-
-## Ports & Adapters
-
-### Ports Defined by Core
-
-**CapabilityResolver** (`endpointresolution.CapabilityResolver`)
-- Resolves service capabilities to physical endpoints
-- Implementation will be provided by registry module (infrastructure layer)
-- Supports both single endpoint and multi-endpoint resolution (for load balancing)
-
-**EventHandler** (`eventrouting.EventHandler`)
-- Universal interface for event processing
-- Implemented by:
-  - Services (business logic)
-  - Routers (delegation)
-  - Decorators (cross-cutting concerns)
-  - Adapters (transport translation)
-
-### Adapters Implement Core Ports
-
-**Future:** When registry module is implemented, it will provide `CapabilityResolver` implementation backed by PostgreSQL.
-
----
-
-## Evolution History
-
-### 2026-02-12: Bounded Context Reorganization
-
-**Change:** Restructured from flat package to subdomain packages
-
-**Before:**
-```
-io.eventbob.core/
-  Event.java
-  EventHandler.java
-  EventBob.java
-  ...
-  exceptions/
-    EventHandlingException.java
-    HandlerNotFoundException.java
-```
-
-**After:**
-```
-io.eventbob.core/
-  eventrouting/
-    Event.java
-    EventHandler.java
-    EventBob.java
-    EventHandlingException.java     # Flattened
-    HandlerNotFoundException.java   # Flattened
-  endpointresolution/
-    Capability.java
-    CapabilityResolver.java
-    RoutingKey.java
-    Endpoint.java
-```
-
-**Rationale:**
-1. Explicit bounded context structure for architectural clarity
-2. Enforce dependency direction via ArchUnit tests
-3. Prevent cyclic dependencies
-4. Prepare for registry module implementation (will depend on endpointresolution port)
-
-**Impact:**
-- All imports updated from `io.eventbob.core.*` to `io.eventbob.core.{subdomain}.*`
-- ArchUnit tests enforce new boundaries
-- Martin metrics improve (clean dependency direction)
-
----
-
-## Testing Strategy
-
-### ArchUnit Tests
-
-**File:** `CoreArchitectureTest.java`
-
-**Enforces:**
-1. Dependency direction (eventrouting → endpointresolution, not reverse)
-2. No cyclic dependencies
-3. Zero external dependencies (except JDK, SLF4J)
-4. Package naming convention
-
-**Generates:**
-- Dependency graph with Martin metrics (`docs/core_dependency_graph.md`)
-
-### Unit Tests
-
-**Coverage:**
-- Event creation, validation, immutability
-- EventBob dispatching and error handling
-- DecoratedEventHandler hook execution
-- MetadataKeys usage patterns
-
-**Pattern:** Simple stubs over mocks, infrastructure-free tests
-
----
-
-## Future Extensions
-
-### Spring Implementation Module (Implemented)
-
-**Implemented module:** `io.eventbob.spring`
-
-**Dependencies:**
-- io.eventbob.spring → io.eventbob.core.endpointresolution (implements CapabilityResolver port)
-- Spring implementation provides PostgreSQL-backed capability resolution using Spring JDBC
-- Scans JARs for @EventHandlerCapability annotations and persists to database using Flyway migrations
-
-**Note:** This is one implementation using Spring Boot. Future implementations (e.g., `io.eventbob.dropwizard`) can provide alternative implementations of the same ports.
-
-### When Adapters are Implemented
-
-**New modules:** `io.eventbob.adapter.http`, `io.eventbob.adapter.grpc`, etc.
-
-**Dependencies:**
-- Adapters → io.eventbob.core.eventrouting (implement EventHandler)
-- Adapters will translate transport protocols to Event domain model
-- Adapters will define transport-specific metadata namespaces
-
----
-
-## Non-Goals
-
-**This module does NOT:**
-- Provide persistence (registry module concern)
-- Provide transport adapters (adapter module concern)
-- Define business domain models (service concern)
-- Manage deployment lifecycle (infrastructure concern)
-
-**This module IS:**
-- Pure domain model for event routing
-- Stable contract for implementation modules
-- Zero-dependency, framework-agnostic foundation
+This structure keeps the core stable, testable, and framework-agnostic while supporting handlers ranging from simple POJOs to full Spring-based microservices.

@@ -49,4 +49,9 @@ public class RemoteHandlerLoader implements HandlerLoader {
 
         return handlers;
     }
+
+    @Override
+    public void close() throws Exception {
+        // No resources to clean up - HttpClient is owned by caller
+    }
 }

@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 
 /**
@@ -39,8 +40,7 @@ public class EventBob implements AutoCloseable {
     return CompletableFuture.supplyAsync(() -> {
           EventHandler delegate = findHandler(event);
           return delegate.handle(event, dispatcher);
-        },
-        backgroundExecutor)
+        }, backgroundExecutor)
         .exceptionally(e -> {
           var errorEvent = onError.apply(e, event);
           if (errorEvent == null) {
@@ -59,9 +59,22 @@ public class EventBob implements AutoCloseable {
     return delegate;
   }
 
+  /**
+   * Shuts down EventBob and waits for in-flight events to complete.
+   * <p>
+   * Blocks until all currently executing handlers finish or a 30-second
+   * timeout elapses. This ensures that handler lifecycles can be safely
+   * torn down after this method returns.
+   * </p>
+   */
   @Override
   public void close() {
     backgroundExecutor.shutdown();
+    try {
+      backgroundExecutor.awaitTermination(30, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   /**

@@ -16,7 +16,9 @@ class LowerHandlerTest {
 
   @BeforeEach
   void setUp() {
-    handler = new LowerHandler();
+    // Create service with null dispatcher (not used by lower service)
+    LowerService lowerService = new LowerService();
+    handler = new LowerHandler(lowerService);
   }
 
   @Test

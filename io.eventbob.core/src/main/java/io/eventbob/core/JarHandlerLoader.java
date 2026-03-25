@@ -31,6 +31,12 @@ import java.util.zip.ZipException;
  *   <li>Handlers can be loaded without polluting the main classpath</li>
  * </ul>
  * <p>
+ * Handlers may declare multiple capabilities using {@link Capabilities @Capabilities}
+ * (or multiple {@link Capability @Capability} annotations via Java's repeatable
+ * annotation mechanism). When a handler declares multiple capabilities, a single
+ * instance is created and registered under each capability name.
+ * </p>
+ * <p>
  * Error handling:
  * </p>
  * <ul>
@@ -62,6 +68,12 @@ class JarHandlerLoader implements HandlerLoader {
         return instantiateHandlers(discoveredHandlers);
     }
 
+    @Override
+    public void close() {
+        // POJO handlers have no resources to clean up
+        // Class loaders are not explicitly closed (garbage collected when no longer referenced)
+    }
+
     /**
      * Discovers handlers from JAR files without instantiating them.
      * <p>
@@ -87,6 +99,11 @@ class JarHandlerLoader implements HandlerLoader {
 
     /**
      * Instantiates all discovered handlers.
+     * <p>
+     * When a handler class declares multiple capabilities, a single instance is created
+     * and shared across all its capability registrations. The instance cache ensures
+     * each handler class is instantiated exactly once.
+     * </p>
      *
      * @param discoveredHandlers list of discovered handler metadata
      * @return map of capability names to instantiated handlers
@@ -94,9 +111,11 @@ class JarHandlerLoader implements HandlerLoader {
      */
     private Map<String, EventHandler> instantiateHandlers(List<DiscoveredHandler> discoveredHandlers) {
         Map<String, EventHandler> handlers = new HashMap<>();
+        Map<Class<? extends EventHandler>, EventHandler> instanceCache = new HashMap<>();
 
         for (DiscoveredHandler discovered : discoveredHandlers) {
-            EventHandler handler = instantiateHandler(discovered.handlerClass());
+            EventHandler handler = instanceCache.computeIfAbsent(
+                discovered.handlerClass(), this::instantiateHandler);
             handlers.put(discovered.capability(), handler);
         }
 
@@ -238,11 +257,13 @@ class JarHandlerLoader implements HandlerLoader {
     private void processLoadedClass(Class<?> clazz, List<DiscoveredHandler> handlers, Set<String> seenCapabilities) {
         if (isValidHandler(clazz)) {
             Class<? extends EventHandler> handlerClass = clazz.asSubclass(EventHandler.class);
-            String capability = extractCapability(handlerClass);
-            checkForDuplicateCapability(capability, seenCapabilities);
+            List<String> capabilities = extractCapabilities(handlerClass);
 
-            handlers.add(new DiscoveredHandler(capability, handlerClass));
-            seenCapabilities.add(capability);
+            for (String capability : capabilities) {
+                checkForDuplicateCapability(capability, seenCapabilities);
+                handlers.add(new DiscoveredHandler(capability, handlerClass));
+                seenCapabilities.add(capability);
+            }
         }
     }
 
@@ -253,7 +274,7 @@ class JarHandlerLoader implements HandlerLoader {
      * </p>
      * <ul>
      *   <li>Implement EventHandler interface</li>
-     *   <li>Be annotated with @Capability</li>
+     *   <li>Be annotated with {@link Capability} or {@link Capabilities}</li>
      * </ul>
      *
      * @param clazz the class to check
@@ -261,18 +282,26 @@ class JarHandlerLoader implements HandlerLoader {
      */
     private boolean isValidHandler(Class<?> clazz) {
         return EventHandler.class.isAssignableFrom(clazz) &&
-               clazz.isAnnotationPresent(Capability.class);
+               (clazz.isAnnotationPresent(Capability.class) || clazz.isAnnotationPresent(Capabilities.class));
     }
 
     /**
-     * Extracts the capability name from a handler class's @Capability annotation.
+     * Extracts all capability names from a handler class's {@link Capability} annotations.
+     * <p>
+     * Uses {@code getAnnotationsByType} which handles both a single {@link Capability}
+     * annotation and the {@link Capabilities} container annotation uniformly.
+     * </p>
      *
      * @param handlerClass the handler class
-     * @return the capability name
+     * @return list of capability names declared on this handler
      */
-    private String extractCapability(Class<? extends EventHandler> handlerClass) {
-        Capability annotation = handlerClass.getAnnotation(Capability.class);
-        return annotation.value();
+    private List<String> extractCapabilities(Class<? extends EventHandler> handlerClass) {
+        Capability[] annotations = handlerClass.getAnnotationsByType(Capability.class);
+        List<String> capabilities = new ArrayList<>(annotations.length);
+        for (Capability annotation : annotations) {
+            capabilities.add(annotation.value());
+        }
+        return capabilities;
     }
 
     /**

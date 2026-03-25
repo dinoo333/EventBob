@@ -1,187 +1,51 @@
-# io.eventbob.core Implementation Notes
+# io.eventbob.core — Implementation Notes
 
-## Module-Specific Patterns
+### 1 Frameworks used
 
-### Immutable Value Objects
+No external frameworks. Zero runtime dependencies. JUL (`java.util.logging`) is used for loader diagnostics — it is the only logging dependency, chosen to avoid requiring SLF4J on the classpath of handler JARs loaded in isolated class loaders.
 
-**Applied in:** Event
+### 2 Coding patterns
 
-**Pattern:**
-- Private constructor taking Builder
-- All fields `private final`
-- Defensive copying for collections
-- `toBuilder()` for copy-on-write transformations
-- Static factory `builder()` for construction
+- **Immutable value object with copy builder**: `Event` uses a private constructor that accepts a `Builder`, copies all mutable fields defensively via `Collections.unmodifiableMap(new LinkedHashMap<>(...))`, and exposes `toBuilder()` for copy-on-write modification. `payload` is `Object` rather than a constrained type; serialisation concerns are deferred to infrastructure boundaries.
 
-**Type flexibility:**
-- Event uses `Object` types for parameters, metadata, and payload fields
-- Reflects JSON-compatible values without artificial `Serializable` constraint
-- Honesty over false type safety: any Java object accepted, serialization concerns handled at boundaries
+- **Virtual-thread executor**: `EventBob` creates `Executors.newVirtualThreadPerTaskExecutor()` at construction time. All handler invocations run on virtual threads, providing high concurrency without explicit pool tuning. Errors are caught via `CompletableFuture.exceptionally()` and converted to error events.
 
-### Composable Handlers
+- **Blocking close with interrupt preservation**: `EventBob.close()` calls `shutdown()` then `awaitTermination(30, TimeUnit.SECONDS)`. `InterruptedException` restores the interrupt flag via `Thread.currentThread().interrupt()` before returning. This ensures caller interrupt semantics are not swallowed and that handler lifecycle teardown only starts after all in-flight threads have exited.
 
-**Applied in:** EventHandler, EventBob
+- **Default method as synchronous wrapper**: `Dispatcher.send(Event, BiFunction, long)` is a default interface method that wraps the async `send(Event, BiFunction)`. Each of the three checked exception types (`InterruptedException`, `ExecutionException`, `TimeoutException`) is handled distinctly: interrupt restores the flag, execution exception unwraps the cause to avoid double-wrapping, timeout carries a timeout-specific message. No catch-all `Exception` block is used.
 
-**Pattern:**
-- Single interface: `Event handle(Event event, Dispatcher dispatcher)`
-- EventBob routes events to target-specific handlers
-- Handlers registered via `EventBob.Builder.handler(String target, EventHandler handler)`
-- No handler subclasses - pure composition
+- **Two-phase JAR loading (discovery then instantiation)**: `JarHandlerLoader` separates class scanning (producing `DiscoveredHandler` records) from reflection-based instantiation. The instance cache (`Map<Class, EventHandler>`) ensures a multi-capability handler class is instantiated exactly once; all capability names for that class point to the same instance.
 
-### Handler Registration Pattern
+- **Per-JAR URLClassLoader isolation**: Both `JarHandlerLoader` and `LifecycleHandlerLoader` create one `URLClassLoader` per JAR. The parent is set to `EventHandler.class.getClassLoader()` (for the POJO loader) or `HandlerLifecycle.class.getClassLoader()` (for the lifecycle loader), so core types are shared while each JAR's dependencies remain isolated.
 
-**Applied in:** EventBob.Builder
+- **Abstract class for lifecycle extensibility**: `HandlerLifecycle` is an abstract class rather than an interface so that future versions can add methods (health checks, config reload) with default implementations without breaking existing implementations.
 
-**Pattern:**
-```java
-EventBob router = EventBob.builder()
-    .handler("echo", new EchoHandler())
-    .handler("lowercase", new LowercaseHandler())
-    .build();
-```
+- **Companion factory on interface**: `LifecycleContext.of(Map, Dispatcher)` is a static factory method on the interface itself, following the companion factory pattern. `configuration` must not be null (validated immediately with `Objects.requireNonNull`); `dispatcher` may be null when call-time injection is used.
 
-- Target string identifies the handler (stored in Event.target field)
-- Handlers are immutably registered at build time
-- Map is defensively copied and made unmodifiable
-- HandlerNotFoundException thrown if target not found
+### 3 Coding problems
 
-### Async Execution Model
+- **YAML configuration loading not implemented**: `LifecycleHandlerLoader.loadConfiguration()` always returns `Map.of()`. The `TODO` comment references SnakeYAML. Handlers that read from `LifecycleContext.getConfiguration()` will always receive an empty map until this is implemented. Status: open.
 
-**Applied in:** EventBob, Dispatcher
+- **JarHandlerLoader URLClassLoaders not explicitly closed**: `JarHandlerLoader.close()` is a no-op; the per-JAR `URLClassLoader` instances created during `processJar()` are not tracked and are not closed explicitly. They are garbage-collected when no longer reachable, which is acceptable for the current POJO-handler use case but means JAR file handles are held until GC. Status: known limitation.
 
-**Pattern:**
-- All event processing returns `CompletableFuture<Event>`
-- EventBob uses virtual threads via `Executors.newVirtualThreadPerTaskExecutor()`
-- Handler invocation happens asynchronously on virtual thread pool
-- Error handling via `exceptionally()` with BiFunction error callback
-- Default error event created if callback returns null
+- **JAR paths have no resolution strategy**: Both loaders accept `Collection<Path>` directly. Callers are responsible for resolving absolute vs relative paths. No built-in classpath-relative or home-directory-relative resolution. Status: known limitation.
 
-**Key characteristics:**
-- Non-blocking: Callers receive CompletableFuture immediately
-- Virtual threads: High concurrency without thread pool tuning
-- Error recovery: Errors converted to error events, not propagated as exceptions
+### 4 Release notes
 
-## Testing Conventions (This Module)
+- 2026-03-24 / dino: Moved `Dispatcher` to call-time injection; `LifecycleContext.of` now accepts null dispatcher. `LifecycleContext.getDispatcher()` throws `IllegalStateException` when no dispatcher was provided at init time.
+- 2026-03-24 / dino: Added inline lifecycle path — `HandlerLifecycle` subclasses can be wired without JAR loading, sharing the application class loader.
+- 2026-02-19 / dino: Added `HandlerLifecycle` abstract class and `LifecycleContext` interface; added `LifecycleHandlerLoader` for framework-integrated handlers.
+- 2026-02-18 / dino: Added multi-capability handler support via `@Capabilities` container annotation and `getAnnotationsByType`; single instance shared across all capability registrations for the same class.
+- 2026-02-18 / dino: Added `Dispatcher.send(Event, BiFunction, long)` default method as synchronous convenience wrapper with distinct exception handling per failure mode.
+- 2026-02-16 / dino: Removed `Serializable` constraint from `Event.payload`; field is now `Object` to accept JSON-compatible values without artificial serialisation requirement.
+- 2026-02-16 / dino: Added `JarHandlerLoader` with per-JAR `URLClassLoader` isolation and two-phase discovery/instantiation.
 
-**Test structure:**
-```java
-@Test
-@DisplayName("Given X, when Y, then Z")
-void testMethodName() {
-  // Arrange, Act, Assert
-}
-```
+### 5 AI Invariants: correctness, precision, testability
 
-**Examples:**
-- EventTest - tests Event immutability, builder, defensive copying
-- EventBobTest - tests routing by target, error cases
-- HandlerNotFoundExceptionTest - tests exception when handler not found
-- CapabilityTest - tests capability annotations
-- DefaultErrorEventTest - tests error event creation
-
-**Stub pattern:**
-```java
-class RecordingHandler implements EventHandler {
-  Event received;
-  Event toReturn;
-
-  @Override
-  public Event handle(Event event, Dispatcher dispatcher) {
-    this.received = event;
-    return toReturn != null ? toReturn : event;
-  }
-}
-```
-
-Simple stubs over mocks - verify behavior via recorded state.
-
-## Code Quality
-
-**Current status:** Clean baseline
-- Zero external dependencies
-- All classes have single responsibility
-- Immutability enforced
-- Defensive copying prevents external mutation
-- Exception hierarchy is specific (HandlerNotFoundException vs UnexpectedEventHandlingException)
-
-**No technical debt in this module.**
-
-## JAR Loading Implementation
-
-### HandlerLoader Interface
-
-**Applied in:** HandlerLoader, JarHandlerLoader
-
-**Pattern:**
-- Public interface with constructor injection pattern
-- Implementations receive dependencies (JAR paths, remote endpoints, etc.) via constructor
-- Single method: `Map<String, EventHandler> loadHandlers()` (no parameters)
-- Factory method: `HandlerLoader.jarLoader(Collection<Path>)` returns JAR-based implementation with injected paths
-- Returns map of capability names to instantiated handlers
-- Throws `IOException` for unreadable JARs, `IllegalStateException` for duplicate capabilities or instantiation failures
-
-**Design rationale:**
-- Constructor injection allows different loader implementations (JAR-based, remote, service registry, etc.)
-- Parameterless `loadHandlers()` follows Command pattern (dependencies captured at construction time)
-- Decouples loading strategy from usage (callers don't need to know source of handlers)
-
-### JarHandlerLoader Implementation
-
-**Location:** `io.eventbob.core` package (package-private visibility)
-
-**URLClassLoader Strategy:**
-- Creates one URLClassLoader per JAR file
-- Parent class loader: `EventHandler.class.getClassLoader()` (ensures core types are shared)
-- Each JAR is isolated from other JARs (prevents dependency version conflicts)
-- URLClassLoader is closed via try-with-resources (resource management)
-
-**Discovery Phase:**
-- Scans each JAR using `JarFile.stream()` to iterate entries
-- Filters for `.class` files (excludes directories)
-- Converts entry names to fully qualified class names: `com/example/Handler.class` → `com.example.Handler`
-- Loads each class using the JAR's URLClassLoader
-- Checks if class implements `EventHandler` and is annotated with `@Capability`
-- Extracts capability name from annotation
-- Detects duplicate capability names across all JARs (fails fast)
-- Returns `List<DiscoveredHandler>` (internal data structure)
-
-**Instantiation Phase:**
-- Iterates discovered handlers
-- Instantiates each via reflection: `handlerClass.getDeclaredConstructor().newInstance()`
-- Requires no-args constructor (fails if missing)
-- Returns `Map<String, EventHandler>` ready for registration
-
-**Error Handling:**
-- Missing JAR files: throws `IOException` immediately (fail fast)
-- Malformed JAR files: catches `ZipException`, logs warning, skips JAR (resilient)
-- Class loading failures: logs at FINE level, skips class (expected for non-handler classes)
-- Instantiation failures: throws `IllegalStateException` with cause (fail fast)
-- Duplicate capabilities: throws `IllegalStateException` immediately (fail fast)
-
-**DiscoveredHandler Record:**
-- Internal data structure (package-private)
-- Fields: `String capability`, `Class<? extends EventHandler> handlerClass`
-- Compact constructor validates non-null, non-blank capability
-- Used to separate discovery phase from instantiation phase
-
-**Design Decisions:**
-- Package-private visibility: Implementation detail, not part of public API
-- Factory method pattern: `HandlerLoader.jarLoader(Collection<Path>)` decouples interface from concrete class
-- Constructor injection: JAR paths provided at construction, used by parameterless `loadHandlers()`
-- Two-phase design: Discovery separated from instantiation (easier to test, clearer logic flow)
-- Reflection vs ServiceLoader: Reflection chosen for simplicity and explicit control over class loading
-
-**Known Limitations:**
-- Requires no-args constructor (no dependency injection within handlers)
-- Working directory dependency (JAR paths must be relative to cwd or absolute)
-- No hot-reloading (handlers loaded once at bootstrap)
-
-## Performance Characteristics
-
-**Router:** O(1) map lookup by target string
-**Event construction:** Defensive copy of metadata/parameters maps
-**Memory:** Each Event allocates immutable copies of collections
-**JAR loading:** One-time bootstrap cost (not performance-critical)
-**Class loading:** Per-JAR URLClassLoader (acceptable overhead for isolation)
-
-**Not optimized for high throughput yet.** Baseline implementation prioritizes correctness and clarity.
+- `EventBob.close()` must be called only after the caller is done dispatching; calling `processEvent` after `close()` submits to a shutdown executor and the returned `CompletableFuture` may never complete normally.
+- `LifecycleContext.of(null, ...)` throws `NullPointerException` at the call site; callers must pass `Map.of()` for empty configuration.
+- `LifecycleContext.getDispatcher()` throws `IllegalStateException` when the loader was constructed with a null dispatcher; handlers that rely on dispatch during `initialize()` will fail unless the loader is constructed with a non-null dispatcher.
+- `JarHandlerLoader` and `LifecycleHandlerLoader` detect duplicate capability names with `IllegalStateException`; this is a fail-fast contract violation, not a recoverable error.
+- `LifecycleHandlerLoader.close()` shuts down lifecycles before closing class loaders; reversing this order would cause `ClassNotFoundException` or `NoClassDefFoundError` during handler shutdown code that references classes in the JAR.
+- `EventBob.dispatcher` is a method reference (`this::processEvent`) created at construction; it is safe to share across threads because `processEvent` is stateless with respect to the dispatcher reference.
+- Test stubs for `EventHandler` should record the received `Event` and `Dispatcher` rather than using mocking frameworks; state-recording stubs are simpler and reveal exactly what the router passed.

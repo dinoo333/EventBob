@@ -1,209 +1,115 @@
-# EventBob Spring Implementation - Domain Specification
+# HTTP Integration — Domain Specification
 
-**Module:** io.eventbob.spring (Bridge Implementation)
-**Implements:** HTTP REST adapter for EventBob + Remote handler adapter
-**Type:** Infrastructure layer (Bridge Pattern)
-**Serves:** Event processing via HTTP (inbound and outbound)
-**Last Updated:** 2026-02-18
+## 1. Domain Purpose and Scope
 
-## Implementation Overview
+### Business problem being modeled
 
-This module is the **Spring Boot implementation of EventBob infrastructure**. It provides:
-1. HTTP REST interface for inbound event processing (EventController)
-2. HTTP adapter for outbound remote handler invocation (HttpEventHandlerAdapter)
+Microliths must accept events submitted over HTTP from external clients and from other microliths, and must be able to delegate events to capabilities hosted in remote microliths. Neither of these concerns can be allowed to pollute the framework-agnostic event routing core. This module models the translation work that occurs at the HTTP boundary: receiving inbound requests and turning them into domain routing envelopes, and wrapping remote capability endpoints so that they satisfy the same handler contract as locally loaded handlers.
 
-**Key Point:** This is NOT a bounded context itself. The bounded contexts are defined in `io.eventbob.core`. This module is one IMPLEMENTATION of HTTP adapters for the core event processing system.
+The module also models the assembly of a microlith from heterogeneous handler sources — inline lifecycle holders, JAR-based lifecycle holders, and remote capability declarations — producing a single, fully configured router that serves as the microlith's internal routing hub.
 
-## What This Implementation Provides
+### Explicit non-goals
 
-This Spring-based implementation is responsible for:
-- **Exposing HTTP REST endpoint** for event processing
-- **JSON serialization** for Event messages (EventDto)
-- **Spring configuration** that loads handlers from JARs and wires EventBob
-- **Built-in healthcheck handler** for system monitoring
-- **Remote handler adapters** for inter-microlith communication via HTTP
+- Not responsible for event routing logic; that belongs to the Event Routing Core context
+- Not a handler implementation; handler business logic ships in separate microservice JARs
+- Not a general HTTP proxy or API gateway; it exposes exactly one routing endpoint
+- Not responsible for authentication, authorisation, or rate-limiting at the HTTP boundary
+- Not a configuration system; all handler sources are provided by the importing microlith application
 
-**Not responsible for:** Event routing logic (that's in core domain), handler implementation (handlers are in separate JARs), handler discovery/registration system (not implemented).
+---
 
-## Domain Concepts
+## 2. Ubiquitous Language
 
-### Event (from core)
+### Core Terms
 
-An **Event** is a message containing source, target, parameters, metadata, and payload.
+| Term (synonyms) | Definition | Context | Canonical Definition |
+|---|---|---|---|
+| Wire Transfer Object (wire-format DTO) | The anti-corruption translation object that carries an event's fields across the HTTP boundary in serialisable form | HTTP boundary | A value object that converts bidirectionally between the domain routing envelope and JSON wire format; it never crosses into the core and is never used as a domain object |
+| Inbound Endpoint (events endpoint) | The single HTTP entry point that receives routing envelopes submitted by external callers and routes them through the local router | Server adapter | The HTTP surface of a microlith; it deserialises the wire format, invokes the router, and serialises the result back to wire format |
+| Remote Handler Adapter (HTTP adapter) | An implementation of the handler contract that wraps a remote microlith's inbound endpoint and makes it indistinguishable from a local handler at the routing level | Client adapter | The adapter that converts domain routing envelopes to wire format, posts them to a remote inbound endpoint, and converts the response back to a domain routing envelope |
+| Remote Loader | The handler loader implementation that creates one remote handler adapter per remote capability declaration and returns the resulting capability-to-adapter map | Startup, client adapter | The loading strategy for remote capabilities; it satisfies the HandlerLoader contract using RemoteCapability configuration records |
+| Wiring Configuration (microlith assembler) | The single integration point that collects all handler sources, initialises them, detects duplicate capability names, and produces a ready router bean | Startup, configuration | The component that merges inline, JAR-based, and remote handler sources into a single capability registry and builds the router |
+| Healthcheck Capability | A built-in handler shipped with this library and registered unconditionally under the "healthcheck" capability name | Built-in handlers | The infrastructure-owned capability that returns system health status; it requires no configuration and cannot be overridden by a handler source |
+| Inline Lifecycle Holder | A handler lifecycle holder provided directly by the importing microlith application as a framework-injectable bean, bypassing JAR loading | Startup | A HandlerLifecycle instance declared as a bean and injected into the wiring configuration; its initialisation and shutdown are managed by the wiring configuration |
+| Handling Failure | The domain-level error that surfaces transport problems, HTTP error responses, and wire-format parse errors back into the routing core as a uniform failure type | Client adapter, error handling | The core's error type used to communicate handler-level failures; remote adapter failures are always reported through this type |
 
-**Structure (from io.eventbob.core):**
-```java
-public class Event {
-    private final String source;
-    private final String target;
-    private final Map<String, Object> parameters;
-    private final Map<String, Object> metadata;
-    private final Object payload;
-}
+### Commands
+
+- AssembleMicrolith: collect all handler sources, initialise inline lifecycle holders, load JAR-based and remote capability maps, detect duplicates, register the built-in healthcheck, and build the router
+- AcceptInboundEvent: receive an HTTP POST carrying a wire-format routing envelope, translate it to a domain routing envelope, route it through the local router, and return the result as wire format
+- ForwardToRemoteCapability: translate a domain routing envelope to wire format, POST it to a remote inbound endpoint, parse the response, and return the resulting domain routing envelope
+- ShutdownLibrary: invoke the shutdown phase on all inline lifecycle holders in registration order, releasing their resources
+
+### Domain Events
+
+- MicrolithAssembled: the wiring configuration successfully merged all handler sources, registered the built-in healthcheck, and produced a ready router
+- DuplicateCapabilityRejected: two handler sources declared the same capability name; assembly was aborted before the router was built
+- InboundEventAccepted: an HTTP POST arrived at the inbound endpoint and was successfully translated into a domain routing envelope for routing
+- RemoteDelegationSucceeded: the remote handler adapter received a 2xx response and returned a domain routing envelope to the router
+- RemoteDelegationFailed: the remote handler adapter encountered an HTTP error or network failure and surfaced a handling failure to the router
+- LifecycleHolderShutDown: an inline lifecycle holder completed its shutdown phase during library teardown
+
+### Queries
+
+- ResolveHandlerSources: retrieve all inline lifecycle holders, JAR paths, and remote capability declarations available in the importing application's context
+- GetRemoteAdapterMap: retrieve the capability-to-remote-handler-adapter map produced by the remote loader for a given set of remote capability declarations
+
+---
+
+## 3. Bounded Contexts
+
+```mermaid
+graph LR
+  Core["Event Routing Core\n(io.eventbob.core)"]
+  Spring["HTTP Integration\n(io.eventbob.spring)"]
+  App["Microlith Application\n(io.eventbob.example.microlith.*)"]
+  RemoteMicrolith["Remote Microlith\n(another EventBob process)"]
+  HTTPClient["External HTTP Client"]
+
+  Spring -->|depends on| Core
+  App -->|imports and configures| Spring
+  HTTPClient -->|POST events| Spring
+  Spring -->|POST events| RemoteMicrolith
 ```
 
-**JSON representation (via EventDto):**
-```json
-{
-  "source": "client",
-  "target": "echo",
-  "parameters": {},
-  "metadata": {},
-  "payload": "hello world"
-}
+### Context: HTTP Integration
+
+Description: The bounded context responsible for the HTTP surface of a microlith. It owns the translation between the HTTP wire format and domain routing envelopes in both directions, the assembly of a router from heterogeneous handler sources, and the structural guarantee that remote capabilities satisfy the same handler contract as local ones. It carries no business logic and hard-codes no handler configuration; all domain knowledge lives in the core or in handler JARs.
+
+Business capability: exposing event routing over HTTP and making inter-microlith remote delegation transparent to the routing core
+
+### Context: Event Routing Core
+
+Description: Defines the routing envelope, handler contract, loader abstraction, lifecycle primitives, and the router. This context is upstream of HTTP Integration; HTTP Integration depends on it. Referenced here as the upstream context whose contracts this module adapts to and from the HTTP wire format.
+
+Business capability: capability-based in-process event routing and handler lifecycle management
+
+---
+
+## 4. Domain Model
+
+```mermaid
+classDiagram
+  WiringConfiguration "1" --> "1" Router : produces
+  WiringConfiguration "1" --> "*" InlineLifecycleHolder : initialises and shuts down
+  WiringConfiguration "1" --> "1" RemoteLoader : delegates to
+  WiringConfiguration "1" --> "1" HealthcheckCapability : registers unconditionally
+  RemoteLoader "1" --> "*" RemoteCapability : reads
+  RemoteLoader "1" --> "*" RemoteHandlerAdapter : creates
+  RemoteHandlerAdapter ..> WireTransferObject : translates through
+  InboundEndpoint ..> WireTransferObject : translates through
+  InboundEndpoint ..> Router : routes through
+  RemoteHandlerAdapter ..> HandlingFailure["Handling Failure"] : surfaces on error
 ```
 
-### EventHandler (from core)
+---
 
-An **EventHandler** processes events for a specific capability.
+## 5. AI Invariants: intention, purpose
 
-**Interface (from io.eventbob.core):**
-```java
-public interface EventHandler {
-    Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException;
-}
-```
-
-**Capability annotation:**
-```java
-@Capability("echo")
-public class EchoHandler implements EventHandler { ... }
-```
-
-### EventDto (Anti-Corruption Layer)
-
-An **EventDto** is a Data Transfer Object for JSON serialization of Event messages across HTTP boundaries.
-
-**Purpose:** Keeps Jackson annotations and REST concerns out of domain Event class. Translates between domain Event (core) and JSON (HTTP).
-
-**Translation methods:**
-- `EventDto.fromEvent(Event)` - converts domain Event to DTO for HTTP response serialization
-- `EventDto.toEvent()` - converts DTO from HTTP request to domain Event
-
-**Placement:** Lives in infrastructure layer (io.eventbob.spring), never imported by core.
-
-**Usage:** EventController and HttpEventHandlerAdapter use EventDto at HTTP boundary. Core domain never sees EventDto.
-
-### RemoteCapability
-
-A **RemoteCapability** maps a capability name to a remote endpoint URI.
-
-**Structure:** `RemoteCapability(name: String, uri: URI)`
-
-**Purpose:** Configuration object that declares which capabilities are hosted remotely. Used by RemoteHandlerLoader to create HTTP adapters.
-
-**Example:** `RemoteCapability("upper", URI.create("http://text-processing-service:8080"))`
-
-**Validation:** Name must not be blank, URI must not be null.
-
-### HttpEventHandlerAdapter (Anti-Corruption Layer)
-
-An **HttpEventHandlerAdapter** wraps HTTP calls to remote EventHandler endpoints. Implements EventHandler interface, providing location transparency.
-
-**Purpose:** Translates between domain Event (core) and HTTP requests/responses (infrastructure). Remote handlers appear identical to local handlers from EventBob's routing perspective.
-
-**Protocol:**
-- POST {remoteEndpoint}/events
-- Content-Type: application/json
-- Request body: EventDto JSON
-- Response body: EventDto JSON
-- HTTP status codes: 2xx = success, 4xx/5xx = error (throws EventHandlingException)
-
-**Translation:** Uses EventDto.fromEvent() for request serialization and EventDto.toEvent() for response deserialization.
-
-**Error handling:** Network errors, HTTP 4xx/5xx responses, and JSON parsing failures all throw EventHandlingException (core's error type).
-
-### RemoteHandlerLoader (Infrastructure)
-
-A **RemoteHandlerLoader** creates EventHandler wrappers for remote capability endpoints.
-
-**Purpose:** Implements HandlerLoader interface (core) by creating HttpEventHandlerAdapter instances for each RemoteCapability.
-
-**Contract:** `Map<String, EventHandler> loadHandlers()` - uses constructor-injected List<RemoteCapability> and HttpClient to create adapters.
-
-**Return value:** Map keyed by capability name, with HttpEventHandlerAdapter instances as values.
-
-**Extensibility:** Future implementations could inspect URI scheme and create different adapter types (gRPC, JMS, Kafka).
-
-## Ubiquitous Language
-
-| Term | Meaning | Example |
-|------|---------|---------|
-| **Event** | Message containing source, target, payload | `{ "target": "echo", "payload": "hello" }` |
-| **EventHandler** | Processes events for a specific capability | `EchoHandler`, `LowerHandler` |
-| **Capability** | Name identifying what an EventHandler does | "echo", "lower", "healthcheck" |
-| **EventDto** | JSON representation of Event for HTTP (anti-corruption layer) | Serialized Event for REST API |
-| **RemoteCapability** | Mapping from capability name to remote endpoint URI | `("upper", "http://text-service:8080")` |
-| **HttpEventHandlerAdapter** | EventHandler that delegates to remote endpoint via HTTP | Adapter wrapping remote calls |
-| **RemoteHandlerLoader** | HandlerLoader that creates HTTP adapters from RemoteCapability configs | Loader for remote handlers |
-| **Microlith** | Runtime that bundles multiple handlers | Single process with echo + lower handlers |
-| **Location transparency** | Remote and local handlers indistinguishable at routing level | Both implement EventHandler |
-
-## Anti-Corruption Layers
-
-### Inbound HTTP Translation (EventController)
-
-**Boundary:** HTTP requests → Domain Event
-
-**Translation:** EventController receives EventDto JSON, converts to domain Event, invokes EventBob routing, converts result Event to EventDto JSON response.
-
-**Protection:** Core domain never sees HttpServletRequest, Jackson annotations, or Spring types.
-
-### Outbound HTTP Translation (HttpEventHandlerAdapter)
-
-**Boundary:** Domain Event → HTTP requests
-
-**Translation:** HttpEventHandlerAdapter receives domain Event, converts to EventDto JSON, makes HTTP POST, parses EventDto JSON response, converts to domain Event.
-
-**Protection:** Core domain never sees HttpClient, HttpRequest, or HTTP status codes. Failures are translated to EventHandlingException (core's error type).
-
-**Key insight:** Remote handlers are wrapped as EventHandler implementations. EventBob routing logic treats them identically to local handlers. HTTP is infrastructure detail, not domain concept.
-
-## Context Boundary Contract
-
-**Imports from Event Processing Context:**
-- `io.eventbob.core.Event` (domain model)
-- `io.eventbob.core.EventHandler` (handler interface)
-- `io.eventbob.core.EventBob` (event processor)
-- `io.eventbob.core.Capability` (annotation)
-- `io.eventbob.core.Dispatcher` (handler coordination)
-- `io.eventbob.core.HandlerLoader` (loader interface)
-
-**Exports to HTTP clients:**
-- REST API: `POST /events` accepting/returning EventDto JSON
-- Healthcheck: `POST /events` with `target=healthcheck` returns `payload=true`
-
-**Exports to other EventBob microliths:**
-- HTTP handler endpoint: `POST /events` accepting/returning EventDto JSON
-- Protocol: Same as inbound API (symmetric)
-
-**Boundary crossing rules:**
-- Spring module can import from core (outer depends on inner)
-- Core cannot import from Spring module (inner never depends on outer)
-- EventDto translates at HTTP boundary (Event never exposed directly via HTTP)
-- HttpEventHandlerAdapter translates at remote handler boundary (HTTP never leaks into core routing logic)
-
-## Domain Invariants (This Module)
-
-1. **EventDto must round-trip cleanly** - `event.equals(EventDto.fromEvent(event).toEvent())` must be true for all Events
-2. **HTTP adapters implement EventHandler** - Remote handlers must look identical to local handlers from EventBob's perspective
-3. **RemoteCapability names must be unique** - Two RemoteCapability instances cannot have the same name
-4. **HTTP errors map to EventHandlingException** - All transport errors (network, HTTP status, JSON parsing) throw core's error type
-
-## Summary
-
-The Spring implementation is a **REST adapter** that enables both inbound and outbound HTTP-based event processing:
-
-**Inbound (EventController):**
-1. Exposes REST endpoint for event submission
-2. Translates HTTP requests to domain Events
-3. Routes events through EventBob to appropriate handlers
-4. Translates domain Events to HTTP responses
-
-**Outbound (HttpEventHandlerAdapter):**
-1. Wraps remote capability endpoints as EventHandler implementations
-2. Translates domain Events to HTTP requests
-3. Invokes remote EventBob instances
-4. Translates HTTP responses to domain Events
-
-**Key insight:** This module owns the "HTTP interface" (REST endpoints, JSON serialization, HTTP client), not the "event processing logic" (that's in core). It translates between HTTP and domain Events at the boundary, preserving location transparency.
+- The wire transfer object is the sole crossing point between the HTTP wire format and the domain model; it must never be used as a domain object or passed through core routing logic
+- The remote handler adapter must implement the handler contract without modification; the core router must not and cannot distinguish a remote adapter from a local handler
+- Duplicate capability names across all handler sources must cause a hard failure before the router is built; the wiring configuration is the single enforcement point for this rule
+- The healthcheck capability is unconditional; no handler source may suppress or override it, and its registration must always precede router construction
+- All transport failures, HTTP error responses, and wire-format parse errors that occur in a remote handler adapter must be surfaced exclusively as handling failures; no HTTP or transport type may cross into the core
+- Inline lifecycle holders are owned by the wiring configuration for the duration of the library's lifetime; their shutdown must occur in registration order on library teardown
+- This module ships no entry point and no hard-coded handler configuration; all handler sources are provided by the importing microlith application through the framework's dependency injection mechanism

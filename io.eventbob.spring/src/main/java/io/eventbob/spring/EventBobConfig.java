@@ -1,18 +1,21 @@
 package io.eventbob.spring;
 
+import io.eventbob.core.Capability;
 import io.eventbob.core.EventBob;
 import io.eventbob.core.EventHandler;
+import io.eventbob.core.HandlerLifecycle;
 import io.eventbob.core.HandlerLoader;
+import io.eventbob.core.LifecycleContext;
 import io.eventbob.spring.adapter.RemoteCapability;
 import io.eventbob.spring.handlers.HealthcheckHandler;
 import io.eventbob.spring.loader.RemoteHandlerLoader;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.io.IOException;
 import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -22,20 +25,24 @@ import java.util.Map;
 /**
  * Spring configuration for EventBob and its handlers.
  * <p>
- * This configuration:
+ * This configuration supports three handler registration paths:
  * </p>
  * <ul>
- *   <li>Loads local handlers from JAR files using JarHandlerLoader</li>
- *   <li>Loads remote handlers from configured endpoints using RemoteHandlerLoader</li>
- *   <li>Registers all handlers with EventBob (both local and remote)</li>
- *   <li>Keeps the healthcheck handler hard-coded for system health monitoring</li>
+ *   <li><b>Inline lifecycles</b> — {@code HandlerLifecycle} beans declared in the
+ *       application context; initialized directly without classloader isolation.
+ *       Use this when the lifecycle class lives in the same JVM as the microlith.</li>
+ *   <li><b>JAR-based lifecycles</b> — handler JARs loaded via {@code handlerJarPaths};
+ *       each JAR is loaded in an isolated {@code URLClassLoader}. Use this when
+ *       shipping handler JARs as separate deployment artifacts.</li>
+ *   <li><b>Remote handlers</b> — capabilities delegated to remote microliths via HTTP.</li>
  * </ul>
  * <p>
- * This is a generic library configuration. Concrete applications must provide:
+ * All three paths are optional. Concrete applications provide whichever beans apply:
  * </p>
  * <ul>
- *   <li>{@code List<Path> handlerJarPaths} bean (local JAR-based handlers)</li>
- *   <li>{@code List<RemoteCapability> remoteCapabilities} bean (optional, remote handlers)</li>
+ *   <li>{@code List<HandlerLifecycle>} bean — inline lifecycle handlers</li>
+ *   <li>{@code List<Path> handlerJarPaths} bean — JAR-based handlers</li>
+ *   <li>{@code List<RemoteCapability>} bean — remote handlers</li>
  * </ul>
  */
 @Configuration
@@ -43,27 +50,31 @@ public class EventBobConfig {
   private static final Logger logger = LoggerFactory.getLogger(EventBobConfig.class);
 
   private final List<Path> handlerJarPaths;
+  private final List<HandlerLifecycle> inlineLifecycles;
   private final List<RemoteCapability> remoteCapabilities;
 
   /**
    * Create EventBob configuration with specified handler sources.
+   * <p>
+   * All parameters are optional. Pass {@code null} (or omit the bean) for any
+   * source that does not apply to the current deployment.
+   * </p>
    *
-   * @param handlerJarPaths list of paths to handler JAR files to load
-   * @param remoteCapabilities list of remote capability endpoints (optional, autowired if present)
+   * @param handlerJarPaths    paths to handler JAR files to load (optional)
+   * @param inlineLifecycles   lifecycle beans declared in this application context (optional)
+   * @param remoteCapabilities remote capability endpoints (optional)
    */
   public EventBobConfig(
-          List<Path> handlerJarPaths,
+          @Autowired(required = false) List<Path> handlerJarPaths,
+          @Autowired(required = false) List<HandlerLifecycle> inlineLifecycles,
           @Autowired(required = false) List<RemoteCapability> remoteCapabilities) {
-    this.handlerJarPaths = handlerJarPaths;
+    this.handlerJarPaths = handlerJarPaths != null ? handlerJarPaths : List.of();
+    this.inlineLifecycles = inlineLifecycles != null ? inlineLifecycles : List.of();
     this.remoteCapabilities = remoteCapabilities != null ? remoteCapabilities : List.of();
   }
 
   /**
    * Create the HttpClient bean for remote handler communication.
-   * <p>
-   * This client is used by RemoteHandlerLoader to make HTTP calls to
-   * remote capability endpoints.
-   * </p>
    *
    * @return configured HTTP client instance
    */
@@ -76,10 +87,6 @@ public class EventBobConfig {
 
   /**
    * Create the healthcheck handler bean.
-   * <p>
-   * This handler is hard-coded and not loaded from JARs, as it provides
-   * core system health monitoring functionality.
-   * </p>
    *
    * @return the healthcheck handler instance
    */
@@ -91,33 +98,25 @@ public class EventBobConfig {
   /**
    * Create the EventBob instance with all registered handlers.
    * <p>
-   * This method:
+   * Loads handlers from all configured sources (inline lifecycles, JARs, remote),
+   * checks for duplicate capabilities, and registers everything with EventBob.
    * </p>
-   * <ol>
-   *   <li>Loads and instantiates local handlers from JAR files</li>
-   *   <li>Loads remote handlers from configured endpoints</li>
-   *   <li>Merges both handler sets (checking for duplicates)</li>
-   *   <li>Registers all handlers with EventBob</li>
-   *   <li>Includes the healthcheck handler</li>
-   * </ol>
    *
    * @param healthcheckHandler the healthcheck handler bean
-   * @param httpClient the HTTP client for remote handlers
+   * @param httpClient         the HTTP client for remote handlers
    * @return configured EventBob instance ready to process events
    */
   @Bean
   public EventBob eventBob(HealthcheckHandler healthcheckHandler, HttpClient httpClient) {
     EventBob.Builder builder = EventBob.builder();
 
-    // Register hard-coded healthcheck handler
     builder.handler("healthcheck", healthcheckHandler);
 
-    // Load and register all handlers (JAR-based and remote)
     try {
       Map<String, EventHandler> allHandlers = loadAllHandlers(httpClient);
       allHandlers.forEach(builder::handler);
       logger.info("Registered {} total handler(s)", allHandlers.size());
-    } catch (IOException e) {
+    } catch (Exception e) {
       logger.error("Failed to load handlers", e);
       throw new IllegalStateException("Handler loading failed", e);
     }
@@ -126,36 +125,77 @@ public class EventBobConfig {
   }
 
   /**
-   * Loads and merges handlers from all sources (JARs and remote endpoints).
-   *
-   * @param httpClient the HTTP client for remote handlers
-   * @return map of capability names to instantiated handlers
-   * @throws IOException if handler loading fails
-   * @throws IllegalStateException if duplicate capabilities are found across sources
+   * Shuts down all inline lifecycle handlers when the application context closes.
    */
-  private Map<String, EventHandler> loadAllHandlers(HttpClient httpClient) throws IOException {
+  @PreDestroy
+  public void shutdownInlineLifecycles() {
+    for (HandlerLifecycle lifecycle : inlineLifecycles) {
+      try {
+        lifecycle.shutdown();
+      } catch (Exception e) {
+        logger.warn("Error shutting down inline lifecycle {}", lifecycle.getClass().getSimpleName(), e);
+      }
+    }
+  }
+
+  private Map<String, EventHandler> loadAllHandlers(HttpClient httpClient) throws Exception {
     Map<String, EventHandler> allHandlers = new HashMap<>();
 
-    // Load JAR-based handlers
-    HandlerLoader jarLoader = HandlerLoader.jarLoader(handlerJarPaths);
-    Map<String, EventHandler> jarHandlers = jarLoader.loadHandlers();
-    logger.info("Loaded {} handler(s) from JARs", jarHandlers.size());
-    allHandlers.putAll(jarHandlers);
+    // Register inline lifecycle-based handlers (same JVM, no classloader isolation)
+    // Dispatcher is intentionally null: handlers receive it at event-processing time
+    // via EventHandler.handle(Event, Dispatcher).
+    if (!inlineLifecycles.isEmpty()) {
+      LifecycleContext lifecycleContext = LifecycleContext.of(Map.of(), null);
+      int registeredCapabilities = 0;
+      for (HandlerLifecycle lifecycle : inlineLifecycles) {
+        lifecycle.initialize(lifecycleContext);
+        EventHandler handler = lifecycle.getHandler();
+        Capability[] capabilities = handler.getClass().getAnnotationsByType(Capability.class);
+        if (capabilities.length == 0) {
+          logger.warn("Inline lifecycle {} returned a handler with no @Capability annotations; skipping",
+                  lifecycle.getClass().getSimpleName());
+          continue;
+        }
+        for (Capability capability : capabilities) {
+          if (allHandlers.containsKey(capability.value())) {
+            throw new IllegalStateException(
+                    "Duplicate capability '" + capability.value() + "' from inline lifecycle "
+                    + lifecycle.getClass().getSimpleName());
+          }
+          allHandlers.put(capability.value(), handler);
+          registeredCapabilities++;
+        }
+      }
+      logger.info("Registered {} capability(-ies) from {} inline lifecycle(s)",
+              registeredCapabilities, inlineLifecycles.size());
+    }
+
+    // Load lifecycle-based handlers from JARs (isolated URLClassLoader per JAR)
+    if (!handlerJarPaths.isEmpty()) {
+      HandlerLoader lifecycleLoader = HandlerLoader.lifecycleLoader(handlerJarPaths, null);
+      Map<String, EventHandler> jarHandlers = lifecycleLoader.loadHandlers();
+      for (Map.Entry<String, EventHandler> entry : jarHandlers.entrySet()) {
+        if (allHandlers.containsKey(entry.getKey())) {
+          throw new IllegalStateException(
+                  "Duplicate capability '" + entry.getKey() + "' found in JAR handlers and inline lifecycles");
+        }
+      }
+      allHandlers.putAll(jarHandlers);
+      logger.info("Loaded {} capability(-ies) from JARs", jarHandlers.size());
+    }
 
     // Load remote handlers
     HandlerLoader remoteLoader = new RemoteHandlerLoader(remoteCapabilities, httpClient);
     Map<String, EventHandler> remoteHandlers = remoteLoader.loadHandlers();
-    logger.info("Loaded {} remote handler(s)", remoteHandlers.size());
-
-    // Check for duplicates before merging
     for (String capability : remoteHandlers.keySet()) {
       if (allHandlers.containsKey(capability)) {
         throw new IllegalStateException(
-                "Duplicate capability '" + capability + "' found in both JAR and remote handlers");
+                "Duplicate capability '" + capability + "' found in remote handlers and local handlers");
       }
     }
-
     allHandlers.putAll(remoteHandlers);
+    logger.info("Loaded {} remote capability(-ies)", remoteHandlers.size());
+
     return allHandlers;
   }
 }

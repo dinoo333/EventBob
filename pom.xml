@@ -17,6 +17,9 @@
         <module>io.eventbob.example.echo</module>
         <module>io.eventbob.example.microlith.spring.echo</module>
         <module>io.eventbob.example.microlith.spring.upper</module>
+        <module>io.eventbob.dropwizard</module>
+        <module>io.eventbob.example.microlith.dw.echo</module>
+        <module>io.eventbob.example.microlith.dw.upper</module>
     </modules>
 
     <properties>
@@ -30,19 +33,11 @@
         <testcontainers.version>1.19.3</testcontainers.version>
         <slf4j.version>2.0.11</slf4j.version>
         <archunit.version>1.2.1</archunit.version>
+        <dropwizard.version>5.0.1</dropwizard.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <!-- Spring Boot BOM -->
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring-boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-
             <!-- Testcontainers BOM -->
             <dependency>
                 <groupId>org.testcontainers</groupId>

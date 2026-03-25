@@ -1,308 +1,148 @@
 # io.eventbob.example.microlith.spring.echo Architecture
 
-## Module Purpose
+## 1. High Level Architectural Purpose
 
-Concrete EventBob microlith application that provides "echo" and "lower" capabilities. This is a demonstration microlith showing how to configure and deploy EventBob with specific handlers.
-
-**This is an application module.** It has a Spring Boot main class, concrete JAR path configuration, and deployment properties. It is built on top of the `io.eventbob.spring` library.
+This module is the outermost application layer: a concrete, deployable microlith. It composes the io.eventbob.spring library with two locally-wired capabilities (echo and lower) and one remote capability delegation (upper), producing a single runnable process. Its sole architectural role is configuration and wiring — it contains no domain logic and no infrastructure code of its own.
 
 ---
 
-## Layer Assignment
+## 2. Architectural Borders
 
-This module is in the **application layer** (outermost):
-- Depends on `io.eventbob.spring` (infrastructure library)
-- Depends on `io.eventbob.example.echo` and `io.eventbob.example.lower` (handler JARs, runtime)
-- Provides concrete configuration (which handlers to load)
-- Has Spring Boot main class
+```mermaid
+graph TD
+    subgraph echo["io.eventbob.example.microlith.spring.echo"]
+        ConfigureHandlers["Configure Handler Sources"]
+        WireEcho["Wire Echo Capability"]
+        WireLower["Wire Lower Capability"]
+        DelegateUpper["Delegate Upper Capability"]
+    end
 
-**Dependency direction:**
+    echo -->|imports| Spring["io.eventbob.spring"]
+    Spring -->|depends on| Core["io.eventbob.core"]
+    echo -->|depends on| EchoModule["Echo Handler Module"]
+    echo -->|depends on| LowerModule["Lower Handler Module"]
+    echo -->|HTTP| UpperMicrolith["Upper Microlith\n(port 8081)"]
+    HTTPClient["HTTP Client"] -->|POST /events :8080| echo
 ```
-io.eventbob.example.microlith.spring.echo  →  io.eventbob.spring  →  io.eventbob.core
-(application - concrete)            (infrastructure)          (domain)
-```
+
+### Border: Microlith Application
+
+The module owns the boundary where abstract library configuration becomes concrete deployment decisions: which capabilities are served locally, which are delegated remotely, and on which port the service listens.
+
+**Interactors:**
+
+- Interactor: Configure Handler Sources
+  - Summary: Declares all handler source beans so the library's wiring configuration can assemble the router instance.
+  - Flow: the framework runtime starts; the application entry point's bean declarations produce the echo lifecycle holder, the lower lifecycle holder, and the remote capability declaration list; the library's wiring configuration collects them via injection; it initialises the inline lifecycle holders, creates HTTP adapters for remote capabilities, builds the router; the embedded server starts on the configured port.
+
+- Interactor: Wire Echo Capability
+  - Summary: Initialises the echo capability using an isolated framework context and registers the resulting handler.
+  - Flow: the wiring configuration invokes initialisation on the echo lifecycle holder with a context; the lifecycle holder creates an isolated framework context, loads the echo handler's configuration, refreshes the context, and retrieves the handler instance; the wiring configuration reads the capability declaration from the handler and registers it under the "echo" name; on teardown the wiring configuration invokes shutdown on the lifecycle holder, which closes the isolated context.
+
+- Interactor: Wire Lower Capability
+  - Summary: Initialises the lower capability using an isolated framework context and registers the resulting handler.
+  - Flow: identical pattern to Wire Echo Capability; the lower lifecycle holder creates an isolated context for the lower handler; the handler is registered under the "lower" name.
+
+- Interactor: Delegate Upper Capability
+  - Summary: Declares "upper" as a remote capability pointing to the upper microlith so the router forwards "upper" events via HTTP.
+  - Flow: the remote capability declaration list bean contains a declaration mapping "upper" to the upper microlith's endpoint; the wiring configuration's remote loader creates an HTTP adapter for this entry; the adapter is registered under "upper"; inbound events targeting "upper" are forwarded via HTTP to the upper microlith's events endpoint.
 
 ---
 
-## Key Components
+## 3. Layers
 
-### Spring Boot Application
+```mermaid
+graph TD
+    AppConfig["Application Configuration"]
+    LifecycleWiring["Lifecycle Wiring"]
+    SpringLib["io.eventbob.spring"]
+    Core["io.eventbob.core"]
+    HandlerModules["Handler Modules\n(echo, lower)"]
 
-**EchoApplication:**
-- Entry point for the microlith server
-- Imports `EventBobConfig` from io.eventbob.spring library
-- Provides configuration via `@Bean` methods
-- Starts embedded web server (Tomcat)
-
-**Structure:**
-```java
-@SpringBootApplication
-@ComponentScan(basePackages = {"io.eventbob.spring", "io.eventbob.example.microlith.spring.echo"})
-@Import(EventBobConfig.class)
-public class EchoApplication {
-
-  public static void main(String[] args) {
-    SpringApplication.run(EchoApplication.class, args);
-  }
-
-  @Bean
-  public List<Path> handlerJarPaths() {
-    return List.of(
-        Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar"),
-        Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar")
-    );
-  }
-}
+    AppConfig -->|declares beans for| SpringLib
+    AppConfig -->|instantiates| LifecycleWiring
+    LifecycleWiring -->|depends on| Core
+    LifecycleWiring -->|wires types from| HandlerModules
+    SpringLib -->|depends on| Core
 ```
 
-**Key design decisions:**
-- `@ComponentScan` includes both io.eventbob.spring (for EventController) and this module
-- `@Import(EventBobConfig.class)` brings in the generic EventBob configuration
-- `handlerJarPaths()` bean provides concrete JAR paths to EventBobConfig constructor
-- JAR paths are relative to project root (for development convenience)
+### Layer: Application Configuration
 
-### Configuration
+**Description:** The single entry point of the process. Declares all handler source beans; delegates all wiring to the library.
 
-**Handler JAR paths:**
-- Specified in `handlerJarPaths()` @Bean method
-- Injected into `EventBobConfig` constructor
-- Currently hard-coded (suitable for development/testing)
+**Components:**
+- Application entry point: declares the echo lifecycle holder bean, the lower lifecycle holder bean, and the remote capability declaration list bean; imports the library wiring configuration; provides the component scan scope that picks up the inbound endpoint.
 
-**Future evolution:**
-- Read from application.properties (externalized configuration)
-- Support JAR directory scanning
-- Support absolute paths or classpath resources
+**Inbound dependencies:** Spring Boot runtime (application startup).
+**Outbound dependencies:** io.eventbob.spring (wiring configuration, remote capability declaration); Lifecycle Wiring layer.
 
-**Deployment properties:**
-- `application.properties` or `application.yml` in `src/main/resources`
-- Server port, logging levels, Spring Boot settings
+### Layer: Lifecycle Wiring
+
+**Description:** Connects handler implementations from the handler modules to the container via the lifecycle holder contract. Each lifecycle holder creates an isolated framework context so handlers share no beans and have no inter-handler coupling.
+
+**Components:**
+- Echo lifecycle holder: fulfils the lifecycle holder contract; creates an isolated framework context for the echo handler and its dependencies; closes the context on shutdown.
+- Lower lifecycle holder: fulfils the lifecycle holder contract; creates an isolated framework context for the lower handler and its dependencies; closes the context on shutdown.
+
+**Inbound dependencies:** io.eventbob.core (lifecycle holder contract, lifecycle context, handler integration contract); Spring (isolated annotation-driven application context).
+**Outbound dependencies:** io.eventbob.example.echo (echo handler and supporting services); io.eventbob.example.lower (lower handler and supporting services).
 
 ---
 
-## Capabilities Provided
+## 4. Use Cases
 
-This microlith provides two capabilities loaded from JAR files:
+```mermaid
+graph LR
+    Start["Start Echo Microlith"]
+    ProcessLocal["Process Local Capability Event"]
+    ForwardRemote["Forward Upper Capability Event"]
+    Shutdown["Shut Down Echo Microlith"]
 
-### "echo" capability
-- **Handler JAR:** io.eventbob.example.echo
-- **Behavior:** Returns the input data unchanged
-- **Use case:** Testing request/response flow
+    Start --> ProcessLocal
+    Start --> ForwardRemote
+    Shutdown
+```
 
-### "lower" capability
-- **Handler JAR:** io.eventbob.example.lower
-- **Behavior:** Converts input string to lowercase
-- **Use case:** Testing data transformation
+### Use Case: Start Echo Microlith
 
-### "healthcheck" capability
-- **Source:** Built into io.eventbob.spring library
-- **Behavior:** Returns health status
-- **Use case:** Infrastructure monitoring
+**Description:** The process boots, wires all capabilities, and begins accepting HTTP events.
+
+**Scenarios:**
+- Scenario: successful startup → the framework initialises; the echo and lower lifecycle holder beans are created; the wiring configuration initialises both, registers "echo" and "lower" locally; the remote capability declaration for "upper" is registered as an HTTP adapter; the healthcheck is registered; the router is built; the inbound endpoint is bound to the events path; the embedded server starts on port 8080.
+- Alternate: lifecycle initialisation failure → a lifecycle holder's initialisation raises an error; the wiring configuration propagates the failure; the framework startup fails; the process exits.
+
+### Use Case: Process Local Capability Event
+
+**Description:** An inbound HTTP event targets either "echo" or "lower"; the event is handled in-process by the wired handler.
+
+**Scenarios:**
+- Scenario: echo event → POST to the events endpoint with target "echo"; inbound endpoint routes to router; router dispatches to echo handler; handler returns the event unchanged; wire-format response sent to caller.
+- Scenario: lower event → POST to the events endpoint with target "lower"; inbound endpoint routes to router; router dispatches to lower handler; handler transforms the payload to lowercase; response returned.
+- Scenario: healthcheck event → POST to the events endpoint with target "healthcheck"; built-in healthcheck handler (from library) responds with health status.
+
+### Use Case: Forward Upper Capability Event
+
+**Description:** An inbound HTTP event targets "upper"; the router delegates it to the upper microlith via the remote handler adapter.
+
+**Scenarios:**
+- Scenario: remote available → POST to the events endpoint with target "upper"; router delivers to remote handler adapter; adapter posts to the upper microlith's events endpoint; upper microlith processes and responds; adapter translates response to domain event; wire-format response returned to original caller.
+- Alternate: remote unavailable → transport exception raised; handling failure propagates; router applies error callback; error event returned to caller.
+
+### Use Case: Shut Down Echo Microlith
+
+**Description:** The framework context closes; inline lifecycle holders are shut down cleanly.
+
+**Scenarios:**
+- Scenario: clean shutdown → teardown invoked on the echo and lower lifecycle holders; each closes its isolated framework context; resources released.
+- Alternate: partial failure → one lifecycle holder's shutdown raises an error; error logged; remaining lifecycle holders continue shutting down.
 
 ---
 
-## Runtime Behavior
+## 5. AI Invariants: structure, boundaries, dependency direction
 
-### Startup Sequence
-
-1. **Spring Boot initializes**
-   - EchoApplication.main() invoked
-   - SpringApplication.run() starts Spring context
-
-2. **Spring DI wiring**
-   - `handlerJarPaths()` bean created (List<Path>)
-   - `EventBobConfig` constructor receives handlerJarPaths
-   - `EventBobConfig` loads handlers from JARs using HandlerLoader
-
-3. **Handler loading**
-   - HandlerLoader scans echo.jar for @Capability classes
-   - HandlerLoader scans lower.jar for @Capability classes
-   - Handlers instantiated via reflection (no-args constructors)
-   - Handlers registered with EventBob by capability name
-
-4. **Server ready**
-   - EventController registered at POST /events
-   - Embedded Tomcat started on configured port (default 8080)
-   - Application ready to process events
-
-### Request Flow
-
-**Client sends HTTP POST to /events:**
-```json
-{
-  "capability": "lower",
-  "data": {"text": "HELLO WORLD"}
-}
-```
-
-**Processing:**
-1. EventController receives HTTP request
-2. EventDto converted to domain Event
-3. Event routed to EventBob.processEvent()
-4. EventBob looks up "lower" handler
-5. Handler processes event synchronously
-6. Response Event returned
-7. EventDto converted back from Event
-8. HTTP response sent to client
-
----
-
-## Dependencies
-
-### Maven Dependencies
-
-**Internal (compile):**
-- `io.eventbob.spring` - Infrastructure library
-
-**Internal (runtime):**
-- `io.eventbob.example.echo` - Echo handler JAR
-- `io.eventbob.example.lower` - Lower handler JAR
-
-**External:**
-- Spring Boot (transitively via io.eventbob.spring)
-- SLF4J (transitively via io.eventbob.spring)
-
-**Dependency graph:**
-```
-io.eventbob.example.microlith.spring.echo
-  ├─ io.eventbob.spring (compile)
-  │   └─ io.eventbob.core (compile)
-  ├─ io.eventbob.example.echo (runtime)
-  │   └─ io.eventbob.core (compile)
-  └─ io.eventbob.example.lower (runtime)
-      └─ io.eventbob.core (compile)
-```
-
-**Why runtime scope for handler JARs:**
-- Handler JARs are loaded dynamically at runtime via URLClassLoader
-- Maven runtime scope ensures JARs are built before microlith runs
-- Prevents compile-time coupling between microlith and handler implementations
-
----
-
-## Design Principles
-
-### Concrete Configuration
-
-This module makes concrete decisions that the library left abstract:
-- **Which handlers:** echo and lower (not upper, not other handlers)
-- **Where are JARs:** Relative paths to target/ directories
-- **What port:** Configured in application.properties
-
-The library (`io.eventbob.spring`) remains generic. This module makes it specific.
-
-### Deployment Unit
-
-This module represents a single deployable unit:
-- One JAR file (built with spring-boot-maven-plugin)
-- One process when running
-- One logical service (echo-microlith)
-- Multiple capabilities bundled together
-
-This is the "microlith" concept: multiple capabilities in one deployment.
-
-### Evolution Path
-
-**Current state (hard-coded):**
-- JAR paths in @Bean method
-- Development convenience (relative paths work)
-
-**Next iteration (externalized):**
-- JAR paths in application.properties
-- Absolute paths or classpath resources
-- Environment-specific configuration (dev/test/prod)
-
-**Future (dynamic):**
-- JAR directory scanning
-- Hot-reload of new handlers
-- Service discovery integration
-
----
-
-## Testing
-
-### Manual Testing
-
-**Build and run:**
-```bash
-mvn clean package
-cd io.eventbob.example.microlith.spring.echo
-mvn spring-boot:run
-```
-
-**Test echo capability:**
-```bash
-curl -X POST http://localhost:8080/events \
-  -H "Content-Type: application/json" \
-  -d '{"capability":"echo","data":{"text":"hello"}}'
-```
-
-**Test lower capability:**
-```bash
-curl -X POST http://localhost:8080/events \
-  -H "Content-Type: application/json" \
-  -d '{"capability":"lower","data":{"text":"HELLO WORLD"}}'
-```
-
-**Test healthcheck:**
-```bash
-curl -X POST http://localhost:8080/events \
-  -H "Content-Type: application/json" \
-  -d '{"capability":"healthcheck","data":{}}'
-```
-
-### Integration Testing
-
-**Recommended approach:**
-- Use Spring Boot test support (`@SpringBootTest`)
-- Start full application context
-- Use TestRestTemplate to send HTTP requests
-- Verify responses for all three capabilities
-- Test error cases (unknown capability, malformed request)
-
----
-
-## Relationship to Other Microlith Applications
-
-This is the **first** concrete microlith application. More will follow:
-
-**Future microlith applications:**
-- `io.eventbob.example.microlith.upper` - Loads "upper" handler
-- `io.eventbob.example.microlith.messages` - Loads read/write/delete handlers
-- Custom microliths per deployment scenario
-
-**Pattern:**
-Every microlith application follows the same structure:
-1. Depends on `io.eventbob.spring` library
-2. Has Spring Boot main class with `@SpringBootApplication`
-3. Imports `EventBobConfig`
-4. Provides `@Bean` for `List<Path> handlerJarPaths`
-5. Specifies which handler JARs to load
-
-The library handles the rest. The application just configures.
-
----
-
-## Architectural Invariants
-
-1. **Depends on library, not core directly** - Let the library manage core interactions
-2. **Configuration only** - No domain logic, no infrastructure logic in this module
-3. **One microlith, multiple capabilities** - Bundle related handlers together
-4. **Reuses library completely** - No duplication of EventBobConfig or transport adapters
-
-**What NOT to put here:**
-- Custom EventHandler implementations (those go in handler modules)
-- Infrastructure code (that's in io.eventbob.spring)
-- Domain logic (that's in io.eventbob.core)
-- Only configuration and wiring belong here
-
----
-
-## Open Questions
-
-1. **JAR path resolution:** Should paths be relative, absolute, or classpath resources?
-2. **Configuration format:** Hard-coded @Bean, application.properties, or external config file?
-3. **Deployment model:** Single instance, replicated, or container orchestration?
-4. **Service registration:** How does this microlith register with service discovery?
-5. **Monitoring:** What metrics and health checks should be exposed?
-
-These questions will be answered as requirements clarify. Current hard-coded approach works for development and testing.
+- Configuration only: this module must contain no domain logic and no infrastructure code. Only framework bean declarations and lifecycle holder wiring belong here.
+- No direct core dependency for routing: this module does not interact with the router directly; all routing is managed by the imported io.eventbob.spring library.
+- Isolated lifecycle contexts: each lifecycle holder creates its own isolated framework context. No beans are shared between the echo lifecycle holder and the lower lifecycle holder.
+- Handler modules remain framework-agnostic: io.eventbob.example.echo and io.eventbob.example.lower must not gain framework dependencies as a result of this module. Framework wiring lives exclusively in the lifecycle holder classes within this module.
+- Remote delegation is configuration, not code: the "upper" delegation is expressed as a remote capability declaration bean. No custom adapter code lives in this module.
+- Dependency direction: this module depends on io.eventbob.spring; io.eventbob.spring must not depend on this module.

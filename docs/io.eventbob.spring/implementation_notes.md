@@ -1,264 +1,48 @@
-# io.eventbob.spring Implementation Notes
+# io.eventbob.spring — Implementation Notes
 
-## Module Purpose
+### 1 Frameworks used
 
-This module is a **library** that provides Spring Boot integration for EventBob. It does not contain a Spring Boot application main class. Concrete applications import this module and provide configuration.
+- **Jackson (`com.fasterxml.jackson.databind`)**: Used only in `EventDto` (Jackson annotations `@JsonCreator`, `@JsonProperty`) and `HttpEventHandlerAdapter` (bare `ObjectMapper` for serialisation/deserialisation). Not present in any core or domain class — contained entirely within the infrastructure adapter layer.
+- **WireMock**: Used in integration tests for `HttpEventHandlerAdapter` to stub remote HTTP endpoints. Not present in production code.
+- **SLF4J**: Used for structured logging in `EventBobConfig` (`LoggerFactory.getLogger`). Concrete binding is provided by the consuming Spring Boot application.
+- **`jakarta.annotation.PreDestroy`**: Used in `EventBobConfig.shutdownInlineLifecycles()` for Spring-managed lifecycle teardown of inline handler lifecycles. Requires Jakarta EE annotations on the classpath (provided by Spring Boot).
 
-## Module Patterns
+### 2 Coding patterns
 
-### Library Pattern
-- No `@SpringBootApplication` entry point (applications provide this)
-- Reusable `@Configuration` classes
-- Concrete applications provide handler JAR paths via dependency injection
+- **Library configuration with optional autowiring**: `EventBobConfig` is a `@Configuration` class with no `@SpringBootApplication`. All three constructor parameters (`List<Path> handlerJarPaths`, `List<HandlerLifecycle> inlineLifecycles`, `List<RemoteCapability> remoteCapabilities`) are annotated `@Autowired(required = false)` and default to `List.of()` when absent. This allows concrete applications to supply only the beans relevant to their deployment without errors for missing beans.
 
-### Dependency Injection
-- `@Configuration` classes define beans
-- EventBob instance created as Spring bean
-- Handlers registered via EventBob builder
-- Constructor injection for handler sources: `EventBobConfig(List<Path> handlerJarPaths, List<RemoteCapability> remoteCapabilities)`
-- Remote capabilities are optional (autowired with `required = false`)
+- **`@PreDestroy` for inline lifecycle teardown**: `EventBobConfig.shutdownInlineLifecycles()` is annotated `@PreDestroy` so Spring calls it when the application context closes. Each inline lifecycle's `shutdown()` method is called in a try/catch loop; failures are logged at WARN and do not prevent subsequent lifecycles from shutting down.
 
-### Handler Implementation
-- Handlers implement core `EventHandler` interface
-- Annotated with `@Capability("target-name")`
-- Registered with EventBob at configuration time
+- **Boundary object (EventDto)**: `EventDto` is a Java record in `io.eventbob.spring.adapter`. It carries `@JsonCreator` and `@JsonProperty` so the core `Event` class remains framework-agnostic. `null` parameters and metadata maps in the JSON are normalised to `Collections.emptyMap()` in the explicit canonical constructor. Translation is `EventDto.fromEvent(Event)` and `eventDto.toEvent()`.
 
-### REST Adapter Pattern
+- **Location-transparent remote handler**: `HttpEventHandlerAdapter` implements `EventHandler`. From `EventBob`'s perspective it is indistinguishable from a local handler. It performs a synchronous blocking HTTP POST inside `handle()`, which is already called on a virtual thread by `EventBob`. `InterruptedException` during the HTTP call restores the interrupt flag before re-throwing as `EventHandlingException`.
 
-**Applied in:** EventController
+- **Null-dispatcher call-time injection in `EventBobConfig`**: Inline lifecycles are initialised with `LifecycleContext.of(Map.of(), null)`. The null dispatcher is intentional: handlers receive the dispatcher as a parameter of `handle(Event, Dispatcher)` at event-processing time. JAR-based loaders are constructed with `HandlerLoader.lifecycleLoader(handlerJarPaths, null)` for the same reason.
 
-**Pattern:**
-- Exposes POST /events endpoint for HTTP event submission
-- EventDto serves as boundary object (prevents Jackson annotations in domain)
-- Maps EventDto ↔ Event with direct field assignment (no type conversion)
-- Returns `CompletableFuture<EventDto>` for non-blocking HTTP responses
-- Spring MVC handles async suspension automatically
+- **Fail-fast duplicate capability detection across sources**: `EventBobConfig.loadAllHandlers()` checks for duplicate capability names across inline lifecycles, JAR handlers, and remote handlers. The first duplicate found throws `IllegalStateException`, which propagates out of the `@Bean eventBob(...)` method and prevents application startup.
 
-**Mapping strategy:**
-- EventDto is a Java Record with Jackson annotations for JSON serialization/deserialization
-- Uses `@JsonCreator` and `@JsonProperty` for proper Jackson binding
-- Translation methods: `EventDto.fromEvent(Event)` and `eventDto.toEvent()`
-- Direct field mapping (no complex type conversion)
-- Null-safe: null parameters/metadata become empty maps in EventDto constructor
-- Transformation: `EventDto → toEvent() → EventBob.processEvent() → thenApply(fromEvent())`
+### 3 Coding problems
 
-**EventDto Pattern:**
-```java
-public record EventDto(
-    String source,
-    String target,
-    Map<String, Object> parameters,
-    Map<String, Object> metadata,
-    Object payload
-) {
-  public static EventDto fromEvent(Event event) { ... }
-  public Event toEvent() { ... }
-}
-```
+- **`EventController` uses null error callback**: `eventBob.processEvent(event, (error, originalEvent) -> null)` passes a null-returning lambda as the error handler. EventBob falls back to `DefaultErrorEvent.create()` on any error. HTTP clients therefore always receive a 200 OK with an error event payload rather than an HTTP error status code. This may be surprising to HTTP clients expecting 4xx or 5xx responses for handler errors. Status: open, known design gap.
 
-## Testing Conventions
+- **`HttpEventHandlerAdapter.objectMapper` is a private instance field**: Each `HttpEventHandlerAdapter` instance creates its own `ObjectMapper`. For the current number of remote capabilities this is harmless, but `ObjectMapper` creation is moderately expensive and the instances are not shared. Status: known minor inefficiency.
 
-### Unit Tests
-- JUnit 5 + AssertJ (matching core conventions)
-- `should*` naming pattern
-- Test event preservation (source, target, metadata, parameters)
-- Test payload transformation logic
+- **No timeout configured on `HttpClient` bean**: The default `HttpClient` bean in `EventBobConfig` specifies only `HTTP_1_1` version; no connect timeout or request timeout is set. Remote calls can block indefinitely if the remote endpoint is unreachable. Applications can override the bean to add timeouts. Status: open, requires application-level override.
 
-### Integration Tests
-- WireMock for testing HttpEventHandlerAdapter
-- TestContainers can be used for full Spring Boot integration tests
-- HttpEventHandlerAdapterTest demonstrates WireMock stubbing pattern
+- **`healthcheck` capability silent overwrite**: `healthcheck` is registered before other handlers; a capability named `healthcheck` loaded from any other source would silently overwrite it without triggering duplicate detection — the uniqueness invariant is not enforced for this built-in capability name.
 
-## Code Quality
+### 4 Release notes
 
-### Current State
-- Clean library implementation
-- No technical debt
-- Following core patterns and conventions
-- Constructor injection for configuration (no hard-coded paths)
-- EventDto keeps Jackson annotations out of domain layer
-- Location transparency for remote handlers (HttpEventHandlerAdapter implements EventHandler)
+- 2026-03-24 / dino: Added inline lifecycle registration path to `EventBobConfig`; `List<HandlerLifecycle>` constructor parameter collects `HandlerLifecycle` beans; `@PreDestroy shutdownInlineLifecycles()` added for clean teardown.
+- 2026-03-24 / dino: Moved Dispatcher to call-time injection; both inline and JAR-based loaders now pass null dispatcher to `LifecycleContext`.
+- 2026-02-18 / dino: Added `HttpEventHandlerAdapter`, `RemoteCapability`, `RemoteHandlerLoader`; remote capabilities registered in `EventBobConfig` alongside local handlers with duplicate detection.
+- 2026-02-16 / dino: Added `EventDto` record with `@JsonCreator`/`@JsonProperty` to isolate Jackson annotations from core `Event`; added `EventController` with `CompletableFuture<EventDto>` return type.
+- 2026-02-15 / dino: Initial module — `EventBobConfig`, `EventController`, `HealthcheckHandler`.
 
-## Remote Invocation Implementation
+### 5 AI Invariants: correctness, precision, testability
 
-### RemoteCapability Configuration
-
-**Applied in:** RemoteCapability (Java Record)
-
-**Pattern:**
-- Java Record with validation in compact constructor
-- Maps capability name to remote endpoint URI
-- Immutable and type-safe configuration
-- Validation: name must not be null or blank, URI must not be null
-
-**Example:**
-```java
-@Bean
-public List<RemoteCapability> remoteCapabilities() {
-  return List.of(
-    new RemoteCapability("upper", URI.create("http://localhost:8081")),
-    new RemoteCapability("email", URI.create("http://email-service:8080"))
-  );
-}
-```
-
-### HttpEventHandlerAdapter
-
-**Applied in:** HttpEventHandlerAdapter
-
-**Pattern:**
-- Implements `EventHandler` interface (location transparency)
-- Wraps HTTP calls to remote EventHandler endpoints
-- Constructor injection: `HttpEventHandlerAdapter(URI remoteEndpoint, HttpClient httpClient)`
-- Uses EventDto for JSON serialization/deserialization
-- Synchronous HTTP calls (blocking within handler invocation)
-- Converts HTTP errors to `EventHandlingException`
-
-**HTTP Protocol:**
-- POST `{remoteEndpoint}/events`
-- Content-Type: application/json
-- Request body: EventDto serialized to JSON
-- Response body: EventDto deserialized from JSON
-- HTTP status codes: 2xx = success, 4xx = client error, 5xx = server error
-
-**Error Handling:**
-- Network errors (IOException): throw `EventHandlingException` with cause
-- Interrupted requests: restore interrupt flag, throw `EventHandlingException`
-- HTTP 4xx/5xx: throw `EventHandlingException` with status code and response body
-- Serialization failures: throw `EventHandlingException` with cause
-
-### RemoteHandlerLoader
-
-**Applied in:** RemoteHandlerLoader
-
-**Pattern:**
-- Implements `HandlerLoader` interface
-- Constructor injection: `RemoteHandlerLoader(List<RemoteCapability> remoteCapabilities, HttpClient httpClient)`
-- Creates `HttpEventHandlerAdapter` instances for each remote capability
-- Parameterless `loadHandlers()` returns map of capability names to adapters
-- No I/O during loading (adapters created, not invoked)
-
-**Design:**
-- Location transparency: Remote handlers indistinguishable from local handlers to EventBob
-- Extensibility: Future transport mechanisms (gRPC, JMS, Kafka) can be added by inspecting URI scheme
-- Dependency injection: HttpClient provided by Spring configuration, reused across all adapters
-
-### HttpClient Bean Configuration
-
-**Applied in:** EventBobConfig
-
-**Pattern:**
-- HttpClient created as Spring bean
-- Configuration: HTTP/1.1 version (standard compatibility)
-- Shared across all HttpEventHandlerAdapter instances
-- Applications can override bean to customize timeout, proxy, SSL, etc.
-
-**Example override:**
-```java
-@Bean
-public HttpClient httpClient() {
-  return HttpClient.newBuilder()
-      .version(HttpClient.Version.HTTP_1_1)
-      .connectTimeout(Duration.ofSeconds(5))
-      .build();
-}
-```
-
-## JAR Loading Integration
-
-### EventBobConfig Bean Configuration
-
-**Applied in:** EventBobConfig
-
-**Pattern:**
-- Constructor injection: `EventBobConfig(List<Path> handlerJarPaths, List<RemoteCapability> remoteCapabilities)`
-- Remote capabilities are optional (autowired with `required = false`, defaults to empty list)
-- Concrete applications provide `List<Path>` bean with JAR paths to load
-- Optionally provide `List<RemoteCapability>` bean for remote handler endpoints
-- Uses `HandlerLoader.jarLoader(handlerJarPaths)` to obtain JAR-based loader implementation
-- Uses `RemoteHandlerLoader(remoteCapabilities, httpClient)` to obtain remote loader implementation
-- Loads handlers at Spring context initialization (eager loading)
-- Merges handlers from both sources (JAR and remote)
-- Detects and fails on duplicate capability names across sources
-- Registers all loaded handlers via `EventBob.Builder.handler(String, EventHandler)`
-- Includes healthcheck handler (always registered, not loaded from external sources)
-
-**JAR Path Configuration:**
-- Applications provide `@Bean public List<Path> handlerJarPaths()` method
-- Example (from io.eventbob.example.microlith.spring.echo):
-  ```java
-  @Bean
-  public List<Path> handlerJarPaths() {
-    return List.of(
-      Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar"),
-      Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar")
-    );
-  }
-  ```
-- JAR paths are application-specific (this library is agnostic)
-- Applications decide path resolution strategy (relative, absolute, classpath)
-
-**Error Handling:**
-- `IOException` from loader wrapped in `IllegalStateException` (fails application startup)
-- Logged at ERROR level via SLF4J
-- Fail-fast approach: Better to fail at startup than serve with missing capabilities
-
-**Logging:**
-- Success: INFO log with count of registered handlers from JARs
-- Failure: ERROR log with exception details, then throws `IllegalStateException`
-
-**Design Decisions:**
-- Constructor injection: Clean dependency inversion (library depends on abstraction, applications provide concrete paths)
-- Eager loading: Handlers loaded at context init (fast failure, predictable startup)
-- Mixed registration: Healthcheck handler hard-coded, other handlers loaded from JARs or remote endpoints
-- Fail-fast: Missing/malformed JARs or duplicate capabilities prevent application startup (better than partial functionality)
-- Library stays generic: No knowledge of specific handlers or paths
-- HttpClient bean created by config for use by remote loaders
-- Remote capabilities optional: Applications without remote handlers need not provide the bean
-
-## Usage Pattern
-
-To use this library in a Spring Boot application:
-
-1. Add dependency in pom.xml:
-   ```xml
-   <dependency>
-     <groupId>io.eventbob</groupId>
-     <artifactId>io.eventbob.spring</artifactId>
-     <version>${project.version}</version>
-   </dependency>
-   ```
-
-2. Import EventBobConfig:
-   ```java
-   @SpringBootApplication
-   @Import(EventBobConfig.class)
-   public class MyApplication {
-     // ...
-   }
-   ```
-
-3. Provide handler JAR paths bean:
-   ```java
-   @Bean
-   public List<Path> handlerJarPaths() {
-     return List.of(
-       Paths.get("path/to/handler.jar")
-     );
-   }
-   ```
-
-4. (Optional) Provide remote capabilities bean for inter-microlith communication:
-   ```java
-   @Bean
-   public List<RemoteCapability> remoteCapabilities() {
-     return List.of(
-       new RemoteCapability("upper", URI.create("http://localhost:8081"))
-     );
-   }
-   ```
-
-5. EventBob instance is automatically available as Spring bean
-6. POST events to `/events` endpoint
-
-See `io.eventbob.example.microlith.spring.echo` for complete example.
+- `EventBobConfig` must not be instantiated with a non-null dispatcher in the lifecycle context; passing a non-null dispatcher here would allow handlers to call `context.getDispatcher()` during `initialize()`, but the `EventBob` bean may not yet be fully constructed at that point, creating a circular dependency risk.
+- `HttpEventHandlerAdapter.handle()` is synchronous and blocking; it must only be called from within an `EventBob` handler invocation (i.e. on a virtual thread). Calling it on the Spring MVC request thread would block that thread.
+- Duplicate capability names across inline lifecycles, JAR handlers, and remote handlers are detected in `loadAllHandlers()` and cause `IllegalStateException` at startup. No partial registration occurs — the `EventBob` bean is not returned if any duplicate is found.
+- `healthcheck` is a reserved capability name; duplicate detection must cover it on the same basis as all other capabilities.
+- `EventDto` normalises null maps to `Collections.emptyMap()` at record construction time; downstream `toEvent()` passes these directly to `Event.Builder.parameters()` and `Event.Builder.metadata()`, which accept empty maps without error.
