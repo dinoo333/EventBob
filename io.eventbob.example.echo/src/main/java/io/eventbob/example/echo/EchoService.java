@@ -18,34 +18,28 @@ public class EchoService {
      *
      * @param event the echo event
      * @return combined result from lower and upper
-     * @throws EventHandlingException if dispatch fails
+     * @throws EventHandlingException if dispatch fails event
      */
-    public String processEcho(Event event, Dispatcher dispatcher) throws EventHandlingException {
-        Event lowerRequest = Event.builder()
-            .source("echo")
-            .target("lower")
-            .payload(event.getPayload())
-            .build();
+    public Event processEcho(Event event, Dispatcher dispatcher) throws EventHandlingException {
+        Event lowerRequest = event.toBuilder("echo", "lower").build(event.getPayload());
         Event lowerResponse = dispatcher.send(lowerRequest, (err, evt) -> null, 1000);
 
-        Event upperRequest = Event.builder()
-            .source("echo")
-            .target("upper")
-            .payload(event.getPayload())
-            .build();
+        Event upperRequest = event.toBuilder("echo", "upper").build(event.getPayload());
         Event upperResponse = dispatcher.send(upperRequest, (err, evt) -> null, 1000);
 
-        return lowerResponse.getPayload() + " " + upperResponse.getPayload();
+        return event.toBuilder("echo", event.getSource())
+                .build(lowerResponse.getPayload() + " " + upperResponse.getPayload());
     }
 
     /**
      * Processes invert request by reversing the string.
      *
-     * @param input the string to reverse
+     * @param event the invert event
      * @param dispatcher the dispatcher (not used by this method)
-     * @return reversed string
+     * @return reversed string event
      */
-    public String processInvert(String input, Dispatcher dispatcher) {
-        return new StringBuilder(input).reverse().toString();
+    public Event processInvert(Event event, Dispatcher dispatcher) {
+        return event.toBuilder("invert", event.getSource())
+                .build(new StringBuilder((String) event.getPayload()).reverse().toString());
     }
 }

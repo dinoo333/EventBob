@@ -28,7 +28,7 @@ public class EchoHandler implements EventHandler {
   private final EchoService echoService;
 
   /**
-   * Creates an echo handler with the specified service.
+   * Creates an echo handler which delegates to the echo service..
    * <p>
    * This constructor demonstrates dependency injection. In the POJO days, handlers
    * had no-arg constructors and no dependencies. With lifecycle support, handlers
@@ -42,6 +42,13 @@ public class EchoHandler implements EventHandler {
     this.echoService = echoService;
   }
 
+    /**
+     * Handles an incoming event by branching on the event's target field.
+     * @param event The incoming event to handle.
+     * @param dispatcher The dispatcher to use for sending events if necessary.
+     * @return The response event.
+     * @throws EventHandlingException  if event dispatching fails.
+     */
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
     return "invert".equals(event.getTarget())
@@ -50,21 +57,10 @@ public class EchoHandler implements EventHandler {
   }
 
   private Event handleInvert(Event event, Dispatcher dispatcher) {
-    String input = (String) event.getPayload();
-    String reversed = echoService.processInvert(input, dispatcher);
-    return Event.builder()
-        .source("invert")
-        .target(event.getSource())
-        .payload(reversed)
-        .build();
+    return echoService.processInvert(event, dispatcher);
   }
 
   private Event handleEcho(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    String result = echoService.processEcho(event, dispatcher);
-    return Event.builder()
-        .source("echo")
-        .target(event.getSource())
-        .payload(result)
-        .build();
+    return echoService.processEcho(event, dispatcher);
   }
 }

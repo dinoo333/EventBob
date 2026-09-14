@@ -34,14 +34,26 @@ public final class Event {
    * Create a new builder pre-populated with a deep copy of this event's data.
    */
   public Builder toBuilder() {
-    Builder b = new Builder();
-    b.source = this.source;
-    b.target = this.target;
-    b.parameters = Builder.mutable(this.parameters);
-    b.metadata = Builder.mutable(this.metadata);
-    b.payload = this.payload;
-    return b;
+      return new Builder().source(this.source)
+              .target(this.target)
+              .parameters(this.parameters)
+              .metadata(this.metadata)
+              .payload(this.payload);
   }
+
+    /**
+     * Create a new builder pre-populated with a deep copy of this event's data, but with a new source and target.
+      * @param source The source
+     * @param target The target
+     * @return The builder.
+     */
+    public Builder toBuilder(String source, String target) {
+        return new Builder().source(source)
+                .target(target)
+                .parameters(this.parameters)
+                .metadata(this.metadata)
+                .payload(this.payload);
+    }
 
   private static String reqNonBlank(String v, String name) {
     if (v == null || v.isBlank()) {
@@ -144,6 +156,11 @@ public final class Event {
 
     public Event build() {
       return new Event(this);
+    }
+
+    public Event build(Object payload) {
+        this.payload = payload;
+        return build();
     }
   }
 }
