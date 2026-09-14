@@ -19,7 +19,7 @@ public class LowerHandler implements EventHandler {
   private final LowerService lowerService;
 
   /**
-   * Creates a lower handler with the specified service.
+   * Creates a lower event handler with the specified service.
    * <p>
    * This constructor demonstrates dependency injection. Handlers receive dependencies
    * (services, repositories, HTTP clients, etc.) that are wired by the lifecycle
@@ -32,15 +32,14 @@ public class LowerHandler implements EventHandler {
     this.lowerService = lowerService;
   }
 
+    /**
+     * Handles an incoming event by converting its payload to lowercase.
+     * @param event The incoming event to handle.
+     * @param dispatcher The dispatcher to use for sending events if necessary.
+     * @return The lowercased event.
+     */
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    String input = (String) event.getPayload();
-    String lowercased = lowerService.processLowercase(input, dispatcher);
-
-    return event.toBuilder()
-        .source("lower")
-        .target(event.getSource())
-        .payload(lowercased)
-        .build();
+  public Event handle(Event event, Dispatcher dispatcher) {
+    return lowerService.processLowercase(event, dispatcher);
   }
 }

@@ -284,7 +284,7 @@ class EchoHandlerTest {
   }
 
   @Test
-  void shouldNotPreserveOriginalEventMetadata() throws EventHandlingException {
+  void shouldPreserveOriginalEventMetadata() throws EventHandlingException {
     Event input = Event.builder()
         .source("client")
         .target("echo")
@@ -310,7 +310,7 @@ class EchoHandlerTest {
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getMetadata()).isEmpty();
+    assertThat(result.getMetadata()).isEqualTo(Map.of("traceId", "abc123"));
   }
 
   @Test
@@ -340,7 +340,7 @@ class EchoHandlerTest {
 
     Event result = handler.handle(input, dispatcher);
 
-    assertThat(result.getParameters()).isEmpty();
+    assertThat(result.getParameters()).isEqualTo(Map.of("locale", "en-US"));
   }
 
   @Test

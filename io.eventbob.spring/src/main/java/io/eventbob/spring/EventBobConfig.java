@@ -118,7 +118,7 @@ public class EventBobConfig {
       logger.info("Registered {} total handler(s)", allHandlers.size());
     } catch (Exception e) {
       logger.error("Failed to load handlers", e);
-      throw new IllegalStateException("Handler loading failed", e);
+      throw new IllegalStateException("Handler loading failed:" + e.getMessage(), e);
     }
 
     return builder.build();
