@@ -72,6 +72,7 @@ The core domain concern is **capability-based event routing**: discovering which
 graph LR
   Core["Event Routing Core\n(io.eventbob.core)"]
   Spring["HTTP Integration\n(io.eventbob.spring)"]
+  Dropwizard["HTTP Integration\n(io.eventbob.dropwizard)"]
   HandlerJAR["Microservice JAR\n(handler implementation)"]
   RemoteMicrolith["Remote Microlith\n(another EventBob process)"]
 
@@ -79,6 +80,9 @@ graph LR
   HandlerJAR -->|implements contracts from| Core
   Spring -->|adapts HTTP to/from| Core
   Spring -->|routes remote events to| RemoteMicrolith
+  Dropwizard -->|depends on| Core
+  Dropwizard -->|adapts HTTP to/from| Core
+  Dropwizard -->|routes remote events to| RemoteMicrolith
 ```
 
 ### Context: Event Routing Core
@@ -87,9 +91,17 @@ Description: The innermost domain layer. Defines the routing envelope, capabilit
 
 Business capability: capability-based in-process event routing and handler lifecycle management
 
-### Context: HTTP Integration
+HTTP Integration is a single bounded context — shared business capability: exposing event routing over HTTP and bridging inter-microlith communication — with two interchangeable technology realizations, Spring and Dropwizard, each documented separately below for its concrete mechanics.
 
-Description: The Spring Boot infrastructure layer. Adapts inbound HTTP requests into domain events and routes them through the core router. Adapts remote capability endpoints into handler implementations via the adapter pattern, preserving location transparency. Owns all HTTP, JSON, and Spring concerns.
+### Context: HTTP Integration (Spring)
+
+Description: The Spring realization of the HTTP Integration context. Adapts inbound HTTP requests into domain events and routes them through the core router. Adapts remote capability endpoints into handler implementations via the adapter pattern, preserving location transparency. Handles this realization's HTTP, JSON, and Spring-specific wiring concerns.
+
+Business capability: exposing event routing over HTTP and bridging inter-microlith communication
+
+### Context: HTTP Integration (Dropwizard)
+
+Description: The Dropwizard realization of the HTTP Integration context. Adapts inbound HTTP requests into domain events via the JAX-RS EventResource and routes them through the core router. EventBobBundle, a ConfiguredBundle<Configuration> and Managed implementation, wires handler sources into the router at startup and tears down inline lifecycles at shutdown. Adapts remote capability endpoints into handler implementations via HttpEventHandlerAdapter and RemoteHandlerLoader, preserving location transparency. Handles this realization's HTTP, JSON, and Dropwizard-specific wiring concerns.
 
 Business capability: exposing event routing over HTTP and bridging inter-microlith communication
 
