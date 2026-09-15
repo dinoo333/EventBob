@@ -4,7 +4,7 @@
 
 **io.eventbob.core** is the single bounded context for EventBob. This module defines the domain model, core concepts, and port interfaces. There are no separate bounded contexts - EventBob uses one ubiquitous language throughout.
 
-Infrastructure modules (io.eventbob.spring, etc.) are adapters that implement core ports. They use the same ubiquitous language, not a different semantic model.
+Infrastructure modules (io.eventbob.spring, io.eventbob.dropwizard, etc.) are adapters that implement core ports. They use the same ubiquitous language, not a different semantic model.
 
 ---
 
@@ -167,6 +167,7 @@ Infrastructure depends on core, never the reverse.
 
 **Correct:**
 - io.eventbob.spring imports io.eventbob.core (HandlerLoader, EventHandler, Event)
+- io.eventbob.dropwizard imports io.eventbob.core (HandlerLoader, EventHandler, Event)
 - Spring types (ApplicationContext, RestTemplate) live in infrastructure layer
 - Core has no Spring dependencies
 
@@ -183,7 +184,7 @@ Infrastructure depends on core, never the reverse.
 - Core never sees EventDto
 
 **Remote Capability Integration:**
-- **HttpEventHandlerAdapter** wraps remote HTTP endpoints as EventHandler implementations
+- **HttpEventHandlerAdapter** wraps remote HTTP endpoints as EventHandler implementations. Both io.eventbob.spring and io.eventbob.dropwizard have their own HttpEventHandlerAdapter performing this role — distinct classes in distinct packages, same pattern.
 - Translates Event → HTTP request → HTTP response → Event
 - Remote handlers are indistinguishable from local handlers at routing layer (location transparency)
 
@@ -326,4 +327,4 @@ Existing handlers continue working without modification. New handlers can overri
 
 - **Top-level domain specification:** /docs/domain_spec.md (bounded context map, general EventBob concepts)
 - **Implementation examples:** /examples/echo-handler, /examples/lower-handler, /examples/upper-handler
-- **Infrastructure adapters:** io.eventbob.spring module (Spring Boot integration)
+- **Infrastructure adapters:** io.eventbob.spring module (Spring Boot integration), io.eventbob.dropwizard module (Dropwizard integration)

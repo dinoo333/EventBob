@@ -69,10 +69,13 @@ Interactors:
 graph TD
     MicrolithApp["io.eventbob.example.microlith.*\n(Application Layer)"]
     SpringLib["io.eventbob.spring\n(Infrastructure Library Layer)"]
+    DropwizardLib["io.eventbob.dropwizard\n(Infrastructure Library Layer)"]
     Core["io.eventbob.core\n(Domain Layer)"]
 
     MicrolithApp -->|imports and configures| SpringLib
     SpringLib -->|depends on| Core
+    MicrolithApp -->|imports and configures| DropwizardLib
+    DropwizardLib -->|depends on| Core
 ```
 
 ### Layer: Domain Layer — io.eventbob.core
@@ -90,7 +93,7 @@ Components:
 - Plain handler loader: discovers and instantiates capability handlers from JARs using per-JAR isolation.
 - Lifecycle handler loader: loads lifecycle-managed handlers from JARs, coordinates their initialisation, and tracks instances for ordered shutdown.
 
-Inbound Layer Dependencies: io.eventbob.spring, io.eventbob.example.microlith.*
+Inbound Layer Dependencies: io.eventbob.spring, io.eventbob.dropwizard, io.eventbob.example.microlith.*
 Outbound Layer Dependencies: JDK only
 
 ### Layer: Infrastructure Library Layer — io.eventbob.spring
@@ -109,6 +112,22 @@ Components:
 Inbound Layer Dependencies: io.eventbob.example.microlith.*
 Outbound Layer Dependencies: io.eventbob.core
 
+### Layer: Infrastructure Library Layer — io.eventbob.dropwizard
+
+Description: The middle layer. A reusable library that bridges the framework-agnostic core to the Dropwizard runtime. Provides an HTTP server adapter for inbound event processing, an HTTP client adapter for outbound remote-capability delegation, Dropwizard-aware wiring that aggregates multiple handler sources, and a built-in healthcheck capability. Ships no entry point and no hard-coded configuration; all handler sources are provided by the importing application.
+
+Components:
+- EventBobBundle: a ConfiguredBundle<Configuration> plus Managed implementation that collects inline lifecycles, JAR-based lifecycle holders, and remote capability declarations via constructor arguments; initialises them; detects duplicates; produces the router; tears down inline lifecycles on Managed.stop.
+- EventResource: exposes the JAX-RS events HTTP endpoint; translates wire-format bodies to domain events, delegates to the router, translates results back to wire format.
+- EventDto: the anti-corruption DTO for the HTTP boundary; carries serialisation metadata; translates to and from the domain routing envelope; never crosses into core.
+- HttpEventHandlerAdapter: implements the handler integration contract; converts domain events to wire format, posts to a remote endpoint, converts wire-format responses back to domain events.
+- RemoteHandlerLoader: implements the handler loader contract; creates one HttpEventHandlerAdapter per remote capability declaration.
+- RemoteCapability: a configuration value object mapping a capability name to a remote endpoint URI.
+- HealthcheckHandler: a built-in capability registered unconditionally by EventBobBundle.
+
+Inbound Layer Dependencies: io.eventbob.example.microlith.dw.*
+Outbound Layer Dependencies: io.eventbob.core
+
 ### Layer: Application Layer — io.eventbob.example.microlith.*
 
 Description: The outermost layer. Concrete deployable microlith processes. Each application declares which capabilities to serve locally (via lifecycle holder beans), which to serve remotely (via remote capability declaration beans), and on which port to listen. Contains no domain logic and no infrastructure code — only framework bean declarations and lifecycle holder wiring.
@@ -118,7 +137,7 @@ Components:
 - Lifecycle holders: fulfil the lifecycle holder contract for each locally-hosted capability; create isolated framework contexts so capabilities share no beans.
 
 Inbound Layer Dependencies: none — this is the outermost layer.
-Outbound Layer Dependencies: io.eventbob.spring, io.eventbob.core (lifecycle holder contract, lifecycle context)
+Outbound Layer Dependencies: io.eventbob.spring or io.eventbob.dropwizard (per application), io.eventbob.core (lifecycle holder contract, lifecycle context)
 
 ---
 
@@ -186,11 +205,12 @@ Scenarios:
 
 ## 5. AI Invariants: structure, boundaries, dependency direction
 
-- Inward dependency direction: io.eventbob.core must not depend on io.eventbob.spring or any microlith application module. io.eventbob.spring must not depend on any microlith application module. Dependency arrows point inward toward core only.
+- Inward dependency direction: io.eventbob.core must not depend on io.eventbob.spring, io.eventbob.dropwizard, or any microlith application module. io.eventbob.spring and io.eventbob.dropwizard must not depend on any microlith application module. Dependency arrows point inward toward core only.
 - Core carries no framework dependencies: no Spring, Dropwizard, HTTP client, or serialisation library import is permitted in io.eventbob.core. Its only allowed dependency is the JDK.
 - No framework leakage across the core boundary: framework types, serialisation annotations, and HTTP client types must never appear in io.eventbob.core. All translation between wire format and domain types occurs in the infrastructure library layer.
-- Infrastructure library ships no entry point: io.eventbob.spring must not contain a main class or hard-coded handler configuration. All handler sources are provided by the importing application via constructor injection.
+- Infrastructure library ships no entry point: io.eventbob.spring and io.eventbob.dropwizard must not contain a main class or hard-coded handler configuration. All handler sources are provided by the importing application via constructor injection.
 - Application layer contains no domain logic and no infrastructure code: microlith application modules declare beans and lifecycle holder wiring only.
+- Mutual exclusivity of infrastructure libraries: an application module imports and configures exactly one of io.eventbob.spring or io.eventbob.dropwizard as its infrastructure library, never both.
 - Location transparency: remote handler adapters are registered under capability names indistinguishable from local handler registrations. The router must not and cannot observe the difference between a local and a remote handler.
 - Capability uniqueness enforced before router construction: duplicate capability names across all handler sources must cause a hard failure before the router is built, not at routing time.
 - Lifecycle ordering at shutdown: each lifecycle holder's shutdown phase must be invoked before the corresponding class loader is closed, so handlers can reference their own classes during cleanup.
