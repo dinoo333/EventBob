@@ -7,23 +7,23 @@
 
     <parent>
         <groupId>io.eventbob</groupId>
-        <artifactId>io.eventbob.parent</artifactId>
+        <artifactId>io.eventbob.example</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>io.eventbob.dropwizard</artifactId>
+    <artifactId>io.eventbob.example.microlith.spring.upper</artifactId>
     <packaging>jar</packaging>
 
-    <name>EventBob Dropwizard Implementation</name>
-    <description>Dropwizard implementation of EventBob infrastructure (Bundle, capability registration, JAX-RS resource)</description>
+    <name>EventBob Example: Upper Microlith (Spring)</name>
+    <description>Spring Boot microlith application with upper capability</description>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>io.dropwizard</groupId>
-                <artifactId>dropwizard-dependencies</artifactId>
-                <version>${dropwizard.version}</version>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -31,23 +31,18 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- EventBob Core (only dependency — no Spring) -->
+        <!-- Spring Boot infrastructure -->
         <dependency>
             <groupId>io.eventbob</groupId>
-            <artifactId>io.eventbob.core</artifactId>
+            <artifactId>io.eventbob.spring</artifactId>
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Dropwizard (version managed by dropwizard-dependencies BOM in this module's dependencyManagement) -->
+        <!-- Handler implementation (compile dep: lifecycle class references handler/service types) -->
         <dependency>
-            <groupId>io.dropwizard</groupId>
-            <artifactId>dropwizard-core</artifactId>
-        </dependency>
-
-        <!-- SLF4J (logging) -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.example.upper</artifactId>
+            <version>${project.version}</version>
         </dependency>
 
         <!-- Test Dependencies -->
@@ -58,22 +53,8 @@
         </dependency>
 
         <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <!-- WireMock for HTTP testing -->
-        <dependency>
-            <groupId>org.wiremock</groupId>
-            <artifactId>wiremock-standalone</artifactId>
-            <version>3.3.1</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -88,6 +69,22 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>3.2.2</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <mainClass>io.eventbob.example.microlith.spring.upper.UpperApplication</mainClass>
+                </configuration>
             </plugin>
         </plugins>
     </build>

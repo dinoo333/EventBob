@@ -6,13 +6,14 @@
 
     <parent>
         <groupId>io.eventbob</groupId>
-        <artifactId>parent</artifactId>
+        <artifactId>io.eventbob.example</artifactId>
         <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>io.eventbob.example.echo</artifactId>
-    <name>EventBob Example: Echo Service</name>
-    <description>Example service that calls lower service</description>
+    <artifactId>io.eventbob.example.lower</artifactId>
+    <name>EventBob Example: Lower Service</name>
+    <description>Example service implementing toLowerCase capability</description>
 
     <dependencies>
         <dependency>

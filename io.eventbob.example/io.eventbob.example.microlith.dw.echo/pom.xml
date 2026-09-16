@@ -7,34 +7,22 @@
 
     <parent>
         <groupId>io.eventbob</groupId>
-        <artifactId>parent</artifactId>
+        <artifactId>io.eventbob.example</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>io.eventbob.example.microlith.spring.echo</artifactId>
+    <artifactId>io.eventbob.example.microlith.dw.echo</artifactId>
     <packaging>jar</packaging>
 
-    <name>EventBob Echo Microlith (Spring)</name>
-    <description>Spring Boot microlith application with echo and lower capabilities</description>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring-boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <name>EventBob Example: Echo Microlith (Dropwizard)</name>
+    <description>Dropwizard microlith application with echo and lower capabilities</description>
 
     <dependencies>
-        <!-- Spring Boot infrastructure -->
+        <!-- Dropwizard infrastructure -->
         <dependency>
             <groupId>io.eventbob</groupId>
-            <artifactId>io.eventbob.spring</artifactId>
+            <artifactId>io.eventbob.dropwizard</artifactId>
             <version>${project.version}</version>
         </dependency>
 
@@ -57,12 +45,6 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
@@ -78,19 +60,38 @@
             </plugin>
 
             <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>3.2.2</version>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
                 <executions>
                     <execution>
+                        <phase>package</phase>
                         <goals>
-                            <goal>repackage</goal>
+                            <goal>shade</goal>
                         </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <!-- Merge META-INF/services SPI files (critical for Jersey/Jackson) -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- Set main class in manifest -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>io.eventbob.example.microlith.dw.echo.EchoApplication</mainClass>
+                                </transformer>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
                     </execution>
                 </executions>
-                <configuration>
-                    <mainClass>io.eventbob.example.microlith.spring.echo.EchoApplication</mainClass>
-                </configuration>
             </plugin>
         </plugins>
     </build>

@@ -6,12 +6,12 @@
     <!-- Parent aggregator POM -->
     <parent>
         <groupId>io.eventbob</groupId>
-        <artifactId>parent</artifactId>
+        <artifactId>io.eventbob.parent</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>io.eventbob.core</artifactId>
-    <name>eventbob-core</name>
+    <name>EventBob Core</name>
     <description>Core module</description>
     <packaging>jar</packaging>
 

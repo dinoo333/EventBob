@@ -1,330 +1,113 @@
 # io.eventbob.core Domain Specification
 
-## Bounded Context
+## 1. Domain Purpose and Scope
 
-**io.eventbob.core** is the single bounded context for EventBob. This module defines the domain model, core concepts, and port interfaces. There are no separate bounded contexts - EventBob uses one ubiquitous language throughout.
+### Business problem being modeled
 
-Infrastructure modules (io.eventbob.spring, io.eventbob.dropwizard, etc.) are adapters that implement core ports. They use the same ubiquitous language, not a different semantic model.
+The `io.eventbob.core` module solves the problem of wiring multiple capability handlers into a single routing process without introducing framework dependencies or coupling loading strategies to routing logic. It provides the stable contracts that every handler, loader, and lifecycle implementation must satisfy, plus the concrete loading and routing machinery that implements those contracts using only the JDK.
 
----
+Within the EventBob system, this module is the Event Routing Core bounded context: the innermost layer that owns the routing envelope, capability declaration mechanism, handler loading strategies, and handler lifecycle protocol. All other modules depend inward on these contracts; this module depends on nothing outside the JDK.
 
-## Aggregate Roots
+### Explicit non-goals
 
-### EventBob (Router)
-The central aggregate that routes events to registered handlers. Manages the capability-to-handler mapping and orchestrates event dispatch.
-
-**Responsibilities:**
-- Register handlers for capabilities (from HandlerLoader)
-- Route events to correct handler based on Event.getTarget()
-- Enforce capability uniqueness within microlith
-- Provide location-transparent routing (local and remote handlers treated identically)
-
-**Invariants:**
-- Each capability must map to exactly one handler
-- No capability can be registered twice
-- Routing must be deterministic (same capability always routes to same handler)
-
-### HandlerLifecycle (Container Contract)
-The lifecycle contract between EventBob container and handlers. Like Servlet.init/destroy, this defines how handlers integrate with the container.
-
-**Responsibilities:**
-- initialize(LifecycleContext): Prepare handler with dependencies and configuration
-- getHandler(): Return the initialized EventHandler for event processing
-- shutdown(): Release resources (database connections, Spring contexts, thread pools)
-
-**Invariants:**
-- initialize() must complete successfully before getHandler() is called
-- getHandler() must return a non-null EventHandler
-- shutdown() must be idempotent (safe to call multiple times)
-- Lifecycle implementation must not hold framework dependencies in core (framework-agnostic)
-
-**Domain truth:** HandlerLifecycle is a domain concept (container contract), not infrastructure. It defines WHAT the contract is, not HOW handlers wire themselves.
+- Not responsible for HTTP, JSON serialization, or any transport-layer concern
+- Not a dependency injection container; the lifecycle protocol delegates wiring responsibility entirely to the handler JAR
+- Not a general-purpose class loader framework; the isolated class loader strategy is internal and not extensible from outside this module
+- Not responsible for distributed tracing infrastructure; the standard metadata vocabulary defines key names only, not collection or propagation mechanics
 
 ---
 
-## Domain Concepts
+## 2. Ubiquitous Language
 
-### Implemented Concepts
+### Core Terms
 
-#### HandlerLifecycle
-Lifecycle contract for handler initialization and cleanup. This is how handlers integrate with the EventBob container when they need initialization (database connections, Spring contexts, configuration).
+| Term (synonyms) | Definition | Context | Canonical Definition |
+|---|---|---|---|
+| Capability declaration (capability marker) | A repeatable annotation placed on a handler implementation class that binds that class to one or more capability names | Discovery, routing | The mechanism by which a handler class advertises the capability identifiers it can serve; a single class may carry multiple declarations, each naming a distinct capability |
+| Handler descriptor (handler properties file) | The convention-based descriptor that a lifecycle-enabled handler JAR provides to identify the lifecycle implementation to instantiate | Lifecycle loading | The convention-based contract between a lifecycle-enabled handler JAR and the lifecycle loader; its presence signals that the JAR uses lifecycle-managed initialization |
+| Isolated class loader (per-JAR class loader) | A dedicated class loader created for a single handler JAR, scoped to that JAR's classes while sharing core contracts | Class isolation, loading | The mechanism that keeps each handler JAR's classes separate from other JARs while sharing core contracts; one isolated class loader is created per JAR |
+| Discovery phase | The first phase of plain handler loading, in which handler JARs are scanned and capability-annotated classes are identified without instantiation | Plain loading | The separation of class scanning from object creation inside the plain loader; produces a list of discovered handler records |
+| Instantiation phase | The second phase of plain handler loading, in which discovered handler classes are instantiated exactly once and mapped to their declared capabilities | Plain loading | The object-creation step that follows the discovery phase; a handler class declaring multiple capabilities is instantiated once and shared across all its registrations |
+| Error envelope (default error event) | A fallback routing envelope produced when no handler is registered for the target capability and the caller's error callback returns null or itself fails | Error handling | The guarantee that the router always returns a valid event; the error envelope carries the original event, the error message, and the error type in its payload |
+| Standard metadata vocabulary | The set of well-known metadata key names defined by the core module for routing, correlation, and observability | Routing, observability | Canonical string keys carried in an event's Metadata map: `correlation-id`, `reply-to`, `method`, `path`, `trace-id`, `span-id` |
+| Synchronous forwarding handler | A handler integration contract implementation that forwards a request to an external system synchronously and translates the reply back into an event | Handler integration, remote adapters | An abstract base class that sequences request-building, delegate invocation, and response-parsing, and normalizes any unexpected failure from those steps into a handler error; concrete adapters (e.g. HTTP) supply the three collaborators |
 
-**Pattern:** Abstract class for evolvability. Future versions can add lifecycle methods (health checks, metrics) with default implementations without breaking existing handlers.
+### Commands
 
-**Framework-agnostic:** Core defines the contract. Implementations can use Spring, Dropwizard, Guice, manual wiring, or any approach. Container doesn't know or care how handlers wire themselves.
+- DeclareCapability: bind a handler class to one or more capability names by placing capability declarations on the class at compile time
+- ScanJarForHandlers: traverse all class files in a handler JAR using an isolated class loader, identifying classes that carry capability declarations and implement the handler contract
+- InstantiateHandler: construct a single handler instance from a discovered handler class; share the instance across all capability registrations for that class
+- ReadHandlerDescriptor: read the handler descriptor from a lifecycle-enabled JAR to determine the lifecycle implementation to instantiate
+- ProduceErrorEnvelope: construct a fallback routing envelope from the original event and the routing failure when the error callback returns null or fails
 
-**Three phases:**
-1. **initialize(LifecycleContext)**: Handler sets itself up using provided context
-2. **getHandler()**: Container retrieves initialized handler
-3. **shutdown()**: Handler cleans up resources
+### Domain Events
 
-**When to use:** Handlers that need configuration, dependencies, or framework integration. Simple POJO handlers can skip lifecycle.
+- HandlerDiscovered: a class carrying at least one capability declaration and implementing the handler contract was found during JAR scanning
+- CapabilityBound: a handler instance was successfully mapped to a capability name in the capability-to-handler registry
+- HandlerDescriptorRead: a handler descriptor was found in a handler JAR and the lifecycle class name was extracted
+- IsolatedClassLoaderCreated: an isolated class loader was created for a handler JAR during loading
+- IsolatedClassLoaderReleased: a per-JAR isolated class loader was closed during microlith shutdown after all lifecycle shutdown phases completed
+- ErrorEnvelopeProduced: a fallback routing envelope was constructed because the error callback returned null or itself threw
 
-#### LifecycleContext
-Context provided to handlers during initialization. Contains everything a handler needs:
+### Queries
 
-**Fields:**
-- **configuration (Map<String, Object>)**: Handler-specific config from application.yml
-- **dispatcher (Dispatcher)**: For sending events to other capabilities
-- **frameworkContext (Optional<T>)**: Framework-specific context (Spring ApplicationContext, Dropwizard Environment, etc.)
-
-**Design principle:** Framework-agnostic extension point. Core EventBob has no framework dependencies. Handlers can optionally use framework context if available, or wire manually if not.
-
-**Current state:** Configuration loading from application.yml is **not yet implemented**. `getConfiguration()` returns empty map. YAML parsing is TODO. Handlers must not depend on configuration until implemented.
-
-#### HandlerLoader
-Port interface for loading handlers from various sources (JARs, remote endpoints). Defines the contract for handler discovery and instantiation.
-
-**Contract:**
-- `Map<String, EventHandler> loadHandlers()`: Discover and instantiate handlers, return capability-to-handler mapping
-- `void close()`: Release resources (class loaders, lifecycles, HTTP clients)
-
-**Resource management:** Extends AutoCloseable. Implementations that manage resources must release them in close(). EventBob calls close() on shutdown.
-
-**Two strategies:**
-
-1. **JarHandlerLoader (POJO loading)**:
-   - Simple handlers with no-arg constructors
-   - No lifecycle, no DI, no configuration
-   - Scans JARs for EventHandler classes with @Capability
-   - Instantiates via Class.newInstance()
-   - No resources to clean up (close() is no-op)
-
-2. **LifecycleHandlerLoader (Lifecycle loading)**:
-   - Full microservice handlers with initialization needs
-   - Reads META-INF/eventbob-handler.properties to find lifecycle class
-   - Loads configuration from application.yml (not yet implemented - returns empty map)
-   - Instantiates HandlerLifecycle, calls initialize(context), retrieves handler
-   - Tracks lifecycles and class loaders for cleanup
-   - close() calls shutdown() on all lifecycles, then closes all class loaders
-
-**Factory methods:**
-- `HandlerLoader.jarLoader(Collection<Path>)`: POJO loading
-- `HandlerLoader.lifecycleLoader(jarPaths, dispatcher)`: Lifecycle loading without framework context
-- `HandlerLoader.lifecycleLoader(jarPaths, dispatcher, frameworkContext)`: Lifecycle loading with framework context
-
-#### EventHandler
-Integration contract for event processing. Single method: `Event handle(Event, Dispatcher)`.
-
-**Responsibilities:**
-- Process event for declared capability
-- Use dispatcher to invoke other capabilities if needed
-- Return response event (success or error)
-
-**Discovery:** Annotated with @Capability to declare what the handler provides.
-
-#### Capability
-Annotation that declares what a handler provides. Structure:
-- `value: String` - capability identifier (e.g., "get-message-content")
-- `version: int` - version of capability contract (default: 1)
-
-**Repeatable:** Handlers can declare multiple capabilities via repeated @Capability annotations.
-
-**Uniqueness:** Within a microlith, each capability identifier must be unique. Duplicate capabilities cause IllegalStateException during loading.
-
-#### Event
-Message envelope for in-process communication. Contains:
-- source: String (capability that sent the event)
-- target: String (capability to receive the event)
-- parameters: Map<String, String> (routing metadata)
-- metadata: Map<String, Object> (arbitrary data)
-- payload: Object (message body)
-
-**Immutable:** Events are immutable. Handlers create new events for responses.
-
-**Not a domain event:** Despite the name, Event is a transport envelope (request/response wrapper), not an event in the Event Sourcing sense.
-
-#### Dispatcher
-Facility for sending events to other capabilities. Two send semantics:
-- **Async**: `CompletableFuture<Event> send(Event, BiFunction<Throwable, Event, Event>)` - returns future immediately
-- **Sync**: `Event send(Event, BiFunction<Throwable, Event, Event>, long)` - blocks until response or timeout
-
-**Location transparency:** Dispatcher routes to local or remote handlers transparently. Handlers don't know or care where the target capability is located.
+- InspectCapabilityDeclarations: read all capability declarations from a handler class to determine its declared capability names
+- LookupHandlerDescriptor: check whether a handler JAR's class loader exposes a handler descriptor resource and return its contents
 
 ---
 
-## Domain Invariants
+## 3. Bounded Contexts
 
-1. **Capabilities are unique within microlith** — No two handlers can declare the same capability identifier
-2. **Lifecycle before handler** — initialize() must complete before getHandler() is called
-3. **Non-null handler** — getHandler() must return a non-null EventHandler instance
-4. **Framework-agnostic lifecycle contract** — HandlerLifecycle abstract class has no framework dependencies (no Spring, Dropwizard, etc. in core)
-5. **Container controls lifecycle** — EventBob calls initialize() and shutdown() at appropriate times. Handlers do not self-initialize.
-6. **Shutdown is idempotent** — shutdown() must be safe to call multiple times
-7. **Resource cleanup order** — Lifecycles shut down before class loaders close (handlers may reference classes during shutdown)
-8. **Graceful degradation** — If one handler fails to load, other handlers continue loading (logged as warning)
-9. **Lifecycle handlers require properties file** — JARs using LifecycleHandlerLoader must include META-INF/eventbob-handler.properties declaring lifecycle.class
-10. **Configuration is optional** — Until YAML parsing is implemented, handlers must not depend on configuration (empty map provided)
+```mermaid
+graph LR
+  Core["Event Routing Core\n(io.eventbob.core)"]
+  Spring["HTTP Integration\n(io.eventbob.spring)"]
+  HandlerJAR["Handler JAR\n(microservice)"]
+  RemoteMicrolith["Remote Microlith\n(another EventBob process)"]
 
----
-
-## Bounded Context Boundaries
-
-EventBob core is a single bounded context. Infrastructure modules are not separate bounded contexts - they are adapters implementing core ports.
-
-### Core → Infrastructure (Dependency Direction)
-Infrastructure depends on core, never the reverse.
-
-**Correct:**
-- io.eventbob.spring imports io.eventbob.core (HandlerLoader, EventHandler, Event)
-- io.eventbob.dropwizard imports io.eventbob.core (HandlerLoader, EventHandler, Event)
-- Spring types (ApplicationContext, RestTemplate) live in infrastructure layer
-- Core has no Spring dependencies
-
-**Incorrect:**
-- Core imports Spring types (would violate Dependency Inversion Principle)
-- Core knowledge of HTTP, REST, or external protocols
-
-### Anti-Corruption Layers
-
-**HTTP Boundary:**
-- **EventDto** translates between domain Event (core) and JSON (infrastructure)
-- Keeps Jackson annotations out of core Event class
-- Infrastructure converts EventDto ↔ Event at system edge
-- Core never sees EventDto
-
-**Remote Capability Integration:**
-- **HttpEventHandlerAdapter** wraps remote HTTP endpoints as EventHandler implementations. Both io.eventbob.spring and io.eventbob.dropwizard have their own HttpEventHandlerAdapter performing this role — distinct classes in distinct packages, same pattern.
-- Translates Event → HTTP request → HTTP response → Event
-- Remote handlers are indistinguishable from local handlers at routing layer (location transparency)
-
----
-
-## Ubiquitous Language (Module-Specific Terms)
-
-This section documents terms specific to io.eventbob.core. For general EventBob vocabulary, see top-level docs/domain_spec.md.
-
-### Container
-EventBob's role as a lifecycle manager for handlers. Like Servlet containers or Spring containers, EventBob:
-- Loads handler JARs with isolated class loaders
-- Discovers handlers via @Capability annotations
-- Calls initialize() before event processing
-- Routes events to correct handlers
-- Calls shutdown() on container shutdown
-
-### Lifecycle Contract
-The abstract class HandlerLifecycle that defines how handlers integrate with the container. Similar to Servlet interface (init/destroy) but tailored to EventBob's needs (configuration, dispatcher, framework context).
-
-### Framework-Agnostic
-Design principle: core EventBob has no framework dependencies. Handlers can use any framework (Spring, Dropwizard, Guice, manual wiring) without core knowing or caring. LifecycleContext.getFrameworkContext() provides extension point without coupling core to frameworks.
-
-### Isolated Class Loader
-Each handler JAR loads into its own URLClassLoader with core classes as parent. This provides dependency isolation - handlers can use different versions of libraries without conflicts.
-
-### Graceful Degradation
-Error handling strategy: if one handler fails to load, log warning and continue with other handlers. Microlith remains operational with available capabilities rather than failing completely.
-
----
-
-## Known Limitations (Current Implementation State)
-
-### Configuration Loading Not Implemented
-**Status:** LifecycleContext.getConfiguration() returns empty map. YAML parsing is TODO.
-
-**Impact:** Handlers cannot yet load configuration from application.yml. They must hardcode configuration or obtain it from framework context.
-
-**Invariant during limitation:** Handlers must not depend on configuration. When YAML parsing is implemented, this invariant will be lifted.
-
-**Evidence:** LifecycleHandlerLoader line 229-233 has TODO comment and returns Map.of().
-
-### No Health Check Support
-**Status:** HandlerLifecycle has no health check method.
-
-**Future:** Abstract class pattern allows adding health checks without breaking existing implementations.
-
-### No Configuration Reload
-**Status:** Configuration is loaded once during initialize(). No hot-reload support.
-
-**Future:** Abstract class pattern allows adding reload() method without breaking existing implementations.
-
----
-
-## Context Boundary Contracts
-
-Since EventBob is a single bounded context, there are no context-to-context translation requirements. However, there are boundary contracts at infrastructure integration points:
-
-### JAR Loading Boundary
-**Contract:** Handler JARs provide either:
-1. EventHandler class with @Capability and no-arg constructor (POJO loading), OR
-2. META-INF/eventbob-handler.properties declaring lifecycle.class (lifecycle loading)
-
-**Enforcement:** JARs without proper structure are skipped with warning (graceful degradation).
-
-### Lifecycle Initialization Boundary
-**Contract:** 
-- LifecycleHandlerLoader calls initialize(context)
-- Handler prepares itself using context (config, dispatcher, framework context)
-- Handler returns non-null EventHandler via getHandler()
-
-**Failure modes:**
-- initialize() throws exception: handler not registered, logged as warning
-- getHandler() returns null: IllegalStateException, handler not registered
-
-### Shutdown Boundary
-**Contract:**
-- EventBob calls close() on HandlerLoader
-- Loader calls shutdown() on all tracked HandlerLifecycle instances
-- Loader closes all URLClassLoader instances
-- Order: lifecycles before class loaders (handlers may reference classes during shutdown)
-
-**Failure modes:**
-- shutdown() throws exception: logged as warning, other handlers continue shutting down
-- close() on classloader throws IOException: logged as warning, other loaders continue closing
-
----
-
-## Future Evolution
-
-### Planned Enhancements (Not Yet Implemented)
-
-1. **YAML Configuration Parsing**:
-   - Parse application.yml from handler JARs
-   - Provide typed Map<String, Object> via LifecycleContext.getConfiguration()
-   - Support environment variable substitution (${DB_PASSWORD})
-
-2. **Health Checks**:
-   - Add healthCheck(): HealthStatus method to HandlerLifecycle
-   - Default implementation returns healthy
-   - Handlers can override to report readiness (database connected, etc.)
-
-3. **Configuration Reload**:
-   - Add reloadConfiguration(Map<String, Object>) method to HandlerLifecycle
-   - Default implementation is no-op
-   - Handlers can override to support hot-reload without restart
-
-4. **Metrics**:
-   - Add getMetrics(): Map<String, Object> method to HandlerLifecycle
-   - Handlers can expose metrics (request counts, latencies, errors)
-
-### Why Abstract Class Pattern Supports Evolution
-
-HandlerLifecycle is an abstract class, not an interface, to enable backward-compatible evolution. Future versions can add new methods with default implementations:
-
-```java
-// Future addition (backward compatible)
-public abstract class HandlerLifecycle {
-    // Existing methods (unchanged)
-    public abstract void initialize(LifecycleContext context) throws Exception;
-    public abstract EventHandler getHandler();
-    public abstract void shutdown() throws Exception;
-    
-    // New methods with defaults (no breaking change)
-    public HealthStatus healthCheck() {
-        return HealthStatus.healthy();
-    }
-    
-    public void reloadConfiguration(Map<String, Object> newConfig) {
-        // Default: no-op (handler doesn't support reload)
-    }
-}
+  Spring -->|depends on contracts from| Core
+  HandlerJAR -->|implements contracts from| Core
+  Spring -->|adapts HTTP to/from| Core
+  Spring -->|routes remote events to| RemoteMicrolith
 ```
 
-Existing handlers continue working without modification. New handlers can override new methods if they want advanced capabilities.
+### Context: Event Routing Core
+
+Description: The innermost domain layer. Defines the routing envelope, capability declaration mechanism, handler integration contract, loader abstraction, and lifecycle protocol. Carries no framework dependencies. Provides concrete loading machinery (plain JAR loading and lifecycle JAR loading) hidden behind factory methods. All other modules depend on this context; it depends on none of them.
+
+Business capability: capability-based in-process event routing, handler discovery from JARs, and handler lifecycle coordination
 
 ---
 
-## Cross-References
+## 4. Domain Model
 
-- **Top-level domain specification:** /docs/domain_spec.md (bounded context map, general EventBob concepts)
-- **Implementation examples:** /examples/echo-handler, /examples/lower-handler, /examples/upper-handler
-- **Infrastructure adapters:** io.eventbob.spring module (Spring Boot integration), io.eventbob.dropwizard module (Dropwizard integration)
+```mermaid
+classDiagram
+  Router "1" --> "*" Capability : resolves
+  Capability "1" --> "1" EventHandler : routes to
+  EventHandler ..> Event : handles
+  EventHandler ..> Dispatcher : uses
+  SyncForwardingEventHandler ..|> EventHandler : implements
+  Dispatcher --> Router : delegates through
+  HandlerLoader ..> Capability : produces
+  HandlerLoader ..> EventHandler : instantiates
+  HandlerLoader ..> IsolatedClassLoader : creates per JAR
+  HandlerLifecycle --> EventHandler : produces
+  HandlerLifecycle ..> LifecycleContext : initialized with
+  HandlerLifecycle ..> HandlerDescriptor : located via
+  EventHandler ..> CapabilityDeclaration : carries
+  Router ..> ErrorEnvelope : produces on routing failure
+```
+
+---
+
+## 5. AI Invariants: intention, purpose
+
+- Capability declarations are the sole discovery mechanism: the loader must not register any handler that does not carry at least one capability declaration on its class; annotation absence must cause the class to be silently skipped, not a hard failure
+- One isolated class loader per JAR: the plain and lifecycle loaders must create exactly one isolated class loader per JAR file; sharing class loaders across JARs is forbidden
+- Discovery precedes instantiation in plain loading: the discovery phase must complete across all JARs before any handler is instantiated; duplicate capability names must be detected and cause a hard failure before instantiation begins
+- Handler descriptor is optional for plain loading, required for lifecycle loading: the plain loader must skip any class that lacks capability declarations; the lifecycle loader must skip any JAR that lacks a handler descriptor
+- Error envelope is unconditional: the router must never propagate an unhandled exception to the caller; if the error callback returns null or itself throws, an error envelope must be produced from the original event
+- Standard metadata vocabulary is additive and non-prescriptive: the core module defines key names as a shared vocabulary; handlers and infrastructure may add further metadata keys without violating any invariant; the core module must not validate metadata key presence
+- Lifecycle shutdown precedes class loader release: for every lifecycle loader, all lifecycle shutdown phases must complete before any isolated class loader is closed; releasing a class loader before its lifecycle shuts down places handler classes in an undefined state
+- Inline lifecycle loading shares the same lifecycle contract: handlers initialized inline (without a JAR) must satisfy the same three-phase lifecycle contract as JAR-loaded handlers; the container must not distinguish inline from JAR-loaded when invoking initialize, getHandler, or shutdown

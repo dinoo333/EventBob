@@ -1,307 +1,161 @@
-# Core Module Architecture (io.eventbob.core)
+# io.eventbob.core Architecture
 
-## Purpose
+## 1. High Level Architectural Purpose
 
-The core module contains the domain model and abstractions for EventBob. It is framework-agnostic. It defines WHAT EventBob is, not HOW it is deployed.
-
-Core has no dependencies beyond the JDK. No Spring. No Dropwizard. No HTTP clients. No YAML parsers. This keeps the domain pure and testable.
+This module is the innermost domain layer of EventBob. It defines the event routing abstractions, handler loading contracts, and lifecycle primitives that every other module depends on. It carries no framework dependencies and establishes no outbound module references; all dependency arrows point inward toward this module.
 
 ---
 
-## Layer Assignment
+## 2. Architectural Borders
 
-**Domain Layer (innermost):**
-- Event (domain model)
-- EventHandler (core abstraction)
-- EventBob (routing logic)
-- Dispatcher (dispatch contract)
-- HandlerLifecycle (lifecycle contract)
-- LifecycleContext (initialization context contract)
-- Capability (annotation)
-- Capabilities (vocabulary constants)
-- Exceptions (EventHandlingException, HandlerNotFoundException)
+```mermaid
+graph TD
+    subgraph core["io.eventbob.core"]
+        Router["Router"]
+        LoadHandlers["Load Handlers"]
+        ManageLifecycle["Manage Handler Lifecycle"]
+        RouteEvent["Route Event to Handler"]
+        DispatchEvent["Dispatch Event from Handler"]
+    end
 
-**Adapters (internal, package-private):**
-- JarHandlerLoader (JAR → EventHandler adapter for POJOs)
-- LifecycleHandlerLoader (JAR → EventHandler adapter for lifecycle handlers)
-- DiscoveredHandler (internal structure for tracking capability metadata)
-- DefaultErrorEvent (error event adapter)
-- LifecycleContextImpl (implementation of LifecycleContext interface)
+    Infrastructure["Infrastructure\n(io.eventbob.spring, adapters)"] -->|depends on| core
+    HandlerJAR["Handler JAR\n(microservice)"] -->|fulfils contracts of| core
+```
 
-These adapters live in the core because they bridge the JDK (URLClassLoader, reflection) to the domain (EventHandler). They do not depend on external frameworks. They are package-private because external code should use the HandlerLoader factory methods, not construct them directly.
+### Border: Domain Kernel
+
+The core module is isolated from all infrastructure. It exposes contracts — handler integration interfaces, lifecycle abstractions, and capability declaration markers — and hides all implementations behind factory methods. Infrastructure modules and handler JARs both depend on this boundary; the boundary never depends on them.
+
+**Interactors:**
+
+- Interactor: Load Handlers
+  - Summary: Discovers and instantiates capability handlers from a set of JAR files, either as plain handlers or as lifecycle-managed handlers.
+  - Flow: loader receives JAR paths at construction; for each JAR an isolated class loader is created and class files are scanned; capability-declaring handler implementations are identified; the loading strategy is resolved (plain or lifecycle); handlers are instantiated; duplicate capability names cause a hard failure; the resulting capability-to-handler map is returned; on close, class loaders are released and lifecycle shutdown is invoked in registration order.
+
+- Interactor: Manage Handler Lifecycle
+  - Summary: Coordinates the three-phase container lifecycle (initialise, retrieve, shutdown) for handlers that require dependency injection or resource management.
+  - Flow: caller supplies a lifecycle context carrying a configuration map, an optional dispatcher, and an optional framework context; the lifecycle holder is initialised once with that context; the initialised handler instance is retrieved from the lifecycle holder; on container shutdown the lifecycle holder releases its resources before the associated class loader is closed.
+
+- Interactor: Route Event to Handler
+  - Summary: Matches an inbound event's target field against the registered capability map and delivers the event to the matching handler on a virtual thread.
+  - Flow: an event is received; the router looks up the handler registered under the event's target capability name; if no registration exists an error path is taken and a fallback error event is produced; the matched handler is executed on a virtual thread pool; any handler failure is passed to the error callback; the result is returned as an asynchronous future.
+
+- Interactor: Dispatch Event from Handler
+  - Summary: Allows a running handler to send an outbound event to another capability, either asynchronously or synchronously.
+  - Flow: the handler submits an outbound event through the dispatcher; the async path returns a future immediately; the sync path blocks until the future resolves or the timeout expires; interruption restores the interrupt flag and surfaces as a handling failure; execution failure unwraps the underlying cause; timeout surfaces as a handling failure.
 
 ---
 
-## Public API Surface
+## 3. Layers
 
-**Classes and interfaces that other modules depend on:**
+```mermaid
+graph TD
+    PublicContracts["Public Contracts"]
+    Router["Router"]
+    LoadingImplementations["Loading Implementations"]
 
-| Type | Visibility | Purpose |
-|------|-----------|---------|
-| Event | public | Domain model for events |
-| EventHandler | public | Core abstraction for event processing |
-| EventBob | public | Router for dispatching events to handlers |
-| Dispatcher | public | Contract for sending events to capabilities |
-| HandlerLifecycle | public | Lifecycle contract for handler initialization |
-| LifecycleContext | public | Context provided to handlers during initialization |
-| HandlerLoader | public | Abstraction for loading handlers from various sources |
-| Capability | public | Annotation for declaring handler capabilities |
-| Capabilities | public | Vocabulary constants for common capabilities |
-| EventHandlingException | public | Checked exception for handler failures |
-| HandlerNotFoundException | public | Runtime exception when capability not found |
+    Router -->|depends on| PublicContracts
+    LoadingImplementations -->|depends on| PublicContracts
+```
 
-**Internal implementations (package-private):**
+### Layer: Public Contracts
 
-| Type | Visibility | Purpose |
-|------|-----------|---------|
-| JarHandlerLoader | package-private | POJO handler loading from JARs |
-| LifecycleHandlerLoader | package-private | Lifecycle handler loading from JARs |
-| LifecycleContextImpl | package-private | Implementation of LifecycleContext |
-| DiscoveredHandler | package-private | Internal structure for capability metadata |
-| DefaultErrorEvent | package-private | Error event construction |
+**Description:** The stable surface exported to all dependents. Defines what the module provides without revealing how.
+
+**Components:**
+- Handler integration contract: the single-method contract that all capabilities — local or remote — must satisfy; receives a dispatcher for outbound delegation.
+- Synchronous forwarding template: an abstract base implementation of the handler integration contract for handlers that synchronously forward a request to an external system and translate its response back into a routing envelope; delegates request-building, response-parsing, and forwarding to caller-supplied collaborators, and wraps any unanticipated failure as a handler error.
+- Dispatcher: the outbound-event facility provided to handlers at call time; supports async and sync send semantics.
+- Handler loader contract: the loading abstraction whose factory methods hide all concrete implementations; manages its own resources via a close contract.
+- Lifecycle holder contract: the container-side lifecycle contract for handlers needing initialisation and cleanup; expressed as an abstract type to preserve binary compatibility across future lifecycle additions.
+- Lifecycle context: a context carrier for handler initialisation supplying a configuration map, an optional dispatcher, and an optional framework context.
+- Routing envelope: an immutable message carrying source, target, metadata, parameters, and payload.
+- Capability marker: a repeatable declaration that binds a handler implementation to one or more capability identifiers.
+- Standard metadata vocabulary: a vocabulary of well-known metadata key names for routing and observability.
+- Failure types: a hierarchy of typed failures covering handler errors and routing misses.
+
+**Inbound dependencies:** none — this is the innermost layer.
+**Outbound dependencies:** JDK only.
+
+### Layer: Loading Implementations
+
+**Description:** Hidden implementations that fulfil the handler loader contract. Not reachable by external callers directly; accessed via factory methods on the public contracts.
+
+**Components:**
+- Plain handler loader: scans handler JARs using per-JAR isolated class loaders, discovers capability-declaring handlers, detects duplicates, and instantiates them.
+- Lifecycle handler loader: reads a JAR's handler descriptor, instantiates the declared lifecycle holder, invokes initialisation, and tracks instances for ordered shutdown.
+
+**Inbound dependencies:** Public Contracts layer.
+**Outbound dependencies:** JDK only.
+
+### Layer: Router
+
+**Description:** The single public entry point for event processing. Holds the capability-to-handler map, owns the virtual thread executor, and exposes itself as a dispatcher.
+
+**Components:**
+- Event router: routes events by exact capability-name match; shuts down cleanly by awaiting in-flight handler completion before releasing resources.
+
+**Inbound dependencies:** Public Contracts layer.
+**Outbound dependencies:** JDK only.
 
 ---
 
-## Two Loading Strategies
+## 4. Use Cases
 
-HandlerLoader provides two factory methods:
+```mermaid
+graph LR
+    StartMicrolith["Start Microlith"]
+    RouteInboundEvent["Route Inbound Event"]
+    DelegateToCapability["Delegate to Capability"]
+    ShutdownMicrolith["Shut Down Microlith"]
 
-### Strategy 1: jarLoader (POJO Handlers)
-
-```
-HandlerLoader.jarLoader(Collection<Path> jarPaths)
-    ↓
-JarHandlerLoader (package-private)
-    ↓ scans JARs for
-EventHandler implementations with @Capability
-    ↓ calls
-Class.getDeclaredConstructor().newInstance() (no-arg constructor)
-    ↓
-Map<String, EventHandler>
+    StartMicrolith --> RouteInboundEvent
+    RouteInboundEvent --> DelegateToCapability
+    ShutdownMicrolith
 ```
 
-**Use case:** Simple handlers with no dependencies, no configuration, no startup/shutdown requirements.
+### Use Case: Start Microlith
 
-### Strategy 2: lifecycleLoader (Full Microservice Handlers)
+**Description:** Infrastructure creates a router instance, loads handlers from one or more sources, and registers them before accepting events.
 
-```
-HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher)
-    or
-HandlerLoader.lifecycleLoader(Collection<Path> jarPaths, Dispatcher dispatcher, Object frameworkContext)
-    ↓
-LifecycleHandlerLoader (package-private)
-    ↓ reads
-META-INF/eventbob-handler.properties (lifecycle.class property)
-    ↓ loads
-application.yml (configuration - TODO: not yet implemented)
-    ↓ instantiates
-HandlerLifecycle subclass (no-arg constructor)
-    ↓ calls
-lifecycle.initialize(LifecycleContext)
-    ↓ calls
-lifecycle.getHandler()
-    ↓
-EventHandler (fully initialized with dependencies)
-    ↓
-Map<String, EventHandler>
-```
+**Scenarios:**
+- Scenario: plain JAR loading → infrastructure uses the plain loader factory with JAR paths, obtains a capability map, registers each entry with the router builder, and completes startup.
+- Scenario: lifecycle JAR loading → infrastructure uses the lifecycle loader factory with JAR paths and a dispatcher; the loader reads each JAR's handler descriptor, invokes initialisation, retrieves the handler instance, returns a capability map; infrastructure registers entries and completes startup.
+- Alternate: inline lifecycle loading → infrastructure constructs a lifecycle context with an empty configuration and no framework context, invokes initialisation on each inline lifecycle holder, reads capability declarations from the resulting handler, registers entries, and completes startup.
 
-**Use case:** Handlers that need configuration, dependencies (DataSource, HTTP clients), framework integration (Spring, Dropwizard), or startup/shutdown hooks.
+### Use Case: Route Inbound Event
 
-Both strategies produce the same result: `Map<String, EventHandler>`. The EventBob router does not know or care which strategy loaded a handler.
+**Description:** The router receives an event, resolves the target capability, and delivers the event to the registered handler.
+
+**Scenarios:**
+- Scenario: known target → handler found by capability name; executed on a virtual thread; result event returned asynchronously.
+- Alternate: unknown target → no registration for the target name; error callback invoked; if callback returns a non-null event that becomes the result; otherwise a fallback error event is produced and returned.
+- Alternate: handler fails → failure propagates; error callback invoked; error event returned.
+
+### Use Case: Delegate to Capability
+
+**Description:** A running handler dispatches an outbound event to another capability within the same microlith.
+
+**Scenarios:**
+- Scenario: async dispatch → outbound event submitted to dispatcher; future returned immediately; caller controls timeout via the future.
+- Alternate: sync dispatch → outbound event submitted; caller blocks until result or timeout; handling failure raised on timeout, interruption, or handler failure.
+
+### Use Case: Shut Down Microlith
+
+**Description:** Infrastructure closes the router and all handler loaders, completing in-flight events before releasing resources.
+
+**Scenarios:**
+- Scenario: ordered shutdown → router close is called; the virtual thread executor is shut down and the caller blocks until in-flight handlers complete; handler loaders are then closed; lifecycle-based loaders invoke each lifecycle holder's shutdown phase before releasing isolated class loaders.
+- Alternate: interrupted shutdown → the await is interrupted; the interrupt flag is restored; the caller proceeds.
 
 ---
 
-## Dependency Inversion at Boundaries
+## 5. AI Invariants: structure, boundaries, dependency direction
 
-### External Modules → Core
-
-```
-io.eventbob.spring      → HandlerLoader (interface)
-                        → EventHandler (interface)
-                        → Event (class)
-                        → Capability (annotation)
-                        → HandlerLifecycle (abstract class)
-                        → LifecycleContext (interface)
-
-io.eventbob.example.echo → EventHandler (interface)
-                         → HandlerLifecycle (abstract class)
-                         → LifecycleContext (interface)
-                         → Capability (annotation)
-```
-
-External modules depend only on public interfaces and abstractions. They never see JarHandlerLoader, LifecycleHandlerLoader, or DiscoveredHandler (all package-private).
-
-### Core → JDK Only
-
-Core has no outward dependencies. It depends only on:
-- `java.nio.file.*` (for Path)
-- `java.net.*` (for URLClassLoader)
-- `java.lang.reflect.*` (for reflection)
-- `java.util.*` (for collections)
-- `java.util.logging.*` (for logging)
-
-No Spring. No Jackson. No SnakeYAML. No HTTP clients.
-
----
-
-## Resource Management
-
-HandlerLoader extends `AutoCloseable`. This enables try-with-resources and ensures cleanup:
-
-```java
-try (HandlerLoader loader = HandlerLoader.lifecycleLoader(jarPaths, dispatcher)) {
-    Map<String, EventHandler> handlers = loader.loadHandlers();
-    // Use handlers...
-} // loader.close() called automatically
-```
-
-**What close() does:**
-
-### For JarHandlerLoader (POJOs)
-- No resources to clean up
-- Empty implementation (no-op)
-
-### For LifecycleHandlerLoader
-1. Call `lifecycle.shutdown()` on all tracked lifecycles
-   - Handlers close database connections, shutdown thread pools, close Spring contexts, etc.
-2. Close all URLClassLoaders
-   - Releases class loader resources
-
-**Ordering matters:** Lifecycles are shut down BEFORE class loaders are closed. This allows handlers to reference classes during shutdown (e.g., Spring context close needs to access bean classes).
-
----
-
-## Framework-Agnostic Context Mechanism
-
-LifecycleContext provides optional access to framework-specific resources via `getFrameworkContext<T>(Class<T> type)`.
-
-**How it works:**
-
-1. **Core defines the abstraction** (LifecycleContext interface with generic method)
-2. **Core provides a package-private implementation** (LifecycleContextImpl)
-3. **Infrastructure layer optionally provides framework context** (e.g., Spring microlith passes ApplicationContext)
-4. **Handler optionally uses it** (e.g., Spring-based handler requests ApplicationContext)
-
-**Example:**
-
-```java
-// In Spring microlith (infrastructure layer)
-HandlerLoader loader = HandlerLoader.lifecycleLoader(
-    jarPaths, 
-    dispatcher, 
-    applicationContext  // Spring's ApplicationContext passed here
-);
-
-// In handler JAR (isolated, no framework dependency)
-public void initialize(LifecycleContext context) {
-    Optional<ApplicationContext> spring = 
-        context.getFrameworkContext(ApplicationContext.class);
-    
-    if (spring.isPresent()) {
-        // Use parent Spring context
-    } else {
-        // Manual wiring
-    }
-}
-```
-
-**Key insight:** Core has no dependency on Spring. The generic type parameter (`<T>`) preserves type safety while maintaining framework-agnosticism. The handler JAR can depend on Spring if it wants to, but it does not have to. The core does not care.
-
----
-
-## Visibility Boundaries
-
-**Why package-private implementations?**
-
-JarHandlerLoader and LifecycleHandlerLoader are package-private because external code should use the HandlerLoader factory methods, not construct loaders directly.
-
-**The pattern:**
-
-```java
-// ✅ Correct (uses public factory method)
-HandlerLoader loader = HandlerLoader.jarLoader(jarPaths);
-
-// ❌ Wrong (implementation detail, not accessible)
-JarHandlerLoader loader = new JarHandlerLoader(jarPaths);
-```
-
-This is the Static Factory Method pattern. The interface exposes the contract. The factory method decides which implementation to return. The implementation remains hidden. This allows the implementation to change without breaking external code.
-
-**Public abstractions, package-private implementations.** This is the Dependency Inversion Principle at the package level.
-
----
-
-## Component Diagram
-
-```
-┌────────────────────────────────────────────────────┐
-│  io.eventbob.core (domain layer)                   │
-│                                                     │
-│  PUBLIC API:                                        │
-│  ┌──────────────────────────────────────────────┐ │
-│  │ Event                                        │ │
-│  │ EventHandler                                 │ │
-│  │ EventBob (router)                            │ │
-│  │ Dispatcher                                   │ │
-│  │ HandlerLifecycle (abstract)                  │ │
-│  │ LifecycleContext (interface)                 │ │
-│  │ HandlerLoader (interface + factory methods)  │ │
-│  │ Capability, Capabilities                     │ │
-│  │ Exceptions                                   │ │
-│  └──────────────────────────────────────────────┘ │
-│                 ↑                                   │
-│                 │ depends on                        │
-│  PACKAGE-PRIVATE IMPLEMENTATIONS:                  │
-│  ┌──────────────────────────────────────────────┐ │
-│  │ JarHandlerLoader (POJO loading)              │ │
-│  │ LifecycleHandlerLoader (lifecycle loading)   │ │
-│  │ LifecycleContextImpl                         │ │
-│  │ DiscoveredHandler                            │ │
-│  │ DefaultErrorEvent                            │ │
-│  └──────────────────────────────────────────────┘ │
-│                                                     │
-│  DEPENDS ON: JDK only (java.nio, java.net,         │
-│              java.lang.reflect, java.util)          │
-└────────────────────────────────────────────────────┘
-              ↑
-              │ depends on public API only
-              │
-┌─────────────────────────────────────────────────────┐
-│  External modules (Spring, examples, microliths)    │
-└─────────────────────────────────────────────────────┘
-```
-
----
-
-## Current State and Future Work
-
-**Implemented:**
-- HandlerLifecycle abstract class
-- LifecycleContext interface
-- LifecycleHandlerLoader implementation
-- Factory methods in HandlerLoader
-- Resource management via AutoCloseable
-- Framework-agnostic context mechanism
-
-**Not Yet Implemented:**
-- YAML configuration parsing (LifecycleContext.getConfiguration() returns empty map)
-- Environment variable substitution in configuration
-- Configuration validation
-
-**Design Decision: Defer YAML parsing to avoid dependency on SnakeYAML or Jackson in core.**
-
-Future options:
-1. Add YAML library dependency to core (simple, but adds dependency)
-2. Pass configuration parser as parameter to lifecycleLoader (clean, but complex API)
-3. Provide configuration externally to microlith, which passes it to loader (flexible, defers decision)
-
-This decision is deferred. The lifecycle contract is in place. Configuration mechanism can be added later without breaking existing handlers.
-
----
-
-## Summary
-
-The core module defines the domain contracts and provides two loading strategies: simple POJO loading and lifecycle-based loading for full microservices. External modules depend only on public abstractions. Implementations are package-private and accessed via factory methods. The module has no dependencies beyond the JDK.
-
-This structure keeps the core stable, testable, and framework-agnostic while supporting handlers ranging from simple POJOs to full Spring-based microservices.
+- Zero external dependencies: this module depends only on the JDK. No framework, library, or infrastructure import is permitted.
+- Inward dependency direction only: no type in this module may import from io.eventbob.spring or any other module. All dependency arrows point into this module.
+- Public API minimal and stable: only handler contracts, lifecycle abstractions, capability markers, and value objects are public. All loader implementations are hidden and reachable only through factory methods.
+- Immutable routing envelopes: event instances are immutable after construction. Copy-on-write via a builder is the only mutation path.
+- Blocking close contract: the router's close operation must await completion of in-flight handlers before returning so callers can safely invoke lifecycle shutdown and release class loaders without use-after-free on handler classes.
+- Capability uniqueness enforced at load time: duplicate capability names across JARs or inline registrations must cause a hard failure before the router is built.
+- Lifecycle ordering: each lifecycle holder's shutdown phase must be invoked before the corresponding isolated class loader is closed so handlers can reference their own classes during cleanup.
