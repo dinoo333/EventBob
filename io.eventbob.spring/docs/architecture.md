@@ -92,7 +92,7 @@ graph TD
 **Description:** Enables outbound inter-microlith communication by representing remote capabilities as local handler instances.
 
 **Components:**
-- Remote handler adapter: implements the handler integration contract; converts the domain routing envelope to wire format, posts to the remote endpoint, converts the wire-format response back to a domain routing envelope; surfaces all transport and protocol failures as handling failures.
+- Remote handler adapter: extends core's synchronous forwarding template (`SyncForwardingEventHandler`) to implement the handler integration contract; converts the domain routing envelope to wire format, posts to the remote endpoint, converts the wire-format response back to a domain routing envelope; surfaces all transport and protocol failures as handling failures.
 - Remote loader: implements the handler loader contract; creates one remote handler adapter per remote capability declaration and returns the capability-to-adapter map.
 - Remote capability declaration: a configuration value object mapping a capability name to a remote endpoint URI.
 - Wire transfer object: shared with the Server Adapter layer for JSON translation; the same DTO is used for both inbound and outbound wire format.

@@ -1,10 +1,9 @@
 package io.eventbob.dropwizard.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
-import io.eventbob.core.EventHandler;
 import io.eventbob.core.EventHandlingException;
+import io.eventbob.core.SyncForwardingEventHandler;
 
 import java.io.IOException;
 import java.net.URI;
@@ -31,7 +30,7 @@ import java.net.http.HttpResponse;
  *   <li>HTTP status codes: 2xx = success, 4xx/5xx = error</li>
  * </ul>
  */
-public class HttpEventHandlerAdapter implements EventHandler {
+public class HttpEventHandlerAdapter extends SyncForwardingEventHandler<HttpRequest, HttpResponse<String>> {
     private final URI remoteEndpoint;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -43,22 +42,27 @@ public class HttpEventHandlerAdapter implements EventHandler {
      * @param httpClient the HTTP client to use for requests
      */
     public HttpEventHandlerAdapter(URI remoteEndpoint, HttpClient httpClient) {
+        super(
+                (handler, event) -> ((HttpEventHandlerAdapter) handler).buildRequest(event),
+                (handler, response) -> ((HttpEventHandlerAdapter) handler).parseResponse(response),
+                (handler, request) -> ((HttpEventHandlerAdapter) handler).sendToTarget(request)
+        );
         this.remoteEndpoint = remoteEndpoint;
         this.httpClient = httpClient;
         this.objectMapper = new ObjectMapper();
     }
 
-    @Override
-    public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+    private HttpResponse<String> sendToTarget(HttpRequest request) throws EventHandlingException {
         try {
-            HttpRequest request = buildRequest(event);
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            return parseResponse(response);
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (IOException e) {
-            throw new EventHandlingException("Network error calling remote endpoint: " + remoteEndpoint, e);
+            throw new EventHandlingException(
+                "Network error calling remote endpoint: " + remoteEndpoint, e);
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new EventHandlingException("HTTP request interrupted: " + remoteEndpoint, e);
+          Thread
+              .currentThread()
+              .interrupt();
+          throw new EventHandlingException("HTTP request interrupted: " + remoteEndpoint, e);
         }
     }
 

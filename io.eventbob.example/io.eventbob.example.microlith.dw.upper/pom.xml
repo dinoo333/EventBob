@@ -7,16 +7,16 @@
 
     <parent>
         <groupId>io.eventbob</groupId>
-        <artifactId>parent</artifactId>
+        <artifactId>io.eventbob.example</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>io.eventbob.example.microlith.dw.echo</artifactId>
+    <artifactId>io.eventbob.example.microlith.dw.upper</artifactId>
     <packaging>jar</packaging>
 
-    <name>EventBob Echo Microlith (Dropwizard)</name>
-    <description>Dropwizard microlith application with echo and lower capabilities</description>
+    <name>EventBob Example: Upper Microlith (Dropwizard)</name>
+    <description>Dropwizard microlith application with upper capability</description>
 
     <dependencies>
         <!-- Dropwizard infrastructure -->
@@ -26,16 +26,10 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Handler implementations (compile deps: lifecycle classes reference handler/service types) -->
+        <!-- Handler implementation (compile dep: lifecycle class references handler/service types) -->
         <dependency>
             <groupId>io.eventbob</groupId>
-            <artifactId>io.eventbob.example.echo</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>io.eventbob</groupId>
-            <artifactId>io.eventbob.example.lower</artifactId>
+            <artifactId>io.eventbob.example.upper</artifactId>
             <version>${project.version}</version>
         </dependency>
 
@@ -76,7 +70,7 @@
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                                 <!-- Set main class in manifest -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>io.eventbob.example.microlith.dw.echo.EchoApplication</mainClass>
+                                    <mainClass>io.eventbob.example.microlith.dw.upper.UpperApplication</mainClass>
                                 </transformer>
                             </transformers>
                             <filters>

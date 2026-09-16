@@ -1,10 +1,9 @@
- package io.eventbob.spring.adapter;
+package io.eventbob.spring.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
-import io.eventbob.core.EventHandler;
 import io.eventbob.core.EventHandlingException;
+import io.eventbob.core.SyncForwardingEventHandler;
 
 import java.io.IOException;
 import java.net.URI;
@@ -31,69 +30,76 @@ import java.net.http.HttpResponse;
  *   <li>HTTP status codes: 2xx = success, 4xx/5xx = error</li>
  * </ul>
  */
-public class HttpEventHandlerAdapter implements EventHandler {
-    private final URI remoteEndpoint;
-    private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
+public class HttpEventHandlerAdapter
+    extends SyncForwardingEventHandler<HttpRequest, HttpResponse<String>> {
+  private final URI remoteEndpoint;
+  private final HttpClient httpClient;
+  private final ObjectMapper objectMapper;
 
-    /**
-     * Creates an HTTP adapter for a remote capability endpoint.
-     *
-     * @param remoteEndpoint the base URI of the remote service
-     * @param httpClient the HTTP client to use for requests
-     */
-    public HttpEventHandlerAdapter(URI remoteEndpoint, HttpClient httpClient) {
-        this.remoteEndpoint = remoteEndpoint;
-        this.httpClient = httpClient;
-        this.objectMapper = new ObjectMapper();
+  /**
+   * Creates an HTTP adapter for a remote capability endpoint.
+   *
+   * @param remoteEndpoint the base URI of the remote service
+   * @param httpClient     the HTTP client to use for requests
+   */
+  public HttpEventHandlerAdapter(URI remoteEndpoint, HttpClient httpClient) {
+    super((handler, event) -> ((HttpEventHandlerAdapter) handler).buildRequest(event),
+        (handler, response) -> ((HttpEventHandlerAdapter) handler).parseResponse(response),
+        (handler, request) -> ((HttpEventHandlerAdapter) handler).sendToTarget(request));
+    this.remoteEndpoint = remoteEndpoint;
+    this.httpClient = httpClient;
+    this.objectMapper = new ObjectMapper();
+  }
+
+  private HttpResponse<String> sendToTarget(HttpRequest request) throws EventHandlingException {
+    try {
+      return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    } catch (IOException e) {
+      throw new EventHandlingException("Network error calling remote endpoint: " + remoteEndpoint,
+          e);
+    } catch (InterruptedException e) {
+      Thread
+          .currentThread()
+          .interrupt();
+      throw new EventHandlingException("HTTP request interrupted: " + remoteEndpoint, e);
+    }
+  }
+
+  private HttpRequest buildRequest(Event event) throws EventHandlingException {
+    try {
+      EventDto dto = EventDto.fromEvent(event);
+      String json = objectMapper.writeValueAsString(dto);
+      URI requestUri = remoteEndpoint.resolve("/events");
+
+      return HttpRequest
+          .newBuilder()
+          .uri(requestUri)
+          .header("Content-Type", "application/json")
+          .POST(HttpRequest.BodyPublishers.ofString(json))
+          .build();
+    } catch (IOException e) {
+      throw new EventHandlingException("Failed to serialize event for HTTP request", e);
+    }
+  }
+
+  private Event parseResponse(HttpResponse<String> response) throws EventHandlingException {
+    int status = response.statusCode();
+
+    if (status >= 400 && status < 500) {
+      throw new EventHandlingException(
+          "Client error from remote endpoint (HTTP " + status + "): " + response.body());
     }
 
-    @Override
-    public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-        try {
-            HttpRequest request = buildRequest(event);
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            return parseResponse(response);
-        } catch (IOException e) {
-            throw new EventHandlingException("Network error calling remote endpoint: " + remoteEndpoint, e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new EventHandlingException("HTTP request interrupted: " + remoteEndpoint, e);
-        }
+    if (status >= 500) {
+      throw new EventHandlingException(
+          "Server error from remote endpoint (HTTP " + status + "): " + response.body());
     }
 
-    private HttpRequest buildRequest(Event event) throws EventHandlingException {
-        try {
-            EventDto dto = EventDto.fromEvent(event);
-            String json = objectMapper.writeValueAsString(dto);
-            URI requestUri = remoteEndpoint.resolve("/events");
-
-            return HttpRequest.newBuilder()
-                    .uri(requestUri)
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .build();
-        } catch (IOException e) {
-            throw new EventHandlingException("Failed to serialize event for HTTP request", e);
-        }
+    try {
+      EventDto dto = objectMapper.readValue(response.body(), EventDto.class);
+      return dto.toEvent();
+    } catch (IOException e) {
+      throw new EventHandlingException("Failed to parse response from remote endpoint", e);
     }
-
-    private Event parseResponse(HttpResponse<String> response) throws EventHandlingException {
-        int status = response.statusCode();
-
-        if (status >= 400 && status < 500) {
-            throw new EventHandlingException("Client error from remote endpoint (HTTP " + status + "): " + response.body());
-        }
-
-        if (status >= 500) {
-            throw new EventHandlingException("Server error from remote endpoint (HTTP " + status + "): " + response.body());
-        }
-
-        try {
-            EventDto dto = objectMapper.readValue(response.body(), EventDto.class);
-            return dto.toEvent();
-        } catch (IOException e) {
-            throw new EventHandlingException("Failed to parse response from remote endpoint", e);
-        }
-    }
+  }
 }

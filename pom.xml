@@ -3,23 +3,17 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.eventbob</groupId>
-    <artifactId>parent</artifactId>
+    <artifactId>io.eventbob.parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>eventbob-parent</name>
+    <name>EventBob Parent</name>
     <description>Parent POM for the project</description>
 
     <modules>
         <module>io.eventbob.core</module>
         <module>io.eventbob.spring</module>
-        <module>io.eventbob.example.lower</module>
-        <module>io.eventbob.example.upper</module>
-        <module>io.eventbob.example.echo</module>
-        <module>io.eventbob.example.microlith.spring.echo</module>
-        <module>io.eventbob.example.microlith.spring.upper</module>
         <module>io.eventbob.dropwizard</module>
-        <module>io.eventbob.example.microlith.dw.echo</module>
-        <module>io.eventbob.example.microlith.dw.upper</module>
+        <module>io.eventbob.example</module>
     </modules>
 
     <properties>
@@ -122,6 +116,44 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <profiles>
+        <profile>
+            <id>ci</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-checkstyle-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.puppycrawl.tools</groupId>
+                                <artifactId>checkstyle</artifactId>
+                                <version>14.1.0</version>
+                            </dependency>
+                        </dependencies>
+                        <configuration>
+                            <configLocation>${maven.multiModuleProjectDirectory}/checkstyle.xml</configLocation>
+                            <consoleOutput>true</consoleOutput>
+                            <violationSeverity>error</violationSeverity>
+                            <failOnViolation>true</failOnViolation>
+                            <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>checkstyle-check</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
     <repositories>
         <!-- Additional repositories if needed -->

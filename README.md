@@ -494,8 +494,8 @@ Response:
 
 - [Architecture Details](docs/architecture.md) - Clean architecture layers, dependency rules, and location transparency
 - [Spring Implementation](io.eventbob.spring/README.md) - Spring Boot infrastructure library documentation
-- [Dropwizard Architecture](docs/io.eventbob.dropwizard/architecture.md) - Dropwizard infrastructure library architecture
-- [Dropwizard Domain Spec](docs/io.eventbob.dropwizard/domain_spec.md) - Dropwizard infrastructure library domain specification
+- [Dropwizard Architecture](io.eventbob.dropwizard/docs/architecture.md) - Dropwizard infrastructure library architecture
+- [Dropwizard Domain Spec](io.eventbob.dropwizard/docs/domain_spec.md) - Dropwizard infrastructure library domain specification
 
 ## Design Principles
 

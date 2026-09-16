@@ -6,8 +6,9 @@
 
     <parent>
         <groupId>io.eventbob</groupId>
-        <artifactId>parent</artifactId>
+        <artifactId>io.eventbob.example</artifactId>
         <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>io.eventbob.example.upper</artifactId>

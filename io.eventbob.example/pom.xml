@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.eventbob</groupId>
+        <artifactId>io.eventbob.parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>io.eventbob.example</artifactId>
+    <packaging>pom</packaging>
+    <name>EventBob Example Module</name>
+    <description>Parent POM for the examples</description>
+
+    <modules>
+        <module>io.eventbob.example.lower</module>
+        <module>io.eventbob.example.upper</module>
+        <module>io.eventbob.example.echo</module>
+        <module>io.eventbob.example.microlith.spring.echo</module>
+        <module>io.eventbob.example.microlith.spring.upper</module>
+        <module>io.eventbob.example.microlith.dw.echo</module>
+        <module>io.eventbob.example.microlith.dw.upper</module>
+    </modules>
+</project>
