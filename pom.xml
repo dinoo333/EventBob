@@ -22,7 +22,7 @@
         <maven.compiler.release>21</maven.compiler.release>
         <revision>${project.version}</revision>
         <junit.version>5.12.2</junit.version>
-        <assertj.version>3.25.3</assertj.version>
+        <assertj.version>3.27.7</assertj.version>
         <mockito.version>5.18.0</mockito.version>
         <spring-boot.version>3.2.2</spring-boot.version>
         <testcontainers.version>1.19.3</testcontainers.version>
