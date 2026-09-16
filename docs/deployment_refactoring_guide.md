@@ -2,13 +2,16 @@
 
 ## Overview
 
-EventBob's location transparency enables configuration-only reorganization of microliths. Handlers can be moved between microliths, microliths can be merged or split, and capabilities can be consolidated—all without changing handler code.
+EventBob's location transparency enables configuration-only reorganization of microliths. Handlers can be moved between
+microliths, microliths can be merged or split, and capabilities can be consolidated—all without changing handler code.
 
-**Key insight:** The routing layer treats local (JAR-loaded) and remote (HTTP-wrapped) handlers identically. Moving a capability from local to remote is purely a configuration change.
+**Key insight:** The routing layer treats local (JAR-loaded) and remote (HTTP-wrapped) handlers identically. Moving a
+capability from local to remote is purely a configuration change.
 
 ## Configuration Mechanics
 
-EventBob microliths are configured via Spring `@Bean` declarations in the application class, not via `application.yml` property binding. There are three bean types:
+EventBob microliths are configured via Spring `@Bean` declarations in the application class, not via `application.yml`
+property binding. There are three bean types:
 
 ### Inline Handlers (`HandlerLifecycle`)
 
@@ -37,7 +40,8 @@ public List<Path> handlerJarPaths() {
 
 ### Remote Capabilities (`List<RemoteCapability>`)
 
-Declare a `List<RemoteCapability>` bean. Events targeting these capabilities are forwarded via HTTP to the configured microlith.
+Declare a `List<RemoteCapability>` bean. Events targeting these capabilities are forwarded via HTTP to the configured
+microlith.
 
 ```java
 @Bean
@@ -57,6 +61,7 @@ public List<RemoteCapability> remoteCapabilities() {
 **Example:** Move `echo.jar` from Microlith A to Microlith B.
 
 #### Current State
+
 ```
 Microlith A (port 8080)
 ├── echo.jar (local)
@@ -67,6 +72,7 @@ Microlith B (port 8081)
 ```
 
 **Microlith A configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -78,6 +84,7 @@ public List<Path> handlerJarPaths() {
 ```
 
 **Microlith B configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -94,6 +101,7 @@ public List<RemoteCapability> remoteCapabilities() {
 ```
 
 #### Target State
+
 ```
 Microlith A (port 8080)
 └── lower.jar (local)
@@ -104,6 +112,7 @@ Microlith B (port 8081)
 ```
 
 **Microlith A configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -120,6 +129,7 @@ public List<RemoteCapability> remoteCapabilities() {
 ```
 
 **Microlith B configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -131,8 +141,11 @@ public List<Path> handlerJarPaths() {
 ```
 
 #### Configuration Changes
-- **Microlith A:** Remove `echo.jar` from the `handlerJarPaths` bean, add an `"echo"` entry to the `remoteCapabilities` bean pointing to B
-- **Microlith B:** Add `echo.jar` to the `handlerJarPaths` bean, remove the `"echo"` entry from the `remoteCapabilities` bean
+
+- **Microlith A:** Remove `echo.jar` from the `handlerJarPaths` bean, add an `"echo"` entry to the `remoteCapabilities`
+  bean pointing to B
+- **Microlith B:** Add `echo.jar` to the `handlerJarPaths` bean, remove the `"echo"` entry from the `remoteCapabilities`
+  bean
 
 **Zero code changes to handlers.** Routing layer adapts automatically.
 
@@ -145,6 +158,7 @@ public List<Path> handlerJarPaths() {
 **Example:** Merge Microlith B into Microlith A.
 
 #### Current State
+
 ```
 Microlith A (port 8080)
 ├── echo.jar (local)
@@ -155,6 +169,7 @@ Microlith B (port 8081)
 ```
 
 #### Target State
+
 ```
 Microlith A (port 8080)
 ├── echo.jar (local)
@@ -165,6 +180,7 @@ Microlith B (decommissioned)
 ```
 
 **Microlith A configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -178,7 +194,9 @@ public List<Path> handlerJarPaths() {
 ```
 
 #### Configuration Changes
-- **Microlith A:** Add `upper.jar` to the `handlerJarPaths` bean; remove the `remoteCapabilities` bean (or remove the `"upper"` entry from it if other remote capabilities remain)
+
+- **Microlith A:** Add `upper.jar` to the `handlerJarPaths` bean; remove the `remoteCapabilities` bean (or remove the
+  `"upper"` entry from it if other remote capabilities remain)
 - **Microlith B:** Decommission after cutover
 
 **Result:** All capabilities now local in Microlith A. No inter-service HTTP calls for these capabilities.
@@ -192,6 +210,7 @@ public List<Path> handlerJarPaths() {
 **Example:** Extract `upper.jar` to a new dedicated Microlith C.
 
 #### Current State
+
 ```
 Microlith A (port 8080)
 ├── echo.jar (local)
@@ -200,6 +219,7 @@ Microlith A (port 8080)
 ```
 
 #### Target State
+
 ```
 Microlith A (port 8080)
 ├── echo.jar (local)
@@ -210,6 +230,7 @@ Microlith C (port 8082)
 ```
 
 **Microlith A configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -228,6 +249,7 @@ public List<RemoteCapability> remoteCapabilities() {
 ```
 
 **Microlith C configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -236,10 +258,13 @@ public List<Path> handlerJarPaths() {
 ```
 
 #### Configuration Changes
-- **Microlith A:** Remove `upper.jar` from the `handlerJarPaths` bean; add a `"upper"` entry to the `remoteCapabilities` bean pointing to C
+
+- **Microlith A:** Remove `upper.jar` from the `handlerJarPaths` bean; add a `"upper"` entry to the `remoteCapabilities`
+  bean pointing to C
 - **Microlith C:** New microlith with a `handlerJarPaths` bean containing `upper.jar`
 
-**Use case:** Microlith C can now scale independently. If `upper` handles CPU-intensive transformations, it can run on larger instances without affecting `echo` and `lower`.
+**Use case:** Microlith C can now scale independently. If `upper` handles CPU-intensive transformations, it can run on
+larger instances without affecting `echo` and `lower`.
 
 ---
 
@@ -250,6 +275,7 @@ public List<Path> handlerJarPaths() {
 **Example:** Move `lower.jar` and `upper.jar` to same microlith (they're often called together by `echo`).
 
 #### Current State
+
 ```
 Microlith A (port 8080)
 └── echo.jar (local)
@@ -264,6 +290,7 @@ Microlith C (port 8082)
 **Issue:** `echo` handler calls both `lower` and `upper`. This results in 2 HTTP round-trips per echo request.
 
 #### Target State
+
 ```
 Microlith A (port 8080)
 └── echo.jar (local)
@@ -276,6 +303,7 @@ Microlith C (decommissioned)
 ```
 
 **Microlith A configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -292,6 +320,7 @@ public List<RemoteCapability> remoteCapabilities() {
 ```
 
 **Microlith B configuration:**
+
 ```java
 @Bean
 public List<Path> handlerJarPaths() {
@@ -303,11 +332,13 @@ public List<Path> handlerJarPaths() {
 ```
 
 #### Configuration Changes
+
 - **Microlith B:** Add `upper.jar` to the `handlerJarPaths` bean
 - **Microlith A:** Update the `"upper"` entry in the `remoteCapabilities` bean to point to B instead of C
 - **Microlith C:** Decommission
 
-**Result:** When `echo` calls `lower` and `upper`, both are now handled in Microlith B. If they share data or state, they can do so in-process.
+**Result:** When `echo` calls `lower` and `upper`, both are now handled in Microlith B. If they share data or state,
+they can do so in-process.
 
 ---
 
@@ -322,6 +353,7 @@ This ensures that at every moment during deployment, at least one microlith can 
 ### Why This Works
 
 EventBob's location transparency allows **both microliths to have the same capability temporarily** during transition:
+
 - Both can handle requests independently
 - No conflicts because handlers don't share state
 - After transition completes, source forwards to destination
@@ -365,6 +397,7 @@ curl -X POST http://microlith-b:8081/events \
 ```
 
 **Criteria to proceed:**
+
 - All B instances respond successfully
 - Response times within acceptable threshold
 - No errors in B logs related to echo handler
@@ -417,16 +450,19 @@ For environments with blue-green infrastructure:
 ```
 
 ### Advantages
+
 - Atomic cutover reduces transition window
 - Easy rollback (switch back to blue)
 - Full environment testing before production traffic
 
 ### Disadvantages
+
 - Requires 2x infrastructure during transition
 - More complex orchestration
 - Overkill for simple JAR moves
 
-**Recommendation:** Use rolling restarts for routine refactoring. Reserve blue-green for major topology changes or high-risk migrations.
+**Recommendation:** Use rolling restarts for routine refactoring. Reserve blue-green for major topology changes or
+high-risk migrations.
 
 ---
 
@@ -434,17 +470,21 @@ For environments with blue-green infrastructure:
 
 ### Health Checks
 
-EventBob provides a built-in `healthcheck` capability registered unconditionally on every microlith. Load balancers and orchestrators can verify microlith availability by routing an event to the `healthcheck` target and checking for a successful response.
+EventBob provides a built-in `healthcheck` capability registered unconditionally on every microlith. Load balancers and
+orchestrators can verify microlith availability by routing an event to the `healthcheck` target and checking for a
+successful response.
 
 ### Monitoring
 
 **Key metrics during migration:**
+
 - Request latency (local vs remote)
 - Error rates by capability
 - HTTP connection pool saturation
 - Handler execution times
 
 **Alerting thresholds:**
+
 - Error rate spike >2x baseline
 - p99 latency >3x baseline
 - Connection timeouts to destination
@@ -460,7 +500,8 @@ If issues arise during Phase 2 (removing capability from source):
 4. Investigate root cause before retry
 ```
 
-**Key insight:** Phase 1 (adding to destination) is reversible. Phase 2 (removing from source) should only proceed after health checks pass.
+**Key insight:** Phase 1 (adding to destination) is reversible. Phase 2 (removing from source) should only proceed after
+health checks pass.
 
 ---
 
@@ -523,14 +564,15 @@ Result: Latency increase, chatty network calls.
 
 ## Summary
 
-| Refactoring Scenario | Configuration Change | Code Change | Deployment Order |
-|---------------------|----------------------|-------------|------------------|
-| Move JAR | Update `handlerJarPaths` and `remoteCapabilities` | None | Destination first |
-| Merge microliths | Add JARs to target, decommission source | None | Target first |
-| Extract to new | Remove JAR from source, create new microlith | None | New first |
-| Consolidate capabilities | Move JARs to same microlith | None | Destination first |
+| Refactoring Scenario     | Configuration Change                              | Code Change | Deployment Order  |
+|--------------------------|---------------------------------------------------|-------------|-------------------|
+| Move JAR                 | Update `handlerJarPaths` and `remoteCapabilities` | None        | Destination first |
+| Merge microliths         | Add JARs to target, decommission source           | None        | Target first      |
+| Extract to new           | Remove JAR from source, create new microlith      | None        | New first         |
+| Consolidate capabilities | Move JARs to same microlith                       | None        | Destination first |
 
 **Key principles:**
+
 1. Location transparency enables configuration-only refactoring
 2. Deploy destination first, source second (zero downtime)
 3. Health checks between phases prevent cascading failures

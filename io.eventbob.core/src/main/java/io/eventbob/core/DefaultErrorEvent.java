@@ -8,18 +8,21 @@ import java.util.Map;
  */
 class DefaultErrorEvent {
 
+  private DefaultErrorEvent() {
+    // Utility class
+  }
+
   static Event create(Throwable error, Event originalEvent) {
     Map<String, Object> errorPayload = new LinkedHashMap<>();
     errorPayload.put("errorMessage", error.getMessage() != null ? error.getMessage() : "null");
-    errorPayload.put("errorType", error.getClass().getName());
+    errorPayload.put("errorType", error
+        .getClass()
+        .getName());
     errorPayload.put("originalEvent", originalEvent);
 
-    return originalEvent.toBuilder()
+    return originalEvent
+        .toBuilder()
         .payload(errorPayload)
         .build();
-  }
-
-  private DefaultErrorEvent() {
-    // Utility class
   }
 }

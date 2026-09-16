@@ -1,17 +1,16 @@
 package io.eventbob.spring.loader;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import io.eventbob.core.EventHandler;
 import io.eventbob.spring.adapter.RemoteCapability;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class RemoteHandlerLoaderTest {
 
@@ -19,7 +18,8 @@ class RemoteHandlerLoaderTest {
 
   @BeforeEach
   void setUp() {
-    httpClient = HttpClient.newBuilder()
+    httpClient = HttpClient
+        .newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .build();
   }

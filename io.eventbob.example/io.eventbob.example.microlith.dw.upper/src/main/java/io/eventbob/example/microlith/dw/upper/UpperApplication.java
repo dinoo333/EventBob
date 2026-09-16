@@ -6,7 +6,6 @@ import io.dropwizard.core.setup.Bootstrap;
 import io.dropwizard.core.setup.Environment;
 import io.eventbob.dropwizard.EventBobBundle;
 import io.eventbob.example.upper.UpperHandlerLifecycle;
-
 import java.util.List;
 
 /**
@@ -18,23 +17,29 @@ import java.util.List;
  */
 public class UpperApplication extends Application<Configuration> {
 
-    private final EventBobBundle bundle = new EventBobBundle(
-        null,
-        List.of(new UpperHandlerLifecycle()),
-        null
-    );
+  private final EventBobBundle bundle = new EventBobBundle(
+      null,
+      List.of(new UpperHandlerLifecycle()),
+      null
+  );
 
-    @Override
-    public void initialize(Bootstrap<Configuration> bootstrap) {
-        bootstrap.addBundle(bundle);
-    }
+  /**
+   * Main method.
+   *
+   * @param args The command line arguments.
+   * @throws Exception Thrown if the application fails to start.
+   */
+  public static void main(String[] args) throws Exception {
+    new UpperApplication().run(args);
+  }
 
-    @Override
-    public void run(Configuration configuration, Environment environment) {
-        // All wiring is handled by EventBobBundle.run()
-    }
+  @Override
+  public void initialize(Bootstrap<Configuration> bootstrap) {
+    bootstrap.addBundle(bundle);
+  }
 
-    public static void main(String[] args) throws Exception {
-        new UpperApplication().run(args);
-    }
+  @Override
+  public void run(Configuration configuration, Environment environment) {
+    // All wiring is handled by EventBobBundle.run()
+  }
 }

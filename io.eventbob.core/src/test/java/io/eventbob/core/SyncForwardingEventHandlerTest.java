@@ -10,14 +10,20 @@ import org.junit.jupiter.api.Test;
 class SyncForwardingEventHandlerTest {
 
   private static Event event(String payload) {
-    return Event.builder().source("source").target("target").payload(payload).build();
+    return Event
+        .builder()
+        .source("source")
+        .target("target")
+        .payload(payload)
+        .build();
   }
 
   private static SyncForwardingEventHandler<String, String> handlerOf(
       BiFunction<SyncForwardingEventHandler<String, String>, Event, String> requestBuilder,
       BiFunction<SyncForwardingEventHandler<String, String>, String, Event> responseParser,
       BiFunction<SyncForwardingEventHandler<String, String>, String, String> delegate) {
-    return new SyncForwardingEventHandler<>(requestBuilder, responseParser, delegate) {};
+    return new SyncForwardingEventHandler<>(requestBuilder, responseParser, delegate) {
+    };
   }
 
   @Test

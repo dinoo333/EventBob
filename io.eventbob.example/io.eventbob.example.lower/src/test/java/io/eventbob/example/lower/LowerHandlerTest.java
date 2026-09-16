@@ -1,14 +1,13 @@
 package io.eventbob.example.lower;
 
-import io.eventbob.core.Event;
-import io.eventbob.core.EventHandlingException;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import io.eventbob.core.Event;
+import io.eventbob.core.EventHandlingException;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class LowerHandlerTest {
 
@@ -23,7 +22,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldConvertUppercaseToLowercase() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .payload("HELLO WORLD")
@@ -36,7 +36,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldConvertMixedCaseToLowercase() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .payload("HeLLo WoRLd")
@@ -49,7 +50,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldHandleAlreadyLowercaseInput() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .payload("hello world")
@@ -62,7 +64,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldHandleEmptyString() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .payload("")
@@ -75,7 +78,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldSetSourceToLower() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .payload("TEST")
@@ -88,7 +92,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldSetTargetToOriginalSource() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .payload("TEST")
@@ -101,7 +106,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldPreserveMetadata() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .metadata(Map.of("traceId", "abc123"))
@@ -115,7 +121,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldPreserveParameters() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .parameters(Map.of("locale", "en-US"))
@@ -129,7 +136,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldThrowClassCastExceptionWhenPayloadIsNotString() {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .payload(12345)
@@ -141,7 +149,8 @@ class LowerHandlerTest {
 
   @Test
   void shouldThrowNullPointerExceptionWhenPayloadIsNull() {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("lower")
         .build();

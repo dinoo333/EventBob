@@ -13,5 +13,10 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface Capabilities {
-  Capability [] value();
+  /**
+   * The capabilities of the EventHandler.
+   *
+   * @return the capabilities
+   */
+  Capability[] value();
 }

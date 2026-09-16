@@ -1,27 +1,31 @@
 package io.eventbob.spring.adapter;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
-import io.eventbob.core.Event;
-import io.eventbob.core.EventHandlingException;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
-
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.time.Duration;
-import java.util.Map;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import io.eventbob.core.Event;
+import io.eventbob.core.EventHandlingException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.time.Duration;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 class HttpEventHandlerAdapterTest {
 
   @RegisterExtension
-  static WireMockExtension wireMock = WireMockExtension.newInstance()
+  static WireMockExtension wireMock = WireMockExtension
+      .newInstance()
       .options(wireMockConfig().dynamicPort())
       .build();
 
@@ -32,7 +36,8 @@ class HttpEventHandlerAdapterTest {
   @BeforeEach
   void setUp() {
     remoteEndpoint = URI.create("http://localhost:" + wireMock.getPort());
-    HttpClient httpClient = HttpClient.newBuilder()
+    HttpClient httpClient = HttpClient
+        .newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .build();
     adapter = new HttpEventHandlerAdapter(remoteEndpoint, httpClient);
@@ -41,14 +46,16 @@ class HttpEventHandlerAdapterTest {
 
   @Test
   void shouldSendEventAndReturnResponseOnSuccess() throws Exception {
-    Event inputEvent = Event.builder()
+    Event inputEvent = Event
+        .builder()
         .source("test")
         .target("upper")
         .payload("hello")
         .build();
 
     // Create JSON response manually since Event uses Builder pattern
-    String responseJson = """
+    String responseJson =
+        """
         {
           "source": "test",
           "target": "upper",
@@ -78,7 +85,8 @@ class HttpEventHandlerAdapterTest {
 
   @Test
   void shouldThrowEventHandlingExceptionOn404() {
-    Event inputEvent = Event.builder()
+    Event inputEvent = Event
+        .builder()
         .source("test")
         .target("unknown")
         .build();
@@ -96,7 +104,8 @@ class HttpEventHandlerAdapterTest {
 
   @Test
   void shouldThrowEventHandlingExceptionOn500() {
-    Event inputEvent = Event.builder()
+    Event inputEvent = Event
+        .builder()
         .source("test")
         .target("failing")
         .build();
@@ -114,18 +123,22 @@ class HttpEventHandlerAdapterTest {
 
   @Test
   void shouldThrowEventHandlingExceptionOnNetworkTimeout() {
-    Event inputEvent = Event.builder()
+    Event inputEvent = Event
+        .builder()
         .source("test")
         .target("slow")
         .build();
 
     // Use an invalid host to trigger connection timeout
-    URI invalidEndpoint = URI.create("http://192.0.2.1:9999"); // TEST-NET-1 (guaranteed non-routable)
-    HttpClient timeoutClient = HttpClient.newBuilder()
+    URI invalidEndpoint =
+        URI.create("http://192.0.2.1:9999"); // TEST-NET-1 (guaranteed non-routable)
+    HttpClient timeoutClient = HttpClient
+        .newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofMillis(500))
         .build();
-    HttpEventHandlerAdapter timeoutAdapter = new HttpEventHandlerAdapter(invalidEndpoint, timeoutClient);
+    HttpEventHandlerAdapter timeoutAdapter =
+        new HttpEventHandlerAdapter(invalidEndpoint, timeoutClient);
 
     assertThatThrownBy(() -> timeoutAdapter.handle(inputEvent, null))
         .isInstanceOf(EventHandlingException.class)
@@ -135,7 +148,8 @@ class HttpEventHandlerAdapterTest {
 
   @Test
   void shouldThrowEventHandlingExceptionOnMalformedResponse() {
-    Event inputEvent = Event.builder()
+    Event inputEvent = Event
+        .builder()
         .source("test")
         .target("malformed")
         .build();
@@ -153,14 +167,16 @@ class HttpEventHandlerAdapterTest {
 
   @Test
   void shouldPreserveEventParameters() throws Exception {
-    Event inputEvent = Event.builder()
+    Event inputEvent = Event
+        .builder()
         .source("test")
         .target("upper")
         .parameters(Map.of("timeout", "5000"))
         .payload("hello")
         .build();
 
-    String responseJson = """
+    String responseJson =
+        """
         {
           "source": "test",
           "target": "upper",
@@ -183,14 +199,16 @@ class HttpEventHandlerAdapterTest {
 
   @Test
   void shouldPreserveEventMetadata() throws Exception {
-    Event inputEvent = Event.builder()
+    Event inputEvent = Event
+        .builder()
         .source("test")
         .target("upper")
         .metadata(Map.of("traceId", "abc123"))
         .payload("hello")
         .build();
 
-    String responseJson = """
+    String responseJson =
+        """
         {
           "source": "test",
           "target": "upper",

@@ -1,13 +1,12 @@
 package io.eventbob.spring.handlers;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import io.eventbob.core.Event;
 import io.eventbob.core.EventHandlingException;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class HealthcheckHandlerTest {
 
@@ -20,7 +19,8 @@ class HealthcheckHandlerTest {
 
   @Test
   void shouldReturnTruePayload() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("healthcheck")
         .build();
@@ -32,7 +32,8 @@ class HealthcheckHandlerTest {
 
   @Test
   void shouldPreserveEventSource() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("monitoring-system")
         .target("healthcheck")
         .build();
@@ -44,7 +45,8 @@ class HealthcheckHandlerTest {
 
   @Test
   void shouldPreserveEventTarget() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("healthcheck")
         .build();
@@ -56,7 +58,8 @@ class HealthcheckHandlerTest {
 
   @Test
   void shouldPreserveMetadata() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("healthcheck")
         .metadata(Map.of("traceId", "abc123", "spanId", "xyz789"))
@@ -71,7 +74,8 @@ class HealthcheckHandlerTest {
 
   @Test
   void shouldPreserveParameters() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("healthcheck")
         .parameters(Map.of("timeout", "5000"))
@@ -84,7 +88,8 @@ class HealthcheckHandlerTest {
 
   @Test
   void shouldIgnoreInputPayload() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("healthcheck")
         .payload("some-data")
@@ -97,7 +102,8 @@ class HealthcheckHandlerTest {
 
   @Test
   void shouldHandleNullPayload() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("healthcheck")
         .build();
@@ -109,13 +115,15 @@ class HealthcheckHandlerTest {
 
   @Test
   void shouldAlwaysReturnTrueRegardlessOfInput() throws EventHandlingException {
-    Event input1 = Event.builder()
+    Event input1 = Event
+        .builder()
         .source("system-a")
         .target("healthcheck")
         .payload(false)
         .build();
 
-    Event input2 = Event.builder()
+    Event input2 = Event
+        .builder()
         .source("system-b")
         .target("healthcheck")
         .payload(12345)

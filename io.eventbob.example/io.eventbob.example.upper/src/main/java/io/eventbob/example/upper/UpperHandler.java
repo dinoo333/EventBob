@@ -8,8 +8,8 @@ import io.eventbob.core.EventHandlingException;
 
 /**
  * Handler that provides uppercase transformation capability.
- * <p>
- * Demonstrates dependency injection via HandlerLifecycle. The handler depends on
+ *
+ * <p>Demonstrates dependency injection via HandlerLifecycle. The handler depends on
  * {@link UpperService} which is provided via constructor injection. The lifecycle
  * implementation wires the service to the handler.
  * </p>
@@ -20,8 +20,8 @@ public class UpperHandler implements EventHandler {
 
   /**
    * Creates an upper handler with the specified service.
-   * <p>
-   * This constructor demonstrates dependency injection. Handlers receive dependencies
+   *
+   * <p>This constructor demonstrates dependency injection. Handlers receive dependencies
    * (services, repositories, HTTP clients, etc.) that are wired by the lifecycle
    * implementation.
    * </p>
@@ -37,7 +37,8 @@ public class UpperHandler implements EventHandler {
     String input = (String) event.getPayload();
     String uppercased = upperService.processUppercase(input, dispatcher);
 
-    return event.toBuilder()
+    return event
+        .toBuilder()
         .source("upper")
         .target(event.getSource())
         .payload(uppercased)

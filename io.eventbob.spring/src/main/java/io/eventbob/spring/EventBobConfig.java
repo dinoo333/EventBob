@@ -10,23 +10,23 @@ import io.eventbob.spring.adapter.RemoteCapability;
 import io.eventbob.spring.handlers.HealthcheckHandler;
 import io.eventbob.spring.loader.RemoteHandlerLoader;
 import jakarta.annotation.PreDestroy;
+import java.net.http.HttpClient;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.net.http.HttpClient;
-import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
  * Spring configuration for EventBob and its handlers.
- * <p>
- * This configuration supports three handler registration paths:
+ *
+ * <p>This configuration supports three handler registration paths:
  * </p>
+ *
  * <ul>
  *   <li><b>Inline lifecycles</b> — {@code HandlerLifecycle} beans declared in the
  *       application context; initialized directly without classloader isolation.
@@ -36,9 +36,10 @@ import java.util.Map;
  *       shipping handler JARs as separate deployment artifacts.</li>
  *   <li><b>Remote handlers</b> — capabilities delegated to remote microliths via HTTP.</li>
  * </ul>
- * <p>
- * All three paths are optional. Concrete applications provide whichever beans apply:
+ *
+ * <p>All three paths are optional. Concrete applications provide whichever beans apply:
  * </p>
+ *
  * <ul>
  *   <li>{@code List<HandlerLifecycle>} bean — inline lifecycle handlers</li>
  *   <li>{@code List<Path> handlerJarPaths} bean — JAR-based handlers</li>
@@ -55,8 +56,8 @@ public class EventBobConfig {
 
   /**
    * Create EventBob configuration with specified handler sources.
-   * <p>
-   * All parameters are optional. Pass {@code null} (or omit the bean) for any
+   *
+   * <p>All parameters are optional. Pass {@code null} (or omit the bean) for any
    * source that does not apply to the current deployment.
    * </p>
    *
@@ -65,9 +66,9 @@ public class EventBobConfig {
    * @param remoteCapabilities remote capability endpoints (optional)
    */
   public EventBobConfig(
-          @Autowired(required = false) List<Path> handlerJarPaths,
-          @Autowired(required = false) List<HandlerLifecycle> inlineLifecycles,
-          @Autowired(required = false) List<RemoteCapability> remoteCapabilities) {
+      @Autowired(required = false) List<Path> handlerJarPaths,
+      @Autowired(required = false) List<HandlerLifecycle> inlineLifecycles,
+      @Autowired(required = false) List<RemoteCapability> remoteCapabilities) {
     this.handlerJarPaths = handlerJarPaths != null ? handlerJarPaths : List.of();
     this.inlineLifecycles = inlineLifecycles != null ? inlineLifecycles : List.of();
     this.remoteCapabilities = remoteCapabilities != null ? remoteCapabilities : List.of();
@@ -80,9 +81,10 @@ public class EventBobConfig {
    */
   @Bean
   public HttpClient httpClient() {
-    return HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_1_1)
-            .build();
+    return HttpClient
+        .newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .build();
   }
 
   /**
@@ -97,8 +99,8 @@ public class EventBobConfig {
 
   /**
    * Create the EventBob instance with all registered handlers.
-   * <p>
-   * Loads handlers from all configured sources (inline lifecycles, JARs, remote),
+   *
+   * <p>Loads handlers from all configured sources (inline lifecycles, JARs, remote),
    * checks for duplicate capabilities, and registers everything with EventBob.
    * </p>
    *
@@ -133,7 +135,9 @@ public class EventBobConfig {
       try {
         lifecycle.shutdown();
       } catch (Exception e) {
-        logger.warn("Error shutting down inline lifecycle {}", lifecycle.getClass().getSimpleName(), e);
+        logger.warn("Error shutting down inline lifecycle {}", lifecycle
+            .getClass()
+            .getSimpleName(), e);
       }
     }
   }
@@ -150,24 +154,31 @@ public class EventBobConfig {
       for (HandlerLifecycle lifecycle : inlineLifecycles) {
         lifecycle.initialize(lifecycleContext);
         EventHandler handler = lifecycle.getHandler();
-        Capability[] capabilities = handler.getClass().getAnnotationsByType(Capability.class);
+        Capability[] capabilities = handler
+            .getClass()
+            .getAnnotationsByType(Capability.class);
         if (capabilities.length == 0) {
-          logger.warn("Inline lifecycle {} returned a handler with no @Capability annotations; skipping",
-                  lifecycle.getClass().getSimpleName());
+          logger.warn(
+              "Inline lifecycle {} returned a handler with no @Capability annotations; skipping",
+              lifecycle
+                  .getClass()
+                  .getSimpleName());
           continue;
         }
         for (Capability capability : capabilities) {
           if (allHandlers.containsKey(capability.value())) {
             throw new IllegalStateException(
-                    "Duplicate capability '" + capability.value() + "' from inline lifecycle "
-                    + lifecycle.getClass().getSimpleName());
+                "Duplicate capability '" + capability.value() + "' from inline lifecycle "
+                    + lifecycle
+                    .getClass()
+                    .getSimpleName());
           }
           allHandlers.put(capability.value(), handler);
           registeredCapabilities++;
         }
       }
       logger.info("Registered {} capability(-ies) from {} inline lifecycle(s)",
-              registeredCapabilities, inlineLifecycles.size());
+          registeredCapabilities, inlineLifecycles.size());
     }
 
     // Load lifecycle-based handlers from JARs (isolated URLClassLoader per JAR)
@@ -177,7 +188,8 @@ public class EventBobConfig {
       for (Map.Entry<String, EventHandler> entry : jarHandlers.entrySet()) {
         if (allHandlers.containsKey(entry.getKey())) {
           throw new IllegalStateException(
-                  "Duplicate capability '" + entry.getKey() + "' found in JAR handlers and inline lifecycles");
+              "Duplicate capability '" + entry.getKey()
+                  + "' found in JAR handlers and inline lifecycles");
         }
       }
       allHandlers.putAll(jarHandlers);
@@ -190,7 +202,9 @@ public class EventBobConfig {
     for (String capability : remoteHandlers.keySet()) {
       if (allHandlers.containsKey(capability)) {
         throw new IllegalStateException(
-                "Duplicate capability '" + capability + "' found in remote handlers and local handlers");
+            "Duplicate capability '"
+                + capability
+                + "' found in remote handlers and local handlers");
       }
     }
     allHandlers.putAll(remoteHandlers);

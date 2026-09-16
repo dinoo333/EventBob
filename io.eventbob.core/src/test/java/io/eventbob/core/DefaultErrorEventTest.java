@@ -12,7 +12,8 @@ class DefaultErrorEventTest {
   @Test
   void createsEventWithErrorInfoInPayload() {
     Throwable error = new RuntimeException("Database connection failed");
-    Event original = Event.builder()
+    Event original = Event
+        .builder()
         .source("inventory-service")
         .target("database-service")
         .build();
@@ -36,7 +37,8 @@ class DefaultErrorEventTest {
     Map<String, Object> meta = new LinkedHashMap<>();
     meta.put("traceId", "trace-123");
 
-    Event original = Event.builder()
+    Event original = Event
+        .builder()
         .source("api-gateway")
         .target("auth-service")
         .parameters(params)
@@ -55,7 +57,8 @@ class DefaultErrorEventTest {
 
   @Test
   void replacesPayloadWithErrorInfo() {
-    Event original = Event.builder()
+    Event original = Event
+        .builder()
         .source("service-a")
         .target("service-b")
         .payload("original-payload-data")
@@ -73,7 +76,8 @@ class DefaultErrorEventTest {
 
   @Test
   void errorInfoStructureIsComplete() {
-    Event original = Event.builder()
+    Event original = Event
+        .builder()
         .source("client")
         .target("server")
         .build();
@@ -98,7 +102,8 @@ class DefaultErrorEventTest {
 
   @Test
   void handlesErrorWithNullMessage() {
-    Event original = Event.builder()
+    Event original = Event
+        .builder()
         .source("svc-a")
         .target("svc-b")
         .build();
@@ -116,7 +121,8 @@ class DefaultErrorEventTest {
 
   @Test
   void preservesEmptyParametersAndMetadata() {
-    Event original = Event.builder()
+    Event original = Event
+        .builder()
         .source("svc-1")
         .target("svc-2")
         .build();
@@ -133,7 +139,8 @@ class DefaultErrorEventTest {
     Map<String, Object> params = new LinkedHashMap<>();
     params.put("key", "value");
 
-    Event original = Event.builder()
+    Event original = Event
+        .builder()
         .source("source-svc")
         .target("target-svc")
         .parameters(params)

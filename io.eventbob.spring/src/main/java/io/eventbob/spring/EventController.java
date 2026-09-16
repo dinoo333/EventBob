@@ -3,11 +3,10 @@ package io.eventbob.spring;
 import io.eventbob.core.Event;
 import io.eventbob.core.EventBob;
 import io.eventbob.spring.adapter.EventDto;
+import java.util.concurrent.CompletableFuture;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.concurrent.CompletableFuture;
 
 /**
  * REST controller for event processing.
@@ -25,6 +24,11 @@ public class EventController {
 
   private final EventBob eventBob;
 
+  /**
+   * Constructor.
+   *
+   * @param eventBob The EventBob instance to use for event processing.
+   */
   public EventController(EventBob eventBob) {
     this.eventBob = eventBob;
   }
@@ -43,7 +47,8 @@ public class EventController {
   @PostMapping("/events")
   public CompletableFuture<EventDto> processEvent(@RequestBody EventDto eventDto) {
     Event event = eventDto.toEvent();
-    return eventBob.processEvent(event, (error, originalEvent) -> null)
+    return eventBob
+        .processEvent(event, (error, originalEvent) -> null)
         .thenApply(EventDto::fromEvent);
   }
 }
