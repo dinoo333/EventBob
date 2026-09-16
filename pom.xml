@@ -136,7 +136,7 @@
                         <configuration>
                             <configLocation>${maven.multiModuleProjectDirectory}/checkstyle.xml</configLocation>
                             <consoleOutput>true</consoleOutput>
-                            <violationSeverity>error</violationSeverity>
+                            <violationSeverity>warning</violationSeverity>
                             <failOnViolation>true</failOnViolation>
                             <includeTestSourceDirectory>true</includeTestSourceDirectory>
                         </configuration>
