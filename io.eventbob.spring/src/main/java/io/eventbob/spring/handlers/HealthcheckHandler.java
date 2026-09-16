@@ -16,7 +16,8 @@ import io.eventbob.core.EventHandlingException;
 public class HealthcheckHandler implements EventHandler {
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    return event.toBuilder()
+    return event
+        .toBuilder()
         .payload(true)
         .build();
   }

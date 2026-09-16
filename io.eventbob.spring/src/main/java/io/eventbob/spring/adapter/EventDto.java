@@ -3,14 +3,13 @@ package io.eventbob.spring.adapter;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.eventbob.core.Event;
-
 import java.util.Collections;
 import java.util.Map;
 
 /**
  * Data Transfer Object for Event serialization across HTTP boundaries.
- * <p>
- * This DTO exists in the infrastructure layer and carries Jackson annotations
+ *
+ * <p>This DTO exists in the infrastructure layer and carries Jackson annotations
  * to keep the core Event class framework-agnostic. It translates between the
  * domain Event and JSON representations used in HTTP communication.
  * </p>
@@ -23,6 +22,15 @@ public record EventDto(
     Object payload
 ) {
 
+  /**
+   * Constructor for deserialization.
+   *
+   * @param source The source of the event
+   * @param target The target of the event
+   * @param parameters The parameters of the event
+   * @param metadata The metadata of the event
+   * @param payload The payload of the event
+   */
   @JsonCreator
   public EventDto(
       @JsonProperty("source") String source,
@@ -59,7 +67,8 @@ public record EventDto(
    * @return the domain event
    */
   public Event toEvent() {
-    return Event.builder()
+    return Event
+        .builder()
         .source(source)
         .target(target)
         .parameters(parameters)

@@ -8,7 +8,6 @@ import io.eventbob.dropwizard.EventBobBundle;
 import io.eventbob.dropwizard.adapter.RemoteCapability;
 import io.eventbob.example.echo.EchoHandlerLifecycle;
 import io.eventbob.example.lower.LowerHandlerLifecycle;
-
 import java.net.URI;
 import java.util.List;
 
@@ -23,23 +22,29 @@ import java.util.List;
  */
 public class EchoApplication extends Application<Configuration> {
 
-    private final EventBobBundle bundle = new EventBobBundle(
-        null,
-        List.of(new EchoHandlerLifecycle(), new LowerHandlerLifecycle()),
-        List.of(new RemoteCapability("upper", URI.create("http://localhost:8082")))
-    );
+  private final EventBobBundle bundle = new EventBobBundle(
+      null,
+      List.of(new EchoHandlerLifecycle(), new LowerHandlerLifecycle()),
+      List.of(new RemoteCapability("upper", URI.create("http://localhost:8082")))
+  );
 
-    @Override
-    public void initialize(Bootstrap<Configuration> bootstrap) {
-        bootstrap.addBundle(bundle);
-    }
+  /**
+   * Main method.
+   *
+   * @param args Arguments.
+   * @throws Exception If anything goes wrong.
+   */
+  public static void main(String[] args) throws Exception {
+    new EchoApplication().run(args);
+  }
 
-    @Override
-    public void run(Configuration configuration, Environment environment) {
-        // All wiring is handled by EventBobBundle.run()
-    }
+  @Override
+  public void initialize(Bootstrap<Configuration> bootstrap) {
+    bootstrap.addBundle(bundle);
+  }
 
-    public static void main(String[] args) throws Exception {
-        new EchoApplication().run(args);
-    }
+  @Override
+  public void run(Configuration configuration, Environment environment) {
+    // All wiring is handled by EventBobBundle.run()
+  }
 }

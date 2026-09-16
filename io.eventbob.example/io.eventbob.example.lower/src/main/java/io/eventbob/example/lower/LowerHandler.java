@@ -4,12 +4,11 @@ import io.eventbob.core.Capability;
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
 import io.eventbob.core.EventHandler;
-import io.eventbob.core.EventHandlingException;
 
 /**
  * Handler that provides lowercase transformation capability.
- * <p>
- * Demonstrates dependency injection via HandlerLifecycle. The handler depends on
+ *
+ * <p>Demonstrates dependency injection via HandlerLifecycle. The handler depends on
  * {@link LowerService} which is provided via constructor injection. The lifecycle
  * implementation wires the service to the handler.
  * </p>
@@ -20,8 +19,8 @@ public class LowerHandler implements EventHandler {
 
   /**
    * Creates a lower event handler with the specified service.
-   * <p>
-   * This constructor demonstrates dependency injection. Handlers receive dependencies
+   *
+   * <p>This constructor demonstrates dependency injection. Handlers receive dependencies
    * (services, repositories, HTTP clients, etc.) that are wired by the lifecycle
    * implementation.
    * </p>
@@ -32,12 +31,13 @@ public class LowerHandler implements EventHandler {
     this.lowerService = lowerService;
   }
 
-    /**
-     * Handles an incoming event by converting its payload to lowercase.
-     * @param event The incoming event to handle.
-     * @param dispatcher The dispatcher to use for sending events if necessary.
-     * @return The lowercased event.
-     */
+  /**
+   * Handles an incoming event by converting its payload to lowercase.
+   *
+   * @param event      The incoming event to handle.
+   * @param dispatcher The dispatcher to use for sending events if necessary.
+   * @return The lowercased event.
+   */
   @Override
   public Event handle(Event event, Dispatcher dispatcher) {
     return lowerService.processLowercase(event, dispatcher);

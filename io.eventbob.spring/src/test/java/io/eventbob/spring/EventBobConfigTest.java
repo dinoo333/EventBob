@@ -1,5 +1,8 @@
 package io.eventbob.spring;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import io.eventbob.core.Capability;
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
@@ -9,14 +12,10 @@ import io.eventbob.core.HandlerLifecycle;
 import io.eventbob.core.LifecycleContext;
 import io.eventbob.spring.adapter.RemoteCapability;
 import io.eventbob.spring.handlers.HealthcheckHandler;
-import org.junit.jupiter.api.Test;
-
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.Test;
 
 class EventBobConfigTest {
 
@@ -106,7 +105,8 @@ class EventBobConfigTest {
     List<RemoteCapability> remoteCapabilities = List.of(
         new RemoteCapability("stub", URI.create("http://localhost:9000"))
     );
-    EventBobConfig config = new EventBobConfig(null, List.of(new StubLifecycle()), remoteCapabilities);
+    EventBobConfig config =
+        new EventBobConfig(null, List.of(new StubLifecycle()), remoteCapabilities);
     HttpClient httpClient = config.httpClient();
     HealthcheckHandler healthcheckHandler = config.healthcheckHandler();
 
@@ -129,7 +129,8 @@ class EventBobConfigTest {
     private final StubHandler handler = new StubHandler();
 
     @Override
-    public void initialize(LifecycleContext context) {}
+    public void initialize(LifecycleContext context) {
+    }
 
     @Override
     public EventHandler getHandler() {
@@ -137,6 +138,7 @@ class EventBobConfigTest {
     }
 
     @Override
-    public void shutdown() {}
+    public void shutdown() {
+    }
   }
 }

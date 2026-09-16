@@ -4,30 +4,36 @@ Event routing framework with clean architecture for building microliths with loc
 
 ## What Is EventBob?
 
-EventBob solves the chatty-application anti-pattern by bundling microservices into a microlith. When too many microservices cause network saturation, EventBob loads their JARs into a single server for in-process communication.
+EventBob solves the chatty-application anti-pattern by bundling microservices into a microlith. When too many
+microservices cause network saturation, EventBob loads their JARs into a single server for in-process communication.
 
-**Location Transparency:** EventBob also supports remote handler loading via HTTP. Handlers can run in-process (loaded from JARs) or remotely (accessed via HTTP endpoints). The routing layer treats both identically - clients cannot tell the difference.
+**Location Transparency:** EventBob also supports remote handler loading via HTTP. Handlers can run in-process (loaded
+from JARs) or remotely (accessed via HTTP endpoints). The routing layer treats both identically - clients cannot tell
+the difference.
 
 ## Quick Start (Spring)
 
 ### 1. Add Dependencies
 
 ```xml
+
 <dependency>
-  <groupId>io.eventbob</groupId>
-  <artifactId>io.eventbob.spring</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+    <groupId>io.eventbob</groupId>
+    <artifactId>io.eventbob.spring</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
 </dependency>
 ```
 
 ### 2. Write a Handler
 
 ```java
+
 @Capability("echo")
 public class EchoHandler implements EventHandler {
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    return event.toBuilder()
+    return event
+        .toBuilder()
         .payload(event.getPayload())
         .build();
   }
@@ -37,6 +43,7 @@ public class EchoHandler implements EventHandler {
 ### 3. Configure and Run
 
 ```java
+
 @SpringBootApplication
 @Import(EventBobConfig.class)
 public class MyMicrolith {
@@ -48,7 +55,7 @@ public class MyMicrolith {
   @Bean
   public List<Path> handlerJarPaths() {
     return List.of(
-      Paths.get("handlers/echo-handler.jar")
+        Paths.get("handlers/echo-handler.jar")
     );
   }
 }
@@ -67,6 +74,7 @@ curl -X POST http://localhost:8080/events \
 ```
 
 Response:
+
 ```json
 {
   "source": "client",
@@ -80,10 +88,11 @@ Response:
 ### 1. Add Dependencies
 
 ```xml
+
 <dependency>
-  <groupId>io.eventbob</groupId>
-  <artifactId>io.eventbob.dropwizard</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+    <groupId>io.eventbob</groupId>
+    <artifactId>io.eventbob.dropwizard</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -92,11 +101,13 @@ Response:
 The handler contract is framework-agnostic, so the same handler works unmodified under Dropwizard:
 
 ```java
+
 @Capability("echo")
 public class EchoHandler implements EventHandler {
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    return event.toBuilder()
+    return event
+        .toBuilder()
         .payload(event.getPayload())
         .build();
   }
@@ -153,6 +164,7 @@ curl -X POST http://localhost:8180/events \
 ```
 
 Response:
+
 ```json
 {
   "source": "client",
@@ -192,22 +204,23 @@ Application (Concrete Microlith)  Application (Concrete Microlith)
                                      - Remote endpoint configuration
 ```
 
-**Dependency Rule:** Each layer depends only on layers inside it. Core is pure domain logic with zero framework dependencies.
+**Dependency Rule:** Each layer depends only on layers inside it. Core is pure domain logic with zero framework
+dependencies.
 
 ## Module Structure
 
-| Module | Purpose | Dependencies |
-|--------|---------|--------------|
-| `io.eventbob.core` | Domain model and routing logic | JDK only |
-| `io.eventbob.spring` | Spring Boot infrastructure library | core + Spring Boot |
-| `io.eventbob.example.echo` | Echo handler implementation | core |
-| `io.eventbob.example.lower` | Lower handler implementation | core |
-| `io.eventbob.example.upper` | Upper handler implementation | core |
-| `io.eventbob.example.microlith.spring.echo` | Echo microlith (Spring Boot app) | spring + echo + lower handlers |
-| `io.eventbob.example.microlith.spring.upper` | Upper microlith (Spring Boot app) | spring + upper handler |
-| `io.eventbob.dropwizard` | Dropwizard infrastructure library | core + Dropwizard |
-| `io.eventbob.example.microlith.dw.echo` | Echo microlith (Dropwizard app) | dropwizard + echo + lower handlers |
-| `io.eventbob.example.microlith.dw.upper` | Upper microlith (Dropwizard app) | dropwizard + upper handler |
+| Module                                       | Purpose                            | Dependencies                       |
+|----------------------------------------------|------------------------------------|------------------------------------|
+| `io.eventbob.core`                           | Domain model and routing logic     | JDK only                           |
+| `io.eventbob.spring`                         | Spring Boot infrastructure library | core + Spring Boot                 |
+| `io.eventbob.example.echo`                   | Echo handler implementation        | core                               |
+| `io.eventbob.example.lower`                  | Lower handler implementation       | core                               |
+| `io.eventbob.example.upper`                  | Upper handler implementation       | core                               |
+| `io.eventbob.example.microlith.spring.echo`  | Echo microlith (Spring Boot app)   | spring + echo + lower handlers     |
+| `io.eventbob.example.microlith.spring.upper` | Upper microlith (Spring Boot app)  | spring + upper handler             |
+| `io.eventbob.dropwizard`                     | Dropwizard infrastructure library  | core + Dropwizard                  |
+| `io.eventbob.example.microlith.dw.echo`      | Echo microlith (Dropwizard app)    | dropwizard + echo + lower handlers |
+| `io.eventbob.example.microlith.dw.upper`     | Upper microlith (Dropwizard app)   | dropwizard + upper handler         |
 
 ## Location Transparency
 
@@ -216,11 +229,12 @@ EventBob provides location transparency - remote and local handlers are indistin
 ### Local Handler (In-Process)
 
 ```java
+
 @Bean
 public List<Path> handlerJarPaths() {
   return List.of(
-    Paths.get("handlers/echo.jar"),
-    Paths.get("handlers/lower.jar")
+      Paths.get("handlers/echo.jar"),
+      Paths.get("handlers/lower.jar")
   );
 }
 ```
@@ -230,10 +244,11 @@ Handlers are loaded into the same JVM and called directly.
 ### Remote Handler (HTTP)
 
 ```java
+
 @Bean
 public List<RemoteCapability> remoteCapabilities() {
   return List.of(
-    new RemoteCapability("upper", URI.create("http://localhost:8081"))
+      new RemoteCapability("upper", URI.create("http://localhost:8081"))
   );
 }
 ```
@@ -245,6 +260,7 @@ The "upper" capability is proxied to a remote EventBob server via HTTP. Client c
 The echo microlith loads echo and lower handlers locally, and delegates upper capability to a remote microlith:
 
 ```java
+
 @SpringBootApplication
 @Import(EventBobConfig.class)
 public class EchoApplication {
@@ -252,15 +268,15 @@ public class EchoApplication {
   @Bean
   public List<Path> handlerJarPaths() {
     return List.of(
-      Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar"),
-      Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar")
+        Paths.get("io.eventbob.example.echo/target/io.eventbob.example.echo-1.0.0-SNAPSHOT.jar"),
+        Paths.get("io.eventbob.example.lower/target/io.eventbob.example.lower-1.0.0-SNAPSHOT.jar")
     );
   }
 
   @Bean
   public List<RemoteCapability> remoteCapabilities() {
     return List.of(
-      new RemoteCapability("upper", URI.create("http://localhost:8081"))
+        new RemoteCapability("upper", URI.create("http://localhost:8081"))
     );
   }
 }
@@ -294,7 +310,8 @@ All three calls look identical from the client perspective. The routing layer ha
 Immutable domain object representing a message to be routed:
 
 ```java
-Event event = Event.builder()
+Event event = Event
+    .builder()
     .source("client")
     .target("echo")
     .payload("hello world")
@@ -316,6 +333,7 @@ public interface EventHandler {
 Annotation marking handlers with their capability name:
 
 ```java
+
 @Capability("echo")
 public class EchoHandler implements EventHandler {
   // implementation
@@ -327,18 +345,29 @@ public class EchoHandler implements EventHandler {
 Interface for dispatching events to other capabilities (used for chaining):
 
 ```java
+
 @Capability("uppercase-and-reverse")
 public class CompositeHandler implements EventHandler {
   @Override
   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    Event uppercased = dispatcher.send(
-      event.toBuilder().target("upper").build(),
-      (error, evt) -> null
-    ).join();
-    return dispatcher.send(
-      uppercased.toBuilder().target("reverse").build(),
-      (error, evt) -> null
-    ).join();
+    Event uppercased = dispatcher
+        .send(
+            event
+                .toBuilder()
+                .target("upper")
+                .build(),
+            (error, evt) -> null
+        )
+        .join();
+    return dispatcher
+        .send(
+            uppercased
+                .toBuilder()
+                .target("reverse")
+                .build(),
+            (error, evt) -> null
+        )
+        .join();
   }
 }
 ```
@@ -422,13 +451,17 @@ Build the modules first:
 mvn clean package
 ```
 
-There is no Maven run-plugin for the Dropwizard modules, and no separate "build handler JARs" step — the echo and upper handler implementations are ordinary compile-scope Maven dependencies, wired directly into `EventBobBundle` via `new EchoHandlerLifecycle()`, `new LowerHandlerLifecycle()`, and `new UpperHandlerLifecycle()`, not loaded from JAR paths at runtime. The only way to run a Dropwizard microlith is:
+There is no Maven run-plugin for the Dropwizard modules, and no separate "build handler JARs" step — the echo and upper
+handler implementations are ordinary compile-scope Maven dependencies, wired directly into `EventBobBundle` via
+`new EchoHandlerLifecycle()`, `new LowerHandlerLifecycle()`, and `new UpperHandlerLifecycle()`, not loaded from JAR
+paths at runtime. The only way to run a Dropwizard microlith is:
 
 ```bash
 java -jar target/<artifactId>-1.0.0-SNAPSHOT.jar server <path-to-config.yml>
 ```
 
-Start the upper microlith first (app port 8082, admin port 8083) — the echo microlith delegates the "upper" capability to it:
+Start the upper microlith first (app port 8082, admin port 8083) — the echo microlith delegates the "upper" capability
+to it:
 
 ```bash
 cd io.eventbob.example.microlith.dw.upper
@@ -450,9 +483,17 @@ curl -X POST http://localhost:8180/events \
   -H "Content-Type: application/json" \
   -d '{"source": "client", "target": "echo", "payload": "hello world"}'
 ```
+
 Response:
+
 ```json
-{"source": "echo", "target": "client", "parameters": {}, "metadata": {}, "payload": "hello world HELLO WORLD"}
+{
+  "source": "echo",
+  "target": "client",
+  "parameters": {},
+  "metadata": {},
+  "payload": "hello world HELLO WORLD"
+}
 ```
 
 ```bash
@@ -461,9 +502,17 @@ curl -X POST http://localhost:8180/events \
   -H "Content-Type: application/json" \
   -d '{"source": "client", "target": "upper", "payload": "hello"}'
 ```
+
 Response:
+
 ```json
-{"source": "upper", "target": "client", "parameters": {}, "metadata": {}, "payload": "HELLO"}
+{
+  "source": "upper",
+  "target": "client",
+  "parameters": {},
+  "metadata": {},
+  "payload": "HELLO"
+}
 ```
 
 ```bash
@@ -473,9 +522,17 @@ curl -X POST http://localhost:8082/events \
   -H "Content-Type: application/json" \
   -d '{"source": "client", "target": "upper", "payload": "hello"}'
 ```
+
 Response:
+
 ```json
-{"source": "upper", "target": "client", "parameters": {}, "metadata": {}, "payload": "HELLO"}
+{
+  "source": "upper",
+  "target": "client",
+  "parameters": {},
+  "metadata": {},
+  "payload": "HELLO"
+}
 ```
 
 ```bash
@@ -485,17 +542,27 @@ curl -X POST http://localhost:8180/events \
   -H "Content-Type: application/json" \
   -d '{"source": "client", "target": "healthcheck"}'
 ```
+
 Response:
+
 ```json
-{"source": "client", "target": "healthcheck", "parameters": {}, "metadata": {}, "payload": true}
+{
+  "source": "client",
+  "target": "healthcheck",
+  "parameters": {},
+  "metadata": {},
+  "payload": true
+}
 ```
 
 ## Documentation
 
 - [Architecture Details](docs/architecture.md) - Clean architecture layers, dependency rules, and location transparency
 - [Spring Implementation](io.eventbob.spring/README.md) - Spring Boot infrastructure library documentation
-- [Dropwizard Architecture](io.eventbob.dropwizard/docs/architecture.md) - Dropwizard infrastructure library architecture
-- [Dropwizard Domain Spec](io.eventbob.dropwizard/docs/domain_spec.md) - Dropwizard infrastructure library domain specification
+- [Dropwizard Architecture](io.eventbob.dropwizard/docs/architecture.md) - Dropwizard infrastructure library
+  architecture
+- [Dropwizard Domain Spec](io.eventbob.dropwizard/docs/domain_spec.md) - Dropwizard infrastructure library domain
+  specification
 
 ## Design Principles
 

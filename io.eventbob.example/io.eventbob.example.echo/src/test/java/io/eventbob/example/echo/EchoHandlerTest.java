@@ -1,18 +1,17 @@
 package io.eventbob.example.echo;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
 import io.eventbob.core.EventHandlingException;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiFunction;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class EchoHandlerTest {
 
@@ -25,7 +24,8 @@ class EchoHandlerTest {
 
   @Test
   void invert_capability_reversesString() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("invert")
         .payload("clock")
@@ -44,7 +44,8 @@ class EchoHandlerTest {
 
   @Test
   void invert_capability_handlesEmptyString() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("invert")
         .payload("")
@@ -61,7 +62,8 @@ class EchoHandlerTest {
 
   @Test
   void invert_capability_handlesSingleCharacter() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("invert")
         .payload("a")
@@ -78,19 +80,22 @@ class EchoHandlerTest {
 
   @Test
   void echo_capability_stillWorksAfterAddingInvert() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("HELLO")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("hello")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("HELLO")
@@ -108,19 +113,22 @@ class EchoHandlerTest {
 
   @Test
   void shouldCallDispatcherWithTargetLower() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("HELLO WORLD")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("hello world")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("HELLO WORLD")
@@ -138,19 +146,22 @@ class EchoHandlerTest {
 
   @Test
   void shouldCallDispatcherWithSourceEcho() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("HELLO WORLD")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("hello world")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("HELLO WORLD")
@@ -168,19 +179,22 @@ class EchoHandlerTest {
 
   @Test
   void shouldPassInputPayloadToDispatcher() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("HELLO WORLD")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("hello world")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("HELLO WORLD")
@@ -198,19 +212,22 @@ class EchoHandlerTest {
 
   @Test
   void shouldReturnCombinedResultFromDispatcher() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("HELLO WORLD")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("hello world")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("HELLO WORLD")
@@ -227,19 +244,22 @@ class EchoHandlerTest {
 
   @Test
   void shouldSetSourceToEcho() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("TEST")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("test")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("TEST")
@@ -256,19 +276,22 @@ class EchoHandlerTest {
 
   @Test
   void shouldSetTargetToOriginalSource() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("TEST")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("test")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("TEST")
@@ -285,20 +308,23 @@ class EchoHandlerTest {
 
   @Test
   void shouldPreserveOriginalEventMetadata() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .metadata(Map.of("traceId", "abc123"))
         .payload("TEST")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("test")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("TEST")
@@ -315,20 +341,23 @@ class EchoHandlerTest {
 
   @Test
   void shouldNotPreserveOriginalEventParameters() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .parameters(Map.of("locale", "en-US"))
         .payload("TEST")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("test")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("TEST")
@@ -345,7 +374,8 @@ class EchoHandlerTest {
 
   @Test
   void shouldThrowEventHandlingExceptionWhenLowerDispatcherFails() {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("TEST")
@@ -363,7 +393,8 @@ class EchoHandlerTest {
 
   @Test
   void shouldThrowEventHandlingExceptionWhenLowerDispatcherTimesOut() {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("TEST")
@@ -381,19 +412,22 @@ class EchoHandlerTest {
 
   @Test
   void shouldHandleEmptyStringPayload() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload("")
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("")
@@ -410,19 +444,22 @@ class EchoHandlerTest {
 
   @Test
   void shouldHandleNonStringPayload() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("echo")
         .payload(12345)
         .build();
 
-    Event lowerResponse = Event.builder()
+    Event lowerResponse = Event
+        .builder()
         .source("lower")
         .target("echo")
         .payload("12345")
         .build();
 
-    Event upperResponse = Event.builder()
+    Event upperResponse = Event
+        .builder()
         .source("upper")
         .target("echo")
         .payload("12345")
@@ -441,10 +478,10 @@ class EchoHandlerTest {
    * Test double that records the event sent and returns a pre-configured response.
    */
   private static class RecordingDispatcher implements Dispatcher {
-    Event firstSentEvent;
-    Event secondSentEvent;
     private final Event lowerResponse;
     private final Event upperResponse;
+    Event firstSentEvent;
+    Event secondSentEvent;
     private int callCount = 0;
 
     RecordingDispatcher(Event lowerResponse, Event upperResponse) {

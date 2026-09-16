@@ -8,7 +8,6 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -27,27 +26,33 @@ import java.util.concurrent.CompletableFuture;
 @Consumes(MediaType.APPLICATION_JSON)
 public class EventResource {
 
-    private final EventBob eventBob;
+  private final EventBob eventBob;
 
-    public EventResource(EventBob eventBob) {
-        this.eventBob = eventBob;
-    }
+  /**
+   * Constructor.
+   *
+   * @param eventBob  The EventBob instance to use for event processing.
+   */
+  public EventResource(EventBob eventBob) {
+    this.eventBob = eventBob;
+  }
 
-    /**
-     * Process an event through EventBob.
-     *
-     * <p>Accepts an EventDto as JSON in the request body, maps it to a domain Event,
-     * routes it to the appropriate handler based on the event's target field,
-     * and returns the result Event as EventDto.
-     * The method returns CompletableFuture which Jersey suspends asynchronously.
-     *
-     * @param eventDto The input event DTO to process.
-     * @return CompletableFuture containing the result event DTO from the handler.
-     */
-    @POST
-    public CompletableFuture<EventDto> processEvent(EventDto eventDto) {
-        Event event = eventDto.toEvent();
-        return eventBob.processEvent(event, (error, originalEvent) -> null)
-            .thenApply(EventDto::fromEvent);
-    }
+  /**
+   * Process an event through EventBob.
+   *
+   * <p>Accepts an EventDto as JSON in the request body, maps it to a domain Event,
+   * routes it to the appropriate handler based on the event's target field,
+   * and returns the result Event as EventDto.
+   * The method returns CompletableFuture which Jersey suspends asynchronously.
+   *
+   * @param eventDto The input event DTO to process.
+   * @return CompletableFuture containing the result event DTO from the handler.
+   */
+  @POST
+  public CompletableFuture<EventDto> processEvent(EventDto eventDto) {
+    Event event = eventDto.toEvent();
+    return eventBob
+        .processEvent(event, (error, originalEvent) -> null)
+        .thenApply(EventDto::fromEvent);
+  }
 }

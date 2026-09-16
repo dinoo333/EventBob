@@ -36,8 +36,10 @@ public class EventBob implements AutoCloseable {
   /**
    * Process an incoming event by routing it to the appropriate handler based on the event's target.
    */
-  public CompletableFuture<Event> processEvent(Event event, BiFunction<Throwable, Event, Event> onError) {
-    return CompletableFuture.supplyAsync(() -> {
+  public CompletableFuture<Event> processEvent(Event event,
+                                               BiFunction<Throwable, Event, Event> onError) {
+    return CompletableFuture
+        .supplyAsync(() -> {
           EventHandler delegate = findHandler(event);
           return delegate.handle(event, dispatcher);
         }, backgroundExecutor)
@@ -61,8 +63,8 @@ public class EventBob implements AutoCloseable {
 
   /**
    * Shuts down EventBob and waits for in-flight events to complete.
-   * <p>
-   * Blocks until all currently executing handlers finish or a 30-second
+   *
+   * <p>Blocks until all currently executing handlers finish or a 30-second
    * timeout elapses. This ensures that handler lifecycles can be safely
    * torn down after this method returns.
    * </p>
@@ -73,7 +75,9 @@ public class EventBob implements AutoCloseable {
     try {
       backgroundExecutor.awaitTermination(30, TimeUnit.SECONDS);
     } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
+      Thread
+          .currentThread()
+          .interrupt();
     }
   }
 
@@ -86,7 +90,7 @@ public class EventBob implements AutoCloseable {
     /**
      * Register a handler for the given target string.
      *
-     * @param target The target identifier (must be non-blank).
+     * @param target  The target identifier (must be non-blank).
      * @param handler The handler to register (must be non-null).
      * @return This builder for fluent chaining.
      */

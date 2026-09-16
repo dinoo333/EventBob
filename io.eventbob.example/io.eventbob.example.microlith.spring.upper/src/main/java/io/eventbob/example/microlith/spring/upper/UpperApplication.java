@@ -20,10 +20,20 @@ import org.springframework.context.annotation.Import;
 @Import(EventBobConfig.class)
 public class UpperApplication {
 
+  /**
+   * Main method to start the application.
+   *
+   * @param args App args.
+   */
   public static void main(String[] args) {
     SpringApplication.run(UpperApplication.class, args);
   }
 
+  /**
+   * Define the upper handler lifecycle.
+   *
+   * @return The upper handler lifecycle.
+   */
   @Bean
   public UpperHandlerLifecycle upperHandlerLifecycle() {
     return new UpperHandlerLifecycle();

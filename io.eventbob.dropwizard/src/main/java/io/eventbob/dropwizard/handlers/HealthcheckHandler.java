@@ -14,10 +14,11 @@ import io.eventbob.core.EventHandlingException;
  */
 @Capability("healthcheck")
 public class HealthcheckHandler implements EventHandler {
-    @Override
-    public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-        return event.toBuilder()
-            .payload(true)
-            .build();
-    }
+  @Override
+  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+    return event
+        .toBuilder()
+        .payload(true)
+        .build();
+  }
 }

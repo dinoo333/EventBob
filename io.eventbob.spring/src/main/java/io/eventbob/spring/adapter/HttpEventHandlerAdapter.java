@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.eventbob.core.Event;
 import io.eventbob.core.EventHandlingException;
 import io.eventbob.core.SyncForwardingEventHandler;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -13,14 +12,14 @@ import java.net.http.HttpResponse;
 
 /**
  * Adapter that wraps HTTP calls to remote EventHandler endpoints.
- * <p>
- * This adapter implements the EventHandler interface but delegates actual event
+ *
+ * <p>This adapter implements the EventHandler interface but delegates actual event
  * processing to a remote service via HTTP POST. It provides location transparency:
  * from EventBob's perspective, this is just another EventHandler; the fact that
  * it makes network calls is an implementation detail.
  * </p>
- * <p>
- * Protocol:
+ *
+ * <p>Protocol:
  * </p>
  * <ul>
  *   <li>POST {remoteEndpoint}/events</li>

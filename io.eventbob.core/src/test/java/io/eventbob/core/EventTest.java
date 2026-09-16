@@ -1,7 +1,5 @@
 package io.eventbob.core;
 
-import io.eventbob.core.Event;
-
 import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,7 +19,8 @@ class EventTest {
     Map<String, Object> meta = new LinkedHashMap<>();
     meta.put("traceId", "abc");
 
-    Event e = Event.builder()
+    Event e = Event
+        .builder()
         .source("inventory-service")
         .target("item-service")
         .parameters(params)
@@ -39,13 +38,23 @@ class EventTest {
   @Test
   void requiredFieldsValidation() {
     assertThatThrownBy(() ->
-        Event.builder().source(" ").target("T").build()
-    ).isInstanceOf(IllegalArgumentException.class)
+        Event
+            .builder()
+            .source(" ")
+            .target("T")
+            .build()
+    )
+        .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("source");
 
     assertThatThrownBy(() ->
-        Event.builder().source("S").target(" ").build()
-    ).isInstanceOf(IllegalArgumentException.class)
+        Event
+            .builder()
+            .source("S")
+            .target(" ")
+            .build()
+    )
+        .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("target");
   }
 
@@ -56,7 +65,8 @@ class EventTest {
     Map<String, Object> params = new LinkedHashMap<>();
     params.put("p", "v");
 
-    Event e = Event.builder()
+    Event e = Event
+        .builder()
         .source("svc")
         .target("target")
         .parameters(params)
@@ -67,15 +77,20 @@ class EventTest {
     params.put("p2", "x");
     assertThat(e.getParameters()).containsExactly(entry("p", "v"));
 
-    assertThatThrownBy(() -> e.getParameters().remove("p"))
+    assertThatThrownBy(() -> e
+        .getParameters()
+        .remove("p"))
         .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> e.getMetadata().put("k", "v"))
+    assertThatThrownBy(() -> e
+        .getMetadata()
+        .put("k", "v"))
         .isInstanceOf(UnsupportedOperationException.class);
   }
 
   @Test
   void emptyOrNullMapsResultInEmptyUnmodifiableMaps() {
-    Event e = Event.builder()
+    Event e = Event
+        .builder()
         .source("svc")
         .target("target")
         .parameters(null)
@@ -88,14 +103,16 @@ class EventTest {
 
   @Test
   void toBuilderProducesIndependentCopy() {
-    Event original = Event.builder()
+    Event original = Event
+        .builder()
         .source("svc")
         .target("target")
         .metadata(Map.of("traceId", "t1"))
         .payload("data")
         .build();
 
-    Event modified = original.toBuilder()
+    Event modified = original
+        .toBuilder()
         .metadata(new LinkedHashMap<>(Map.of("traceId", "t2")))
         .payload("new-data")
         .build();
@@ -107,21 +124,26 @@ class EventTest {
 
   @Test
   void equalsAndHashCodeConsistency() {
-    Event e1 = Event.builder()
+    Event e1 = Event
+        .builder()
         .source("svc")
         .target("target")
         .payload("p")
         .build();
 
-    Event e2 = e1.toBuilder().build();
+    Event e2 = e1
+        .toBuilder()
+        .build();
 
-    assertThat(e2).isEqualTo(e1)
+    assertThat(e2)
+        .isEqualTo(e1)
         .hasSameHashCodeAs(e1);
   }
 
   @Test
   void toStringContainsKeyFields() {
-    Event e = Event.builder()
+    Event e = Event
+        .builder()
         .source("svc")
         .target("target")
         .payload("payload")
@@ -135,7 +157,8 @@ class EventTest {
 
   @Test
   void nullPayloadAllowed() {
-    Event e = Event.builder()
+    Event e = Event
+        .builder()
         .source("svc")
         .target("target")
         .build();

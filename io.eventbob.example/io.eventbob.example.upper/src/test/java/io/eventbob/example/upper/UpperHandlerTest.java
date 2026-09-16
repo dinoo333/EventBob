@@ -1,14 +1,13 @@
 package io.eventbob.example.upper;
 
-import io.eventbob.core.Event;
-import io.eventbob.core.EventHandlingException;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import io.eventbob.core.Event;
+import io.eventbob.core.EventHandlingException;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class UpperHandlerTest {
 
@@ -23,7 +22,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldConvertLowercaseToUppercase() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .payload("hello world")
@@ -36,7 +36,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldConvertMixedCaseToUppercase() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .payload("HeLLo WoRLd")
@@ -49,7 +50,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldHandleAlreadyUppercaseInput() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .payload("HELLO WORLD")
@@ -62,7 +64,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldHandleEmptyString() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .payload("")
@@ -75,7 +78,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldSetSourceToUpper() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .payload("test")
@@ -88,7 +92,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldSetTargetToOriginalSource() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .payload("test")
@@ -101,7 +106,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldPreserveMetadata() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .payload("test")
@@ -115,7 +121,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldPreserveParameters() throws EventHandlingException {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .parameters(Map.of("locale", "en-US"))
@@ -129,7 +136,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldThrowClassCastExceptionWhenPayloadIsNotString() {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .payload(12345)
@@ -141,7 +149,8 @@ class UpperHandlerTest {
 
   @Test
   void shouldThrowNullPointerExceptionWhenPayloadIsNull() {
-    Event input = Event.builder()
+    Event input = Event
+        .builder()
         .source("client")
         .target("upper")
         .build();

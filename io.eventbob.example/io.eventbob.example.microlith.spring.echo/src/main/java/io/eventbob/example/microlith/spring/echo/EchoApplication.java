@@ -4,14 +4,13 @@ import io.eventbob.example.echo.EchoHandlerLifecycle;
 import io.eventbob.example.lower.LowerHandlerLifecycle;
 import io.eventbob.spring.EventBobConfig;
 import io.eventbob.spring.adapter.RemoteCapability;
+import java.net.URI;
+import java.util.List;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
-
-import java.net.URI;
-import java.util.List;
 
 /**
  * Echo microlith application.
@@ -27,20 +26,40 @@ import java.util.List;
 @Import(EventBobConfig.class)
 public class EchoApplication {
 
+  /**
+   * Main method to start the application.
+   *
+   * @param args App args.
+   */
   public static void main(String[] args) {
     SpringApplication.run(EchoApplication.class, args);
   }
 
+  /**
+   * Define the echo handler lifecycle.
+   *
+   * @return The echo handler lifecycle.
+   */
   @Bean
   public EchoHandlerLifecycle echoHandlerLifecycle() {
     return new EchoHandlerLifecycle();
   }
 
+  /**
+   * Define the lower handler lifecycle.
+   *
+   * @return The lower handler lifecycle.
+   */
   @Bean
   public LowerHandlerLifecycle lowerHandlerLifecycle() {
     return new LowerHandlerLifecycle();
   }
 
+  /**
+   * Define remote capabilities.
+   *
+   * @return List of remote capabilities.
+   */
   @Bean
   public List<RemoteCapability> remoteCapabilities() {
     return List.of(

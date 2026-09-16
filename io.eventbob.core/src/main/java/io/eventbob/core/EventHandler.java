@@ -6,11 +6,13 @@ package io.eventbob.core;
  * associated capabilities. (A JAR may contain one or more EventHandler implementations, each
  * supporting different capabilities and operations.)
  *
- * <p>Implementations of this interface contain the business logic for handling specific types of events.
+ * <p>Implementations of this interface contain the business logic for handling specific types of
+ * events.
  * Each handler is associated with a capability that defines what operations it supports.
  *
  * <p>When an event is received, the EventBob routes it to the appropriate EventHandler based on
- * the event's characteristics (e.g., service, capability, operation). The handler processes the event
+ * the event's characteristics (e.g., service, capability, operation). The handler processes the
+ * event
  * and returns a response event that is sent back to the caller.
  */
 public interface EventHandler {
@@ -21,7 +23,7 @@ public interface EventHandler {
    * and generating an appropriate response. The dispatcher can be used to send additional events
    * if needed.
    *
-   * @param event The incoming event to handle.
+   * @param event      The incoming event to handle.
    * @param dispatcher The dispatcher to use for sending events if necessary.
    * @return The response event to be sent back to the caller.
    * @throws EventHandlingException If an error occurs during event handling.

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class DispatcherTest {
@@ -13,9 +12,13 @@ class DispatcherTest {
   void sendWithTimeoutReturnsResultWhenCompletedWithinTimeout() {
     Dispatcher dispatcher = (event, onError) ->
         CompletableFuture.completedFuture(
-            event.toBuilder().payload("success").build());
+            event
+                .toBuilder()
+                .payload("success")
+                .build());
 
-    Event request = Event.builder()
+    Event request = Event
+        .builder()
         .source("test")
         .target("handler")
         .payload("request")
@@ -35,7 +38,8 @@ class DispatcherTest {
       return future;
     };
 
-    Event request = Event.builder()
+    Event request = Event
+        .builder()
         .source("test")
         .target("handler")
         .build();
@@ -54,14 +58,18 @@ class DispatcherTest {
       new Thread(() -> {
         try {
           Thread.sleep(10);
-          Thread.currentThread().interrupt();
+          Thread
+              .currentThread()
+              .interrupt();
         } catch (InterruptedException ignored) {
+          // Ignored
         }
       }).start();
       return future;
     };
 
-    Event request = Event.builder()
+    Event request = Event
+        .builder()
         .source("test")
         .target("handler")
         .build();
@@ -88,7 +96,8 @@ class DispatcherTest {
     Dispatcher dispatcher = (event, onError) ->
         CompletableFuture.failedFuture(originalCause);
 
-    Event request = Event.builder()
+    Event request = Event
+        .builder()
         .source("test")
         .target("handler")
         .build();
@@ -106,7 +115,8 @@ class DispatcherTest {
     Dispatcher dispatcher = (event, onError) ->
         CompletableFuture.failedFuture(handlerException);
 
-    Event request = Event.builder()
+    Event request = Event
+        .builder()
         .source("test")
         .target("handler")
         .build();

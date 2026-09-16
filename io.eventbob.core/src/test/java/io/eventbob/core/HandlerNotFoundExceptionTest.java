@@ -1,8 +1,5 @@
 package io.eventbob.core;
 
-import io.eventbob.core.Event;
-import io.eventbob.core.HandlerNotFoundException;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
@@ -22,7 +19,8 @@ class HandlerNotFoundExceptionTest {
   @Test
   void twoArgumentConstructorCreatesMessageWithTargetAndEvent() {
     String target = "unknown-handler";
-    Event event = Event.builder()
+    Event event = Event
+        .builder()
         .source("source-service")
         .target(target)
         .build();
@@ -45,7 +43,8 @@ class HandlerNotFoundExceptionTest {
   @Test
   void messageFormatConsistencyBetweenConstructors() {
     String target = "test-target";
-    Event event = Event.builder()
+    Event event = Event
+        .builder()
         .source("src")
         .target(target)
         .build();
@@ -60,7 +59,8 @@ class HandlerNotFoundExceptionTest {
 
   @Test
   void twoArgumentConstructorIncludesEventToString() {
-    Event event = Event.builder()
+    Event event = Event
+        .builder()
         .source("service-a")
         .target("service-b")
         .payload("test-payload")

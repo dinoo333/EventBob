@@ -2,13 +2,6 @@ package io.eventbob.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.eventbob.core.Capabilities;
-import io.eventbob.core.Capability;
-import io.eventbob.core.Dispatcher;
-import io.eventbob.core.Event;
-import io.eventbob.core.EventHandler;
-import io.eventbob.core.EventHandlingException;
-import java.lang.annotation.Annotation;
 import org.junit.jupiter.api.Test;
 
 class CapabilityTest {
