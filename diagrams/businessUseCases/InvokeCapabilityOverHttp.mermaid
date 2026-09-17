@@ -1,0 +1,26 @@
+sequenceDiagram
+    autonumber
+    actor C as HTTP Client
+    participant E as Inbound HTTP Endpoint
+    participant R as Router
+    participant H as Local Handler
+    C ->> E: POST /events
+    Note over E,R: Process Inbound Event
+    E ->> R: handle(Event)
+    Note over R: Route Inbound Event
+    alt known local capability
+        R ->> H: Delegate to Capability
+        H -->> R: Event (response)
+        R -->> E: Event
+        E -->> C: HTTP response
+    else unknown capability
+        R -->> E: error event (HandlerNotFoundException)
+        E -->> C: HTTP 200, error payload
+    else handler raises a failure
+        R ->> H: Delegate to Capability
+        H -->> R: EventHandlingException
+        R -->> E: error event
+        E -->> C: HTTP 200, error payload
+    end
+    Note over R,H: Code: io.eventbob.core.EventBob#processEvent, EventResource / inbound controller, EventDto
+    Note over R,H: Tests: EventBobTest

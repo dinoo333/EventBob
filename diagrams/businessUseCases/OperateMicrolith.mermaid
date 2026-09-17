@@ -1,0 +1,29 @@
+sequenceDiagram
+    autonumber
+    actor Op as Operator
+    participant P as Microlith Process
+    participant L as HandlerLoader
+    participant R as Router
+    Op ->> P: start
+    Note over P,L: Bootstrap Microlith
+    P ->> L: load handler sources (inline, JAR, remote)
+    alt all sources initialize without conflict
+        L ->> R: register capabilities
+        R -->> P: ready, accepting requests
+    else lifecycle holder fails to initialize
+        L -->> P: initialization error
+        P -->> Op: startup aborted, process exits
+    else duplicate capability name across sources
+        L -->> P: IllegalStateException (duplicate capability)
+        P -->> Op: startup aborted before router built
+    end
+    Op ->> P: stop
+    Note over P,R: Shut Down Microlith
+    P ->> R: close()
+    alt clean shutdown
+        R -->> P: in-flight handlers complete, resources released
+    else one lifecycle holder's shutdown fails
+        R -->> P: error logged, remaining holders still shut down
+    end
+    Note over L,R: Code: io.eventbob.core.EventBob, HandlerLoader, EventBobBundle / EventBobConfig
+    Note over L,R: Tests: EventBobTest, JarHandlerLoaderTest, LifecycleHandlerLoaderTest, EventBobBundleTest, EventBobConfigTest

@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    actor C as HTTP Client
+    participant E as Inbound HTTP Endpoint
+    participant R as Router
+    participant HA as Handler A
+    participant HB as Handler B
+    C ->> E: POST /events (target = Handler A)
+    Note over E,R: Process Inbound Event
+    E ->> R: handle(Event)
+    R ->> HA: Delegate to Capability
+    Note over HA,HB: Dispatch Between Local Capabilities
+    alt async dispatch
+        HA ->> R: dispatcher.send(event, target = Handler B)
+        R ->> HB: Delegate to Capability
+        HB -->> R: Event (response)
+        R -->> HA: Event (future completes)
+    else sync dispatch with timeout
+        HA ->> R: dispatcher.send(event, target = Handler B, timeout)
+        R ->> HB: Delegate to Capability
+        HB -->> R: Event (response), or timeout elapses
+        R -->> HA: Event, or EventHandlingException on timeout/interruption
+    end
+    HA -->> R: composed Event
+    R -->> E: Event
+    E -->> C: HTTP response
+    Note over HA,HB: Code: io.eventbob.core.Dispatcher, EventBob
+    Note over HA,HB: Tests: DispatcherTest, EventBobTest
