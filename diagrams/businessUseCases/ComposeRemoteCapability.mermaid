@@ -1,0 +1,31 @@
+sequenceDiagram
+    autonumber
+    actor C as HTTP Client
+    participant E as Inbound HTTP Endpoint
+    participant R as Router
+    participant A as Remote Handler Adapter
+    participant RM as Remote Microlith
+    C ->> E: POST /events (target = remote capability)
+    Note over E,R: Process Inbound Event
+    E ->> R: handle(Event)
+    Note over R: Route Inbound Event
+    R ->> A: Forward Event to Remote Capability
+    alt remote microlith available
+        Note over A: Convert Event to wire format
+        A ->> RM: HTTP POST /events
+        RM -->> A: 2xx response
+        Note over A: Convert wire format to Event
+        A -->> R: Event
+    else remote returns HTTP error
+        A ->> RM: HTTP POST /events
+        RM -->> A: 4xx/5xx response
+        A -->> R: EventHandlingException
+    else network failure
+        A ->> RM: HTTP POST /events
+        RM -->> A: connection failure
+        A -->> R: EventHandlingException (interrupt flag restored if interrupted)
+    end
+    R -->> E: Event
+    E -->> C: HTTP response
+    Note over A,RM: Code: HttpEventHandlerAdapter, RemoteHandlerLoader, RemoteCapability
+    Note over A,RM: Tests: HttpEventHandlerAdapterTest, RemoteHandlerLoaderTest, SyncForwardingEventHandlerTest

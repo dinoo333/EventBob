@@ -1,0 +1,16 @@
+sequenceDiagram
+    autonumber
+    actor M as Monitoring System / Load Balancer
+    participant E as Inbound HTTP Endpoint
+    participant R as Router
+    participant H as Healthcheck Handler
+    M ->> E: POST /events (target = healthcheck)
+    Note over E,R: Process Inbound Event
+    E ->> R: handle(Event)
+    Note over R: Route Inbound Event
+    R ->> H: handle(Event, dispatcher)
+    H -->> R: Event (payload = true)
+    R -->> E: Event
+    E -->> M: HTTP response
+    Note over R,H: Code: HealthcheckHandler (io.eventbob.dropwizard / io.eventbob.spring)
+    Note over R,H: Tests: HealthcheckHandlerTest

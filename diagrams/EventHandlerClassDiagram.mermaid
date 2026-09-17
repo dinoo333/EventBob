@@ -1,121 +1,182 @@
 classDiagram
     direction TB
 
+    %% io.eventbob.core
+
+    class AutoCloseable {
+        <<interface>>
+    }
+
     class Event {
         -String source
         -String target
-        -Map~String,Serializable~ parameters
-        -Map~String,Serializable~ metadata
-        -Serializable payload
+        -Map~String,Object~ parameters
+        -Map~String,Object~ metadata
+        -Object payload
         +String getSource()
         +String getTarget()
-        +Map~String,Serializable~ getParameters()
-        +Map~String,Serializable~ getMetadata()
-        +Serializable getPayload()
+        +Map~String,Object~ getParameters()
+        +Map~String,Object~ getMetadata()
+        +Object getPayload()
         +Builder toBuilder()
+        +Builder toBuilder(String source, String target)
         +static Builder builder()
     }
 
     class EventHandler {
         <<interface>>
-        +Event handle(Event)
+        +Event handle(Event, Dispatcher)
+    }
+
+    class Dispatcher {
+        <<interface>>
+        +CompletableFuture~Event~ send(Event, BiFunction)
+        +Event send(Event, BiFunction, long timeoutMillis)
     }
 
     class EventHandlingException {
         <<exception>>
-        -Serializable payload
-        +Serializable getPayload()
     }
 
     class HandlerNotFoundException {
-        -String target
-        +String getTarget()
-    }
-
-    class UnexpectedEventHandlingException {
+        <<exception>>
     }
 
     class EventBob {
+        -ExecutorService backgroundExecutor
+        -Dispatcher dispatcher
         -Map~String,EventHandler~ handlers
-        +Event handle(Event)
+        +CompletableFuture~Event~ processEvent(Event, BiFunction)
+        +void close()
         +static Builder builder()
     }
 
-    class DecoratedEventHandler {
-        -EventHandler delegate
-        -Consumer~Event~ before
-        -BiConsumer~Event,Event~ afterSuccess
-        -BiFunction~Event,Throwable,Event~ onError
-        +Event handle(Event)
-        +static Builder builder()
+    class DefaultErrorEvent {
+        <<utility>>
+        +static Event create(Throwable, Event)
     }
 
-    class MetadataKeys {
-        <<constants>>
-        +String CORRELATION_ID
-        +String REPLY_TO
-        +String METHOD
-        +String PATH
-        +String TRACE_ID
-        +String SPAN_ID
+    class HandlerLoader {
+        <<interface>>
+        +static HandlerLoader jarLoader(Collection~Path~)
+        +static HandlerLoader lifecycleLoader(Collection~Path~, Dispatcher)
+        +static HandlerLoader lifecycleLoader(Collection~Path~, Dispatcher, Object frameworkContext)
+        +Map~String,EventHandler~ loadHandlers()
+        +void close()
     }
 
-    EventHandler ..> Event: handles
+    class JarHandlerLoader {
+        -Collection~Path~ jarPaths
+        +Map~String,EventHandler~ loadHandlers()
+    }
+
+    class LifecycleHandlerLoader {
+        -Collection~Path~ jarPaths
+        -Dispatcher dispatcher
+        -Object frameworkContext
+        +Map~String,EventHandler~ loadHandlers()
+        +void close()
+    }
+
+    class DiscoveredHandler {
+        <<record>>
+        +String capability
+        +Class~EventHandler~ handlerClass
+    }
+
+    class HandlerLifecycle {
+        <<abstract>>
+        +initialize(LifecycleContext)*
+        +EventHandler getHandler()*
+        +shutdown()*
+    }
+
+    class LifecycleContext {
+        <<interface>>
+        +static LifecycleContext of(Map, Dispatcher)
+        +Map~String,Object~ getConfiguration()
+        +Dispatcher getDispatcher()
+        +Optional~T~ getFrameworkContext(Class~T~)
+    }
+
+    class LifecycleContextImpl {
+        -Map~String,Object~ configuration
+        -Dispatcher dispatcher
+        -Object frameworkContext
+    }
+
+    class Capability {
+        <<annotation>>
+        +String value()
+        +int version()
+    }
+
+    class Capabilities {
+        <<annotation>>
+        +Capability[] value()
+    }
+
+    class SyncForwardingEventHandler~I,O~ {
+        <<abstract>>
+        +Event handle(Event, Dispatcher)
+    }
+
     RuntimeException <|-- EventHandlingException
-    EventHandlingException <|-- HandlerNotFoundException
-    EventHandlingException <|-- UnexpectedEventHandlingException
-    EventHandler <|.. EventBob: implements
-    EventHandler <|.. DecoratedEventHandler: implements
-EventBob o--> EventHandler: delegates handling
-DecoratedEventHandler o--> EventHandler: wraps delegate
-Event ..> MetadataKeys: uses keys from
+    RuntimeException <|-- HandlerNotFoundException
+    AutoCloseable <|-- HandlerLoader
+    EventHandler ..> Event : handles
+    EventHandler ..> Dispatcher : uses
+    EventBob ..|> AutoCloseable : implements
+    EventBob o--> EventHandler : delegates handling
+    EventBob ..> Dispatcher : exposes (this::processEvent)
+    EventBob ..> DefaultErrorEvent : uses on unhandled failure
+    HandlerLoader <|.. JarHandlerLoader : implements
+    HandlerLoader <|.. LifecycleHandlerLoader : implements
+    JarHandlerLoader ..> DiscoveredHandler : discovers
+    JarHandlerLoader ..> Capability : reads
+    LifecycleHandlerLoader o--> HandlerLifecycle : tracks for shutdown
+    LifecycleHandlerLoader ..> LifecycleContextImpl : creates
+    HandlerLifecycle ..> LifecycleContext : initialized with
+    HandlerLifecycle ..> EventHandler : produces
+    LifecycleContextImpl ..|> LifecycleContext : implements
+    LifecycleContextImpl ..> Dispatcher : carries
+    SyncForwardingEventHandler ..|> EventHandler : implements
+    EventHandler ..> Capability : declared via (on handler classes)
 
-class HandlerLoader {
-<<interface>>
-+Map~String,EventHandler~ loadHandlers()
-}
+    %% io.eventbob.dropwizard (infra-layer example realization; io.eventbob.spring is structurally identical)
 
-class JarHandlerLoader {
--Collection~Path~ jarPaths
-+JarHandlerLoader(Collection~Path~)
-+Map~String,EventHandler~ loadHandlers()
-}
+    class HttpEventHandlerAdapter {
+        -URI remoteEndpoint
+        -HttpClient httpClient
+        -ObjectMapper objectMapper
+    }
 
-class RemoteHandlerLoader {
--List~RemoteCapability~ remoteCapabilities
--HttpClient httpClient
-+RemoteHandlerLoader(List~RemoteCapability~, HttpClient)
-+Map~String,EventHandler~ loadHandlers()
-}
+    class RemoteHandlerLoader {
+        -List~RemoteCapability~ remoteCapabilities
+        -HttpClient httpClient
+        +Map~String,EventHandler~ loadHandlers()
+    }
 
-class HttpEventHandlerAdapter {
--URI remoteEndpoint
--HttpClient httpClient
--ObjectMapper objectMapper
-+Event handle(Event, Dispatcher)
-}
+    class RemoteCapability {
+        <<record>>
+        +String name
+        +URI uri
+    }
 
-class EventDto {
-<<Record>>
-+String source
-+String target
-+Map~String,Object~ parameters
-+Map~String,Object~ metadata
-+Object payload
-+static EventDto fromEvent(Event)
-+Event toEvent()
-}
+    class EventDto {
+        <<record>>
+        +String source
+        +String target
+        +Map~String,Object~ parameters
+        +Map~String,Object~ metadata
+        +Object payload
+        +static EventDto fromEvent(Event)
+        +Event toEvent()
+    }
 
-class RemoteCapability {
-<<Record>>
-+String name
-+URI uri
-}
-
-HandlerLoader <|.. JarHandlerLoader: implements
-HandlerLoader <|.. RemoteHandlerLoader: implements
-EventHandler <|.. HttpEventHandlerAdapter: implements
-RemoteHandlerLoader ..> HttpEventHandlerAdapter: creates
-RemoteHandlerLoader o--> RemoteCapability: uses
-HttpEventHandlerAdapter ..> EventDto: uses
-HttpEventHandlerAdapter o--> HttpClient: uses
+    SyncForwardingEventHandler <|-- HttpEventHandlerAdapter : extends
+    HandlerLoader <|.. RemoteHandlerLoader : implements
+    RemoteHandlerLoader ..> HttpEventHandlerAdapter : creates
+    RemoteHandlerLoader o--> RemoteCapability : uses
+    HttpEventHandlerAdapter ..> EventDto : translates through
+    EventDto ..> Event : converts to/from
