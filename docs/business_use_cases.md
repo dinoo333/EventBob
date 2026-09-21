@@ -1,12 +1,21 @@
 # EventBob — Business Use Cases
 
 This is a traceability index, not a specification. It does not redefine anything — every
-term, use-case description, and scenario below is a pointer into the existing canonical
-docs (`docs/architecture.md`, `io.eventbob.core/docs/architecture.md`,
+term, **system** use-case description, and scenario below is a pointer into the existing
+canonical docs (`docs/architecture.md`, `io.eventbob.core/docs/architecture.md`,
 `io.eventbob.dropwizard/docs/architecture.md`, `io.eventbob.spring/docs/architecture.md`,
-and their sibling `domain_spec.md` files). Editing a business use case here should mean
-editing the linked use-case/scenario text in `architecture.md` first, then updating the
-acceptance criteria and sequence diagram to match — never writing new use-case prose here.
+and their sibling `domain_spec.md` files). Editing a business use case's linked system use
+case here should mean editing the linked use-case/scenario text in `architecture.md` first,
+then updating the acceptance criteria and sequence diagram to match — never writing new
+**system** use-case prose here.
+
+A business use case itself is not a system use case: it may state a business-level
+requirement — such as requiring the system to remain framework-agnostic across its
+`io.eventbob.spring` and `io.eventbob.dropwizard` realizations — as its own Value and
+Acceptance Criteria, without that requirement being new system behavior needing its own
+architecture.md use case. Such an entry still may not invent or redefine system behavior;
+it may only point at existing system use cases and assert business-level requirements about
+them (e.g., that they hold identically across realizations).
 
 Structure per business use case: **Role → Business Use Case (+ value, linked to
 `architecture.md`) → Acceptance Criteria → Sequence Diagram (code/test citations).**
@@ -52,6 +61,7 @@ JAR/lifecycle implementations, `io.eventbob.dropwizard.EventBobBundle` /
 **Existing test coverage:** `EventBobTest`, `JarHandlerLoaderTest`, `LifecycleHandlerLoaderTest`
 (`io.eventbob.core`); `EventBobBundleTest` (`io.eventbob.dropwizard`); `EventBobConfigTest`
 (`io.eventbob.spring`). No dedicated acceptance test exists yet for this business use case.
+See "As a Developer" below for the tracked Dropwizard-realized acceptance-proof gap.
 
 ---
 
@@ -86,7 +96,8 @@ realized as Process Inbound HTTP Event in
 **Existing test coverage:** `EventBobTest` (`io.eventbob.core`, handler-level unit tests).
 `InvertCapabilityAcceptanceTest` (`io.eventbob.example.microlith.spring.echo`) — real-HTTP
 acceptance test against the "invert" capability, covering known-capability, unknown-capability,
-and handler-failure cases.
+and handler-failure cases. See "As a Developer" below for the tracked Dropwizard-realized
+acceptance-proof gap.
 
 ---
 
@@ -124,7 +135,8 @@ and the local "lower" capability (see "Have one hosted capability call another" 
 real code path, so one test covers both. The remote side is stubbed with a plain JDK
 `HttpServer` on the literal port `EchoApplication`'s `RemoteCapability` bean expects, rather
 than a real `UpperApplication` instance — `upper`'s own logic already has direct coverage in
-`UpperHandlerTest`.
+`UpperHandlerTest`. See "As a Developer" below for the tracked Dropwizard-realized
+acceptance-proof gap.
 
 ---
 
@@ -152,7 +164,8 @@ client making multiple calls.
 **Existing test coverage:** `DispatcherTest`, `EventBobTest` (`io.eventbob.core`, handler-level
 unit tests). `EchoCapabilityAcceptanceTest` (`io.eventbob.example.microlith.spring.echo`) —
 see "Compose a capability hosted by another microlith" above; the same test exercises this
-use case's local "lower" dispatch as part of the same real code path.
+use case's local "lower" dispatch as part of the same real code path. See "As a Developer"
+below for the tracked Dropwizard-realized acceptance-proof gap.
 
 ---
 
@@ -184,4 +197,75 @@ Healthcheck" interactor documented under
 `EchoApplication` instance, covering both payload-omitted and explicit-null-payload cases per
 the acceptance criteria above. No Dropwizard-realized acceptance test exists yet
 (`io.eventbob.dropwizard` has no `dropwizard-testing` dependency — tracked as a known
-follow-up, not part of this test).
+follow-up, not part of this test). See "As a Developer" below for the formal tracking of
+this gap.
+
+---
+
+## As a Developer
+
+*Unlike the roles above, this is an internal actor verifying the system's own architectural
+claims — not an external runtime interactor of the microlith's HTTP or process boundary.*
+
+### Ensure business behavior is proven identical across framework realizations
+
+**Value:** so that the "realized identically in Dropwizard and Spring" claim (already stated
+above, in this document's own "Compose a capability that is actually hosted by another
+microlith, transparently" entry) is backed by proof rather than assumed — business behavior
+does not silently diverge between the two infrastructure realizations.
+
+**System use cases:** [Bootstrap Microlith](../docs/architecture.md#use-case-bootstrap-microlith),
+[Process Inbound Event](../docs/architecture.md#use-case-process-inbound-event),
+[Forward Event to Remote Capability](../docs/architecture.md#use-case-forward-event-to-remote-capability),
+[Dispatch Between Local Capabilities](../docs/architecture.md#use-case-dispatch-between-local-capabilities),
+[Shut Down Microlith](../docs/architecture.md#use-case-shut-down-microlith) — all 5 existing
+top-level system use cases, collectively.
+
+**Acceptance criteria:**
+- Given "Operate a microlith" (Bootstrap/Shut Down Microlith), when checked for
+  Dropwizard-realized acceptance proof, then: startup-abort-on-lifecycle-failure, ordered
+  clean shutdown, and shutdown-continues-after-one-holder's-error have no proof at any level,
+  in either framework; duplicate-capability-detection has unit-level-only proof today
+  (`EventBobBundleTest.shouldThrowOnDuplicateCapabilityAcrossInlineAndRemote`); a
+  Dropwizard-realized acceptance test still needs to prove all of the above as real-HTTP,
+  end-to-end scenarios.
+- Given "Invoke a capability over HTTP" (Process Inbound Event), when checked for
+  Dropwizard-realized acceptance proof, then none exists — a Dropwizard-realized acceptance
+  test is needed covering known-capability, unknown-capability, and handler-failure cases,
+  mirroring `InvertCapabilityAcceptanceTest`'s existing (Spring-only) scope.
+- Given "Compose a capability hosted by another microlith" (Forward Event to Remote
+  Capability), when checked for Dropwizard-realized acceptance proof, then none exists — a
+  Dropwizard-realized acceptance test is needed covering successful forwarding, remote HTTP
+  error, and network failure, mirroring `EchoCapabilityAcceptanceTest`'s existing (Spring-only)
+  scope.
+- Given "Have one hosted capability call another" (Dispatch Between Local Capabilities), when
+  checked for Dropwizard-realized acceptance proof, then none exists — the same
+  Dropwizard-realized test needed above would also need to exercise the local "lower" dispatch
+  leg, mirroring `EchoCapabilityAcceptanceTest`'s existing (Spring-only) scope.
+- Given "Check that the microlith is alive" (Process Inbound Event), when checked for
+  Dropwizard-realized acceptance proof, then none exists — a Dropwizard-realized acceptance
+  test is needed covering payload-omitted and explicit-null-payload cases, mirroring
+  `HealthcheckAcceptanceTest`'s existing (Spring-only) scope; as already noted above,
+  `io.eventbob.dropwizard` currently has no `dropwizard-testing` dependency, a known
+  prerequisite for this test.
+
+**Sequence diagram:** none new. The business-level sequence for each of the 5 use cases above
+is realization-agnostic by design (location transparency and mutual exclusivity of
+infrastructure libraries — see `architecture.md` §5): the flow does not change based on which
+framework implements it, only the acceptance-test evidence proving it does. See the existing
+sequence diagrams cited under their respective entries above:
+[OperateMicrolith.mermaid](../diagrams/businessUseCases/OperateMicrolith.mermaid),
+[InvokeCapabilityOverHttp.mermaid](../diagrams/businessUseCases/InvokeCapabilityOverHttp.mermaid),
+[ComposeRemoteCapability.mermaid](../diagrams/businessUseCases/ComposeRemoteCapability.mermaid),
+[DispatchBetweenLocalCapabilities.mermaid](../diagrams/businessUseCases/DispatchBetweenLocalCapabilities.mermaid),
+[CheckMicrolithAlive.mermaid](../diagrams/businessUseCases/CheckMicrolithAlive.mermaid).
+
+**Code:** N/A — this use case is about proof/coverage, not new production code.
+
+**Existing test coverage:** Dropwizard-realized acceptance-test coverage does not yet exist
+today for any of the 5 use cases above. Spring-realized acceptance coverage exists for 4 of
+the 5 (`InvertCapabilityAcceptanceTest`, `EchoCapabilityAcceptanceTest` covering both the
+remote-composition and local-dispatch use cases, `HealthcheckAcceptanceTest`); "Operate a
+microlith" has no acceptance test in either framework. The implementation approach for
+closing this gap (e.g., a Docker-based multi-realization test harness) is under consideration
+and explicitly deferred — not committed to in this entry.
