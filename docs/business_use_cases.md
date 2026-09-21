@@ -83,8 +83,10 @@ realized as Process Inbound HTTP Event in
 **Code:** `io.eventbob.core.EventBob#processEvent`, `io.eventbob.dropwizard.EventResource` /
 `io.eventbob.spring` inbound controller, `EventDto`.
 
-**Existing test coverage:** `EventBobTest` (`io.eventbob.core`). No dedicated acceptance test
-exists yet for this business use case.
+**Existing test coverage:** `EventBobTest` (`io.eventbob.core`, handler-level unit tests).
+`InvertCapabilityAcceptanceTest` (`io.eventbob.example.microlith.spring.echo`) — real-HTTP
+acceptance test against the "invert" capability, covering known-capability, unknown-capability,
+and handler-failure cases.
 
 ---
 
@@ -115,7 +117,14 @@ having registered the remote capability first (see "Operate a microlith" above).
 
 **Existing test coverage:** `HttpEventHandlerAdapterTest`, `RemoteHandlerLoaderTest`
 (both `io.eventbob.dropwizard` and `io.eventbob.spring`); `SyncForwardingEventHandlerTest`
-(`io.eventbob.core`). No dedicated acceptance test exists yet for this business use case.
+(`io.eventbob.core`) — handler-level unit tests. `EchoCapabilityAcceptanceTest`
+(`io.eventbob.example.microlith.spring.echo`) — real-HTTP acceptance test against the "echo"
+capability, which unconditionally dispatches to both this use case's remote "upper" capability
+and the local "lower" capability (see "Have one hosted capability call another" below) in one
+real code path, so one test covers both. The remote side is stubbed with a plain JDK
+`HttpServer` on the literal port `EchoApplication`'s `RemoteCapability` bean expects, rather
+than a real `UpperApplication` instance — `upper`'s own logic already has direct coverage in
+`UpperHandlerTest`.
 
 ---
 
@@ -140,8 +149,10 @@ client making multiple calls.
 **Code:** `io.eventbob.core.Dispatcher` (`send` async/sync variants), `io.eventbob.core.EventBob`
 (dispatcher exposure).
 
-**Existing test coverage:** `DispatcherTest`, `EventBobTest` (`io.eventbob.core`). No dedicated
-acceptance test exists yet for this business use case.
+**Existing test coverage:** `DispatcherTest`, `EventBobTest` (`io.eventbob.core`, handler-level
+unit tests). `EchoCapabilityAcceptanceTest` (`io.eventbob.example.microlith.spring.echo`) —
+see "Compose a capability hosted by another microlith" above; the same test exercises this
+use case's local "lower" dispatch as part of the same real code path.
 
 ---
 
@@ -168,4 +179,9 @@ Healthcheck" interactor documented under
 `io.eventbob.spring.handlers.HealthcheckHandler`.
 
 **Existing test coverage:** `HealthcheckHandlerTest` (both `io.eventbob.dropwizard` and
-`io.eventbob.spring`). No dedicated acceptance test exists yet for this business use case.
+`io.eventbob.spring`, handler-level unit tests). `HealthcheckAcceptanceTest`
+(`io.eventbob.example.microlith.spring.echo`) — real-HTTP acceptance test against a running
+`EchoApplication` instance, covering both payload-omitted and explicit-null-payload cases per
+the acceptance criteria above. No Dropwizard-realized acceptance test exists yet
+(`io.eventbob.dropwizard` has no `dropwizard-testing` dependency — tracked as a known
+follow-up, not part of this test).
