@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.eventbob</groupId>
+        <artifactId>io.eventbob.parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>io.eventbob.acceptance.broken.common</artifactId>
+    <packaging>jar</packaging>
+
+    <name>EventBob Acceptance Tests: Broken-Image Lifecycle Glue (Common)</name>
+    <description>Framework-agnostic "broken" lifecycle classes and the BROKEN_MODE dispatcher
+        shared by the Dropwizard and Spring broken-image applications
+        (io.eventbob.acceptance.broken.dw / .spring). Deliberately depends on neither
+        io.eventbob.dropwizard nor io.eventbob.spring, so each framework's broken image can
+        resolve its own clean, single-framework dependency tree instead of a merged one (the
+        Logback-incompatibility bug this module split fixes).
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.example.echo</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.example.lower</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

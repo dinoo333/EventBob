@@ -15,6 +15,10 @@
         <module>io.eventbob.spring</module>
         <module>io.eventbob.dropwizard</module>
         <module>io.eventbob.example</module>
+        <module>io.eventbob.acceptance.broken.common</module>
+        <module>io.eventbob.acceptance.broken.dw</module>
+        <module>io.eventbob.acceptance.broken.spring</module>
+        <module>io.eventbob.acceptance</module>
     </modules>
 
     <properties>
@@ -25,7 +29,7 @@
         <assertj.version>3.27.7</assertj.version>
         <mockito.version>5.18.0</mockito.version>
         <spring-boot.version>3.2.2</spring-boot.version>
-        <testcontainers.version>1.19.3</testcontainers.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <slf4j.version>2.0.11</slf4j.version>
         <archunit.version>1.2.1</archunit.version>
         <dropwizard.version>5.0.1</dropwizard.version>
