@@ -196,6 +196,38 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!-- Removes every Docker image built by support/Images.java for this module's
+                 acceptance tests (identified by the io.eventbob.acceptance=true label - see
+                 Images.java's CLEANUP_LABEL), regardless of whether the failsafe-forked test JVM
+                 exits cleanly. Bound to post-integration-test: Maven always reaches this phase
+                 after integration-test completes (even on test failure) and before the verify
+                 goal fails the build on results, so cleanup runs as a separate Maven-owned
+                 process step on every real test invocation - unlike ImageFromDockerfile's
+                 deleteOnExit JVM shutdown hook, which does not fire on a killed/forked JVM, and
+                 unlike Ryuk-based reaping, whose availability this module does not control. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>cleanup-acceptance-images</id>
+                        <phase>post-integration-test</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="bash" failonerror="false">
+                                    <arg
+                                        value="${project.basedir}/scripts/cleanup-acceptance-images.sh"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
