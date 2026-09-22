@@ -1,6 +1,7 @@
 package io.eventbob.acceptance.support;
 
 import java.nio.file.Path;
+import java.util.Map;
 import org.testcontainers.images.builder.ImageFromDockerfile;
 
 /**
@@ -38,6 +39,19 @@ public final class Images {
    * its {@code RemoteCapability}.
    */
   public static final int SPRING_UPPER_PORT = 8081;
+
+  /**
+   * Marker label stamped on every image this class builds, so a host-level cleanup step (see
+   * this module's {@code pom.xml}, {@code maven-antrun-plugin} bound to {@code
+   * post-integration-test}) can find and remove them by {@code docker images --filter
+   * label=io.eventbob.acceptance=true} regardless of whether the test JVM shuts down cleanly.
+   * This is a supplement to, not a replacement for, Testcontainers' own Ryuk-based reaping (see
+   * {@link ImageFromDockerfile}'s {@code deleteOnExit}, left at its default {@code true}): Ryuk's
+   * cleanup depends on the Ryuk container being enabled and reachable, which this module does not
+   * control, so a Maven-process-owned fallback closes that gap independently of the JVM.
+   */
+  private static final Map<String, String> CLEANUP_LABEL = Map.of("io.eventbob.acceptance",
+      "true");
 
   private Images() {
   }
@@ -88,7 +102,8 @@ public final class Images {
             .copy("upper-config.yml", "/upper-config.yml")
             .entryPoint("sh", "-c",
                 "java -jar /upper.jar server /upper-config.yml & exec java -jar /echo.jar "
-                    + "server"));
+                    + "server"))
+        .withBuildImageCmdModifier(cmd -> cmd.withLabels(CLEANUP_LABEL));
   }
 
   /**
@@ -110,7 +125,8 @@ public final class Images {
             .from("eclipse-temurin:21-jre")
             .copy("echo.jar", "/echo.jar")
             .copy("upper.jar", "/upper.jar")
-            .entryPoint("sh", "-c", "java -jar /upper.jar & exec java -jar /echo.jar"));
+            .entryPoint("sh", "-c", "java -jar /upper.jar & exec java -jar /echo.jar"))
+        .withBuildImageCmdModifier(cmd -> cmd.withLabels(CLEANUP_LABEL));
   }
 
   /**
@@ -160,6 +176,7 @@ public final class Images {
         .withDockerfileFromBuilder(builder -> builder
             .from("eclipse-temurin:21-jre")
             .copy("app.jar", "/app.jar")
-            .entryPoint(entryPoint));
+            .entryPoint(entryPoint))
+        .withBuildImageCmdModifier(cmd -> cmd.withLabels(CLEANUP_LABEL));
   }
 }
