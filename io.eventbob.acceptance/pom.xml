@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.eventbob</groupId>
+        <artifactId>io.eventbob.parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>io.eventbob.acceptance</artifactId>
+    <packaging>jar</packaging>
+
+    <name>EventBob Acceptance Tests</name>
+    <description>Docker/Testcontainers-based acceptance tests proving Dropwizard/Spring
+        realization parity for the "As a Developer" business use case. Test-only module: no
+        production (src/main) sources.
+    </description>
+
+    <properties>
+        <!-- Real, already-built fat jars this module's Dockerfiles COPY as opaque inputs. -->
+        <dw.echo.jar>${maven.multiModuleProjectDirectory}/io.eventbob.example/io.eventbob.example.microlith.dw.echo/target/io.eventbob.example.microlith.dw.echo-${project.version}.jar</dw.echo.jar>
+        <spring.echo.jar>${maven.multiModuleProjectDirectory}/io.eventbob.example/io.eventbob.example.microlith.spring.echo/target/io.eventbob.example.microlith.spring.echo-${project.version}.jar</spring.echo.jar>
+        <!-- Phase 2: the "upper" remote capability's fat jars and (Dropwizard-only) its
+             already-existing, unmodified config.yml, COPYd as opaque Docker inputs into the
+             two-process echo+upper images (see Images#dwEchoAndUpper/#springEchoAndUpper). -->
+        <dw.upper.jar>${maven.multiModuleProjectDirectory}/io.eventbob.example/io.eventbob.example.microlith.dw.upper/target/io.eventbob.example.microlith.dw.upper-${project.version}.jar</dw.upper.jar>
+        <spring.upper.jar>${maven.multiModuleProjectDirectory}/io.eventbob.example/io.eventbob.example.microlith.spring.upper/target/io.eventbob.example.microlith.spring.upper-${project.version}.jar</spring.upper.jar>
+        <dw.upper.config>${maven.multiModuleProjectDirectory}/io.eventbob.example/io.eventbob.example.microlith.dw.upper/src/main/resources/config.yml</dw.upper.config>
+        <!-- Phase 3: the broken images now run from each framework's own independently-shaded
+             fat jar (io.eventbob.acceptance.broken.dw / .spring), built with a clean,
+             single-framework dependency tree - the same proven approach the good images already
+             use - rather than a merged classpath sourced from this module's own compile-scope
+             dependencies. See those modules' pom.xml comments for why (mutual Dropwizard/Spring
+             Logback binary incompatibility). -->
+        <dw.broken.jar>${maven.multiModuleProjectDirectory}/io.eventbob.acceptance.broken.dw/target/io.eventbob.acceptance.broken.dw-${project.version}.jar</dw.broken.jar>
+        <spring.broken.jar>${maven.multiModuleProjectDirectory}/io.eventbob.acceptance.broken.spring/target/io.eventbob.acceptance.broken.spring-${project.version}.jar</spring.broken.jar>
+        <jackson.version>2.21.0</jackson.version>
+        <jackson.annotations.version>2.21</jackson.annotations.version>
+    </properties>
+
+    <dependencies>
+        <!-- Testcontainers: raw container control (generic containers, image-from-Dockerfile). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Broken-lifecycle glue constants (BrokenMode.DUPLICATE_CAPABILITY etc.), needed by
+             this module's own test sources to set the BROKEN_MODE env var when starting a
+             container. Deliberately test scope: this module has no src/main, and the actual
+             broken applications now live in their own dedicated single-framework modules (see
+             .dw/.spring below) - this module never needs io.eventbob.dropwizard or
+             io.eventbob.spring itself, which is the fix for the Logback incompatibility bug
+             (see io.eventbob.acceptance.broken.common's pom.xml). -->
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.acceptance.broken.common</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Reactor-ordering dependencies: force the two microlith modules (and the fat jars
+             their build produces) to be built before this module's tests run. Not imported by
+             any class here (both declare classes under the same io.eventbob.example.echo /
+             io.eventbob.example.lower package names, so importing from both in one compilation
+             unit would be an ambiguous split-package classpath; the broken-image lifecycle glue
+             is defined once, in io.eventbob.acceptance.broken.common, instead). -->
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.example.microlith.dw.echo</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.example.microlith.spring.echo</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.example.microlith.dw.upper</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.example.microlith.spring.upper</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Reactor-ordering-only dependencies: force the two new broken-image modules (and the
+             shaded fat jars their build produces) to be built before this module's tests run.
+             Never imported by any class here - only their built jars are consumed, as opaque
+             Docker COPY inputs (see support/Images.java), exactly like the good echo/upper
+             jars above. -->
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.acceptance.broken.dw</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.eventbob</groupId>
+            <artifactId>io.eventbob.acceptance.broken.spring</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Explicit, mutually-consistent Jackson pin for THIS module's own test classpath
+             (support/EventClient.java uses ObjectMapper directly, on the host test JVM, never
+             inside a container). Without this pin, the resolved test classpath silently mixes
+             jackson-annotations:2.20 (from Testcontainers' own docker-java-api dependency) with
+             jackson-core/jackson-databind:2.21.0 (transitively, via the dw.echo/dw.upper
+             reactor-ordering test dependencies below pulling in Dropwizard's Jackson stack) -
+             confirmed via dependency:tree. Both sets happen to stay binary-compatible today for
+             EventClient's trivial Map<String,Object> (de)serialization, but that's incidental,
+             not contractual: an unrelated Testcontainers or Dropwizard version bump could
+             silently reintroduce the same class of NoSuchMethodError/NoClassDefFoundError this
+             module already fixed once (see the Logback incompatibility this module's sibling
+             modules were split to solve). Pinning removes the ambiguity the same way. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>${jackson.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>${jackson.annotations.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+
+            <!-- No unit tests in this module: everything here needs Docker and real fat jars
+                 built by sibling reactor modules, so it runs as an integration test (failsafe,
+                 bound to integration-test/verify, after package) rather than a unit test
+                 (surefire, bound to test, before package). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>true</skipTests>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*AcceptanceTest.java</include>
+                    </includes>
+                    <systemPropertyVariables>
+                        <eventbob.acceptance.dwEchoJar>${dw.echo.jar}</eventbob.acceptance.dwEchoJar>
+                        <eventbob.acceptance.springEchoJar>${spring.echo.jar}</eventbob.acceptance.springEchoJar>
+                        <eventbob.acceptance.dwEchoBrokenJar>${dw.broken.jar}</eventbob.acceptance.dwEchoBrokenJar>
+                        <eventbob.acceptance.springEchoBrokenJar>${spring.broken.jar}</eventbob.acceptance.springEchoBrokenJar>
+                        <eventbob.acceptance.dwUpperJar>${dw.upper.jar}</eventbob.acceptance.dwUpperJar>
+                        <eventbob.acceptance.springUpperJar>${spring.upper.jar}</eventbob.acceptance.springUpperJar>
+                        <eventbob.acceptance.dwUpperConfig>${dw.upper.config}</eventbob.acceptance.dwUpperConfig>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

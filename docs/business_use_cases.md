@@ -60,8 +60,15 @@ JAR/lifecycle implementations, `io.eventbob.dropwizard.EventBobBundle` /
 
 **Existing test coverage:** `EventBobTest`, `JarHandlerLoaderTest`, `LifecycleHandlerLoaderTest`
 (`io.eventbob.core`); `EventBobBundleTest` (`io.eventbob.dropwizard`); `EventBobConfigTest`
-(`io.eventbob.spring`). No dedicated acceptance test exists yet for this business use case.
-See "As a Developer" below for the tracked Dropwizard-realized acceptance-proof gap.
+(`io.eventbob.spring`). `BootstrapMicrolithAcceptanceTest` and `ShutDownMicrolithAcceptanceTest`
+(`io.eventbob.acceptance`, each with a Dropwizard and a Spring subclass) — real-Docker
+Testcontainers acceptance tests covering normal startup, startup-abort-on-lifecycle-failure,
+duplicate-capability-detection, ordered clean shutdown, and
+shutdown-continues-after-one-holder's-error, against real container images built from the
+already-packaged `io.eventbob.example.microlith.dw.echo` / `.spring.echo` fat jars (or, for the
+three abort/error scenarios, a test-only "broken" image exercising the same
+`EventBobBundle`/`EventBobConfig` production code with a deliberately-conflicting or
+deliberately-failing lifecycle). See "As a Developer" below.
 
 ---
 
@@ -94,10 +101,11 @@ realized as Process Inbound HTTP Event in
 `io.eventbob.spring` inbound controller, `EventDto`.
 
 **Existing test coverage:** `EventBobTest` (`io.eventbob.core`, handler-level unit tests).
-`InvertCapabilityAcceptanceTest` (`io.eventbob.example.microlith.spring.echo`) — real-HTTP
-acceptance test against the "invert" capability, covering known-capability, unknown-capability,
-and handler-failure cases. See "As a Developer" below for the tracked Dropwizard-realized
-acceptance-proof gap.
+`InvertCapabilityAcceptanceTest` (`io.eventbob.acceptance`, with a Dropwizard and a Spring
+subclass) — real-Docker Testcontainers acceptance test against the "invert" capability,
+covering known-capability, unknown-capability, and handler-failure cases, against real
+container images built from the already-packaged `io.eventbob.example.microlith.dw.echo` /
+`.spring.echo` fat jars. See "As a Developer" below.
 
 ---
 
@@ -129,14 +137,13 @@ having registered the remote capability first (see "Operate a microlith" above).
 **Existing test coverage:** `HttpEventHandlerAdapterTest`, `RemoteHandlerLoaderTest`
 (both `io.eventbob.dropwizard` and `io.eventbob.spring`); `SyncForwardingEventHandlerTest`
 (`io.eventbob.core`) — handler-level unit tests. `EchoCapabilityAcceptanceTest`
-(`io.eventbob.example.microlith.spring.echo`) — real-HTTP acceptance test against the "echo"
-capability, which unconditionally dispatches to both this use case's remote "upper" capability
-and the local "lower" capability (see "Have one hosted capability call another" below) in one
-real code path, so one test covers both. The remote side is stubbed with a plain JDK
-`HttpServer` on the literal port `EchoApplication`'s `RemoteCapability` bean expects, rather
-than a real `UpperApplication` instance — `upper`'s own logic already has direct coverage in
-`UpperHandlerTest`. See "As a Developer" below for the tracked Dropwizard-realized
-acceptance-proof gap.
+(`io.eventbob.acceptance`, with a Dropwizard and a Spring subclass) — real-Docker Testcontainers
+acceptance test against the "echo" capability, which unconditionally dispatches to both this use
+case's remote "upper" capability and the local "lower" capability (see "Have one hosted
+capability call another" below) in one real code path, so one test covers both. The remote side
+runs as a real second OS process (the already-packaged `upper` fat jar) sharing one container
+with "echo", not a stub — the only way to satisfy each `EchoApplication`'s hardcoded
+`localhost` remote-capability URI without changing it. See "As a Developer" below.
 
 ---
 
@@ -162,10 +169,10 @@ client making multiple calls.
 (dispatcher exposure).
 
 **Existing test coverage:** `DispatcherTest`, `EventBobTest` (`io.eventbob.core`, handler-level
-unit tests). `EchoCapabilityAcceptanceTest` (`io.eventbob.example.microlith.spring.echo`) —
-see "Compose a capability hosted by another microlith" above; the same test exercises this
-use case's local "lower" dispatch as part of the same real code path. See "As a Developer"
-below for the tracked Dropwizard-realized acceptance-proof gap.
+unit tests). `EchoCapabilityAcceptanceTest` (`io.eventbob.acceptance`, with a Dropwizard and a
+Spring subclass) — see "Compose a capability hosted by another microlith" above; the same test
+exercises this use case's local "lower" dispatch as part of the same real code path. See "As a
+Developer" below.
 
 ---
 
@@ -193,12 +200,10 @@ Healthcheck" interactor documented under
 
 **Existing test coverage:** `HealthcheckHandlerTest` (both `io.eventbob.dropwizard` and
 `io.eventbob.spring`, handler-level unit tests). `HealthcheckAcceptanceTest`
-(`io.eventbob.example.microlith.spring.echo`) — real-HTTP acceptance test against a running
-`EchoApplication` instance, covering both payload-omitted and explicit-null-payload cases per
-the acceptance criteria above. No Dropwizard-realized acceptance test exists yet
-(`io.eventbob.dropwizard` has no `dropwizard-testing` dependency — tracked as a known
-follow-up, not part of this test). See "As a Developer" below for the formal tracking of
-this gap.
+(`io.eventbob.acceptance`, with a Dropwizard and a Spring subclass) — real-Docker
+Testcontainers acceptance test against a running echo microlith container of each realization,
+covering both payload-omitted and explicit-null-payload cases per the acceptance criteria
+above. See "As a Developer" below.
 
 ---
 
@@ -223,31 +228,46 @@ top-level system use cases, collectively.
 
 **Acceptance criteria:**
 - Given "Operate a microlith" (Bootstrap/Shut Down Microlith), when checked for
-  Dropwizard-realized acceptance proof, then: startup-abort-on-lifecycle-failure, ordered
-  clean shutdown, and shutdown-continues-after-one-holder's-error have no proof at any level,
-  in either framework; duplicate-capability-detection has unit-level-only proof today
-  (`EventBobBundleTest.shouldThrowOnDuplicateCapabilityAcrossInlineAndRemote`); a
-  Dropwizard-realized acceptance test still needs to prove all of the above as real-HTTP,
-  end-to-end scenarios.
+  Dropwizard-realized acceptance proof, then: normal startup,
+  startup-abort-on-lifecycle-failure, duplicate-capability-detection, and ordered clean
+  shutdown are proven, in both frameworks, by `BootstrapMicrolithAcceptanceTest` /
+  `ShutDownMicrolithAcceptanceTest` (`io.eventbob.acceptance`) — real-Docker Testcontainers
+  acceptance tests, run against the real `EventBobBundle` / `EventBobConfig` production code
+  (the abort scenarios via a test-only "broken" image built from the same production
+  bootstrap code with a deliberately-conflicting or deliberately-failing lifecycle, never a
+  reimplementation of it). **Partially closed:** shutdown-continues-after-one-holder's-error
+  is proven on Spring but currently fails on Dropwizard
+  (`DropwizardShutDownMicrolithAcceptanceTest.oneHoldersShutdownError_shutdownContinuesForRemainingHolders`)
+  — the application and Docker's own stop mechanism were independently confirmed correct via a
+  standalone, non-Testcontainers diagnostic, but the same mechanism driven through
+  Testcontainers/JUnit produces no shutdown-log output for unresolved reasons. Tracked as a
+  known follow-up, not yet closed.
 - Given "Invoke a capability over HTTP" (Process Inbound Event), when checked for
-  Dropwizard-realized acceptance proof, then none exists — a Dropwizard-realized acceptance
-  test is needed covering known-capability, unknown-capability, and handler-failure cases,
-  mirroring `InvertCapabilityAcceptanceTest`'s existing (Spring-only) scope.
+  Dropwizard-realized acceptance proof, then it is proven by `InvertCapabilityAcceptanceTest`
+  (`io.eventbob.acceptance`), covering known-capability, unknown-capability, and
+  handler-failure cases in both frameworks. Closed.
 - Given "Compose a capability hosted by another microlith" (Forward Event to Remote
-  Capability), when checked for Dropwizard-realized acceptance proof, then none exists — a
-  Dropwizard-realized acceptance test is needed covering successful forwarding, remote HTTP
-  error, and network failure, mirroring `EchoCapabilityAcceptanceTest`'s existing (Spring-only)
-  scope.
+  Capability), when checked for Dropwizard-realized acceptance proof, then the happy-path
+  scenario (successful forward, response converted back) is proven by
+  `EchoCapabilityAcceptanceTest` (`io.eventbob.acceptance`), run against a real Docker container
+  per framework in which "echo" and "upper" run as two OS processes sharing one container's
+  loopback interface (the only way to satisfy each `EchoApplication`'s hardcoded `localhost`
+  remote-capability URI without changing it). **Partially closed:** this business use case's
+  other two acceptance criteria (remote-microlith-returns-an-HTTP-error, network-failure) are
+  not exercised at acceptance level — only unit-tested via `HttpEventHandlerAdapterTest`.
+  Tracked as a known follow-up.
 - Given "Have one hosted capability call another" (Dispatch Between Local Capabilities), when
-  checked for Dropwizard-realized acceptance proof, then none exists — the same
-  Dropwizard-realized test needed above would also need to exercise the local "lower" dispatch
-  leg, mirroring `EchoCapabilityAcceptanceTest`'s existing (Spring-only) scope.
+  checked for Dropwizard-realized acceptance proof, then the happy-path local "lower" dispatch
+  leg is proven by the same `EchoCapabilityAcceptanceTest`'s second `@Test` method, asserting on
+  the local-dispatch half of the same combined-response request (see "Existing test coverage"
+  below for why one test covers both use cases). **Open, not closed:** this business use case's
+  two acceptance criteria (async dispatch returning a future immediately, sync dispatch with
+  timeout/failure semantics) are not exercised at acceptance level at all — only unit-tested via
+  `DispatcherTest`. Tracked as a known follow-up.
 - Given "Check that the microlith is alive" (Process Inbound Event), when checked for
-  Dropwizard-realized acceptance proof, then none exists — a Dropwizard-realized acceptance
-  test is needed covering payload-omitted and explicit-null-payload cases, mirroring
-  `HealthcheckAcceptanceTest`'s existing (Spring-only) scope; as already noted above,
-  `io.eventbob.dropwizard` currently has no `dropwizard-testing` dependency, a known
-  prerequisite for this test.
+  Dropwizard-realized acceptance proof, then it is proven by `HealthcheckAcceptanceTest`
+  (`io.eventbob.acceptance`), covering payload-omitted and explicit-null-payload cases in both
+  frameworks. Closed.
 
 **Sequence diagram:** none new. The business-level sequence for each of the 5 use cases above
 is realization-agnostic by design (location transparency and mutual exclusivity of
@@ -262,10 +282,22 @@ sequence diagrams cited under their respective entries above:
 
 **Code:** N/A — this use case is about proof/coverage, not new production code.
 
-**Existing test coverage:** Dropwizard-realized acceptance-test coverage does not yet exist
-today for any of the 5 use cases above. Spring-realized acceptance coverage exists for 4 of
-the 5 (`InvertCapabilityAcceptanceTest`, `EchoCapabilityAcceptanceTest` covering both the
-remote-composition and local-dispatch use cases, `HealthcheckAcceptanceTest`); "Operate a
-microlith" has no acceptance test in either framework. The implementation approach for
-closing this gap (e.g., a Docker-based multi-realization test harness) is under consideration
-and explicitly deferred — not committed to in this entry.
+**Existing test coverage:** Dropwizard-realized acceptance-test coverage now exists, via
+real-Docker Testcontainers tests in the new `io.eventbob.acceptance` module, for all 5 use
+cases: "Operate a microlith" (`BootstrapMicrolithAcceptanceTest`,
+`ShutDownMicrolithAcceptanceTest`), "Invoke a capability over HTTP"
+(`InvertCapabilityAcceptanceTest`), "Check that the microlith is alive"
+(`HealthcheckAcceptanceTest`), and "Compose a capability hosted by another microlith" /
+"Have one hosted capability call another" (`EchoCapabilityAcceptanceTest`) — each with a
+Dropwizard and a Spring subclass sharing one abstract base test class, run against real
+containers built from the already-packaged `io.eventbob.example.microlith.dw.echo` /
+`.spring.echo` fat jars (or, for the bootstrap/shutdown abort/error scenarios, a test-only
+"broken" image exercising the same production `EventBobBundle` / `EventBobConfig` code with a
+deliberately-conflicting or deliberately-failing lifecycle; or, for `EchoCapabilityAcceptanceTest`,
+a container also running the already-packaged `dw.upper` / `spring.upper` fat jar as a second OS
+process sharing the same container's loopback interface). The Spring-only originals of
+`InvertCapabilityAcceptanceTest`, `HealthcheckAcceptanceTest`, and `EchoCapabilityAcceptanceTest`
+(previously in `io.eventbob.example.microlith.spring.echo`) were ported into
+`io.eventbob.acceptance` and removed from their old location once their Testcontainers
+equivalents were confirmed passing on real Docker (see the "Partially closed" / "Open, not
+closed" notes above for the specific scenarios still outstanding).
