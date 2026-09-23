@@ -7,7 +7,7 @@
 
     <parent>
         <groupId>io.eventbob</groupId>
-        <artifactId>io.eventbob.parent</artifactId>
+        <artifactId>io.eventbob.acceptance.suite</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
@@ -37,15 +37,15 @@
              use - rather than a merged classpath sourced from this module's own compile-scope
              dependencies. See those modules' pom.xml comments for why (mutual Dropwizard/Spring
              Logback binary incompatibility). -->
-        <dw.broken.jar>${maven.multiModuleProjectDirectory}/io.eventbob.acceptance.broken.dw/target/io.eventbob.acceptance.broken.dw-${project.version}.jar</dw.broken.jar>
-        <spring.broken.jar>${maven.multiModuleProjectDirectory}/io.eventbob.acceptance.broken.spring/target/io.eventbob.acceptance.broken.spring-${project.version}.jar</spring.broken.jar>
+        <dw.broken.jar>${maven.multiModuleProjectDirectory}/io.eventbob.acceptance.suite/io.eventbob.acceptance.broken.dw/target/io.eventbob.acceptance.broken.dw-${project.version}.jar</dw.broken.jar>
+        <spring.broken.jar>${maven.multiModuleProjectDirectory}/io.eventbob.acceptance.suite/io.eventbob.acceptance.broken.spring/target/io.eventbob.acceptance.broken.spring-${project.version}.jar</spring.broken.jar>
         <!-- Phase 4: the non-EventBob decoy "upper" application used by
              RemoteCapabilityFailureAcceptanceTest to produce genuine HTTP-error / network-failure
              / slow-response conditions the real EventBob-based "upper" app can never itself
              produce (see io.eventbob.acceptance.decoy.upper's pom.xml). One jar serves both
              framework realizations: the same image build copies it in place of the real
              upper.jar, with MODE/PORT selected per test via container env vars. -->
-        <decoy.upper.jar>${maven.multiModuleProjectDirectory}/io.eventbob.acceptance.decoy.upper/target/io.eventbob.acceptance.decoy.upper-${project.version}.jar</decoy.upper.jar>
+        <decoy.upper.jar>${maven.multiModuleProjectDirectory}/io.eventbob.acceptance.suite/io.eventbob.acceptance.decoy.upper/target/io.eventbob.acceptance.decoy.upper-${project.version}.jar</decoy.upper.jar>
         <jackson.version>2.21.0</jackson.version>
         <jackson.annotations.version>2.21</jackson.annotations.version>
     </properties>
