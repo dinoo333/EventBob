@@ -96,7 +96,7 @@ public final class Images {
         .withFileFromPath("upper.jar", path("eventbob.acceptance.dwUpperJar"))
         .withFileFromPath("upper-config.yml", path("eventbob.acceptance.dwUpperConfig"))
         .withDockerfileFromBuilder(builder -> builder
-            .from("eclipse-temurin:21-jre")
+            .from("eclipse-temurin:25-jre")
             .copy("echo.jar", "/echo.jar")
             .copy("upper.jar", "/upper.jar")
             .copy("upper-config.yml", "/upper-config.yml")
@@ -122,7 +122,7 @@ public final class Images {
         .withFileFromPath("echo.jar", path("eventbob.acceptance.springEchoJar"))
         .withFileFromPath("upper.jar", path("eventbob.acceptance.springUpperJar"))
         .withDockerfileFromBuilder(builder -> builder
-            .from("eclipse-temurin:21-jre")
+            .from("eclipse-temurin:25-jre")
             .copy("echo.jar", "/echo.jar")
             .copy("upper.jar", "/upper.jar")
             .entryPoint("sh", "-c", "java -jar /upper.jar & exec java -jar /echo.jar"))
@@ -149,7 +149,7 @@ public final class Images {
         .withFileFromPath("echo.jar", path("eventbob.acceptance.dwEchoJar"))
         .withFileFromPath("decoy-upper.jar", path("eventbob.acceptance.decoyUpperJar"))
         .withDockerfileFromBuilder(builder -> builder
-            .from("eclipse-temurin:21-jre")
+            .from("eclipse-temurin:25-jre")
             .copy("echo.jar", "/echo.jar")
             .copy("decoy-upper.jar", "/decoy-upper.jar")
             .env("PORT", String.valueOf(DW_UPPER_PORT))
@@ -175,7 +175,7 @@ public final class Images {
         .withFileFromPath("echo.jar", path("eventbob.acceptance.springEchoJar"))
         .withFileFromPath("decoy-upper.jar", path("eventbob.acceptance.decoyUpperJar"))
         .withDockerfileFromBuilder(builder -> builder
-            .from("eclipse-temurin:21-jre")
+            .from("eclipse-temurin:25-jre")
             .copy("echo.jar", "/echo.jar")
             .copy("decoy-upper.jar", "/decoy-upper.jar")
             .env("PORT", String.valueOf(SPRING_UPPER_PORT))
@@ -229,7 +229,7 @@ public final class Images {
     return new ImageFromDockerfile()
         .withFileFromPath("app.jar", jarFile)
         .withDockerfileFromBuilder(builder -> builder
-            .from("eclipse-temurin:21-jre")
+            .from("eclipse-temurin:25-jre")
             .copy("app.jar", "/app.jar")
             .entryPoint(entryPoint))
         .withBuildImageCmdModifier(cmd -> cmd.withLabels(CLEANUP_LABEL));

@@ -20,12 +20,12 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.release>25</maven.compiler.release>
         <revision>${project.version}</revision>
         <junit.version>5.12.2</junit.version>
         <assertj.version>3.27.7</assertj.version>
         <mockito.version>5.18.0</mockito.version>
-        <spring-boot.version>3.2.2</spring-boot.version>
+        <spring-boot.version>3.5.16</spring-boot.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <slf4j.version>2.0.11</slf4j.version>
         <archunit.version>1.2.1</archunit.version>
