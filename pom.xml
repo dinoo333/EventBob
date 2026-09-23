@@ -15,11 +15,7 @@
         <module>io.eventbob.spring</module>
         <module>io.eventbob.dropwizard</module>
         <module>io.eventbob.example</module>
-        <module>io.eventbob.acceptance.broken.common</module>
-        <module>io.eventbob.acceptance.broken.dw</module>
-        <module>io.eventbob.acceptance.broken.spring</module>
-        <module>io.eventbob.acceptance.decoy.upper</module>
-        <module>io.eventbob.acceptance</module>
+        <module>io.eventbob.acceptance.suite</module>
     </modules>
 
     <properties>
