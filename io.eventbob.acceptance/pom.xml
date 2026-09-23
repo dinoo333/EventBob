@@ -231,7 +231,7 @@
                 <version>3.1.0</version>
                 <executions>
                     <execution>
-                        <id>cleanup-acceptance-images</id>
+                        <id>cleanup-acceptance-images-post-test</id>
                         <phase>post-integration-test</phase>
                         <goals>
                             <goal>run</goal>
@@ -241,6 +241,21 @@
                                 <exec executable="bash" failonerror="false">
                                     <arg
                                         value="${project.basedir}/scripts/cleanup-acceptance-images.sh"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>cleanup-acceptance-images-on-clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="bash" failonerror="false">
+                                    <arg
+                                            value="${project.basedir}/scripts/cleanup-acceptance-images.sh"/>
                                 </exec>
                             </target>
                         </configuration>
