@@ -18,6 +18,7 @@
         <module>io.eventbob.acceptance.broken.common</module>
         <module>io.eventbob.acceptance.broken.dw</module>
         <module>io.eventbob.acceptance.broken.spring</module>
+        <module>io.eventbob.acceptance.decoy.upper</module>
         <module>io.eventbob.acceptance</module>
     </modules>
 

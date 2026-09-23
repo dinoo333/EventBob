@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.eventbob</groupId>
+        <artifactId>io.eventbob.parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>io.eventbob.acceptance.decoy.upper</artifactId>
+    <packaging>jar</packaging>
+
+    <name>EventBob Acceptance Tests: Decoy Upper Application</name>
+    <description>Non-EventBob decoy standing in for the "upper" remote capability in
+        RemoteCapabilityFailureAcceptanceTest. Uses only the JDK's built-in
+        com.sun.net.httpserver.HttpServer - zero compile-time dependency on EventBob, Dropwizard,
+        or Spring - because the real "upper" app can never itself produce a non-2xx HTTP status or
+        network failure: EventBob#processEvent's exceptionally() always converts handler
+        exceptions into a 200-with-error-payload response (see EventBobTest and
+        InvertCapabilityAcceptanceTest). Genuine HTTP-error/network-failure/slow-response
+        conditions therefore require a process that is not running EventBob production code at
+        all. Deliberately not named under the io.eventbob.acceptance.broken.* family: "broken"
+        modules run real EventBobBundle/EventBobConfig code with a misbehaving lifecycle; this
+        module runs no EventBob code whatsoever.
+    </description>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <!-- Set main class in manifest -->
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>io.eventbob.acceptance.decoy.upper.DecoyUpperApplication</mainClass>
+                                </transformer>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
