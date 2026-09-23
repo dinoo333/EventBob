@@ -64,7 +64,17 @@ public abstract class ShutDownMicrolithAcceptanceTest {
     try (GenericContainer<?> container = new GenericContainer<>(brokenImage())
         .withEnv("BROKEN_MODE", BrokenMode.SHUTDOWN_FAILURE)
         .withExposedPorts(port())
-        .waitingFor(Wait.forListeningPort())) {
+        // Wait.forListeningPort() is satisfied the instant the OS-level socket opens, which
+        // happens early in Jetty's connector startup - well before Dropwizard finishes starting
+        // every registered Managed lifecycle bean (including the one wrapping
+        // EventBobBundle#shutdownInlineLifecycles()). Sending SIGTERM that early raced Jetty's
+        // own startup and lost every time: the shutdown hook only stops beans that had already
+        // started, so our lifecycle shutdown code never ran and its log line never appeared -
+        // confirmed by capturing container.getLogs() immediately after stop and finding it cut
+        // off mid-startup. Waiting for a real HTTP response (even a 404, since EchoApplication
+        // maps no root resource) only succeeds once the whole server, Managed beans included,
+        // is actually up.
+        .waitingFor(Wait.forHttp("/").forStatusCode(404))) {
       container.start();
 
       // Deliberately NOT container.stop(): that method stops AND REMOVES the container (see
