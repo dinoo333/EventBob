@@ -10,9 +10,9 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>io.eventbob.acceptance.suite</artifactId>
+    <artifactId>io.eventbob.acceptance.parent</artifactId>
     <packaging>pom</packaging>
-    <name>EventBob Acceptance Test Suite</name>
+    <name>EventBob Acceptance Tests Parent</name>
     <description>Parent POM for the acceptance tests</description>
 
     <modules>

@@ -15,7 +15,7 @@
         <module>io.eventbob.spring</module>
         <module>io.eventbob.dropwizard</module>
         <module>io.eventbob.example</module>
-        <module>io.eventbob.acceptance.suite</module>
+        <module>io.eventbob.acceptance.parent</module>
     </modules>
 
     <properties>
