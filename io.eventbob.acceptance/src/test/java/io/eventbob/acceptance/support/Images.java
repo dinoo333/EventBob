@@ -130,6 +130,61 @@ public final class Images {
   }
 
   /**
+   * Dropwizard echo+decoy-upper image: runs the already-packaged {@code
+   * io.eventbob.example.microlith.dw.echo} fat jar alongside this module's own non-EventBob
+   * {@code io.eventbob.acceptance.decoy.upper} fat jar (instead of the real {@code dw.upper} jar)
+   * as two OS processes sharing this one container's loopback interface, on the same {@link
+   * #DW_UPPER_PORT} the Dropwizard {@code EchoApplication}'s hardcoded remote capability URI
+   * expects. The decoy's {@code PORT} is baked in at image-build time (it is fixed by this
+   * framework's hardcoded URI); its {@code MODE} is left unset here and must be supplied per
+   * test via {@code GenericContainer#withEnv("MODE", ...)} before {@code container.start()} -
+   * see {@code RemoteCapabilityFailureAcceptanceTest}, whose {@code @Test} methods each start
+   * their own fresh container with its own {@code MODE}. One image build therefore serves all
+   * four decoy modes, never one image per mode.
+   *
+   * @return a lazily-built image
+   */
+  public static ImageFromDockerfile dwEchoAndDecoyUpper() {
+    return new ImageFromDockerfile()
+        .withFileFromPath("echo.jar", path("eventbob.acceptance.dwEchoJar"))
+        .withFileFromPath("decoy-upper.jar", path("eventbob.acceptance.decoyUpperJar"))
+        .withDockerfileFromBuilder(builder -> builder
+            .from("eclipse-temurin:21-jre")
+            .copy("echo.jar", "/echo.jar")
+            .copy("decoy-upper.jar", "/decoy-upper.jar")
+            .env("PORT", String.valueOf(DW_UPPER_PORT))
+            .entryPoint("sh", "-c",
+                "java -jar /decoy-upper.jar & exec java -jar /echo.jar server"))
+        .withBuildImageCmdModifier(cmd -> cmd.withLabels(CLEANUP_LABEL));
+  }
+
+  /**
+   * Spring echo+decoy-upper image: runs the already-packaged {@code
+   * io.eventbob.example.microlith.spring.echo} fat jar alongside this module's own non-EventBob
+   * {@code io.eventbob.acceptance.decoy.upper} fat jar (instead of the real {@code spring.upper}
+   * jar) as two OS processes sharing this one container's loopback interface, on the same {@link
+   * #SPRING_UPPER_PORT} the Spring {@code EchoApplication}'s hardcoded remote capability URI
+   * expects. The decoy's {@code PORT} is baked in at image-build time; its {@code MODE} is left
+   * unset here and must be supplied per test via {@code GenericContainer#withEnv("MODE", ...)} -
+   * see {@code RemoteCapabilityFailureAcceptanceTest}.
+   *
+   * @return a lazily-built image
+   */
+  public static ImageFromDockerfile springEchoAndDecoyUpper() {
+    return new ImageFromDockerfile()
+        .withFileFromPath("echo.jar", path("eventbob.acceptance.springEchoJar"))
+        .withFileFromPath("decoy-upper.jar", path("eventbob.acceptance.decoyUpperJar"))
+        .withDockerfileFromBuilder(builder -> builder
+            .from("eclipse-temurin:21-jre")
+            .copy("echo.jar", "/echo.jar")
+            .copy("decoy-upper.jar", "/decoy-upper.jar")
+            .env("PORT", String.valueOf(SPRING_UPPER_PORT))
+            .entryPoint("sh", "-c",
+                "java -jar /decoy-upper.jar & exec java -jar /echo.jar"))
+        .withBuildImageCmdModifier(cmd -> cmd.withLabels(CLEANUP_LABEL));
+  }
+
+  /**
    * Broken Dropwizard image: registers a deliberately-broken set of inline lifecycles
    * (selected at container-start time by the {@code BROKEN_MODE} environment variable),
    * expected to abort startup, or fail cleanly on shutdown, via a real {@code EventBobBundle}

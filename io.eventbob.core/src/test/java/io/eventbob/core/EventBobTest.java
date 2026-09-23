@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -545,6 +546,48 @@ class EventBobTest {
     assertThat(errorPayload.get("errorMessage"))
         .asString()
         .contains("HandlerNotFoundException");
+  }
+
+  @Test
+  void processEventReturnsImmediatelyWithoutWaitingForHandlerToComplete() throws Exception {
+    CountDownLatch handlerReleaseLatch = new CountDownLatch(1);
+
+    EventHandler blockingHandler = (event, dispatcher) -> {
+      try {
+        handlerReleaseLatch.await();
+      } catch (InterruptedException e) {
+        Thread
+            .currentThread()
+            .interrupt();
+        throw new EventHandlingException("Interrupted while waiting on latch", e);
+      }
+      return event
+          .toBuilder()
+          .payload("released")
+          .build();
+    };
+
+    EventBob bob = EventBob
+        .builder()
+        .handler("blocking", blockingHandler)
+        .build();
+
+    Event event = Event
+        .builder()
+        .source("s")
+        .target("blocking")
+        .build();
+
+    CompletableFuture<Event> result = bob.processEvent(event, (err, evt) -> null);
+
+    // Primary proof, latch-based and timing-independent: the handler cannot have completed yet
+    // because it is still parked on the latch, so the future it feeds must still be incomplete.
+    assertThat(result.isDone()).isFalse();
+
+    handlerReleaseLatch.countDown();
+
+    Event finalResult = result.get(1, TimeUnit.SECONDS);
+    assertThat(finalResult.getPayload()).isEqualTo("released");
   }
 
   @Test

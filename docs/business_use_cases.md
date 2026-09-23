@@ -252,18 +252,33 @@ top-level system use cases, collectively.
   `EchoCapabilityAcceptanceTest` (`io.eventbob.acceptance`), run against a real Docker container
   per framework in which "echo" and "upper" run as two OS processes sharing one container's
   loopback interface (the only way to satisfy each `EchoApplication`'s hardcoded `localhost`
-  remote-capability URI without changing it). **Partially closed:** this business use case's
-  other two acceptance criteria (remote-microlith-returns-an-HTTP-error, network-failure) are
-  not exercised at acceptance level — only unit-tested via `HttpEventHandlerAdapterTest`.
-  Tracked as a known follow-up.
+  remote-capability URI without changing it). **Closed:** this business use case's other two
+  acceptance criteria (remote-microlith-returns-an-HTTP-error, network-failure) are now proven
+  at acceptance level too, by `RemoteCapabilityFailureAcceptanceTest`
+  (`io.eventbob.acceptance`, with a Dropwizard and a Spring subclass) — a real-Docker
+  Testcontainers acceptance test that replaces "upper" with a non-EventBob decoy process
+  (`io.eventbob.acceptance.decoy.upper`, a bare JDK `HttpServer`), since the real EventBob-based
+  "upper" app can never itself produce a non-2xx HTTP status or a network failure
+  (`EventBob#processEvent`'s `exceptionally()` always resolves normally into an error-shaped
+  200 response). Covers fixed-404, fixed-500, and connection-refused decoy responses, each
+  asserting HTTP 200 with the "lower" half of the combined response unaffected and the "upper"
+  half carrying independent `errorType`/`errorMessage` substrings.
 - Given "Have one hosted capability call another" (Dispatch Between Local Capabilities), when
   checked for Dropwizard-realized acceptance proof, then the happy-path local "lower" dispatch
   leg is proven by the same `EchoCapabilityAcceptanceTest`'s second `@Test` method, asserting on
   the local-dispatch half of the same combined-response request (see "Existing test coverage"
-  below for why one test covers both use cases). **Open, not closed:** this business use case's
-  two acceptance criteria (async dispatch returning a future immediately, sync dispatch with
-  timeout/failure semantics) are not exercised at acceptance level at all — only unit-tested via
-  `DispatcherTest`. Tracked as a known follow-up.
+  below for why one test covers both use cases). **Closed:** this business use case's two
+  acceptance criteria are now proven at acceptance and unit level. The sync-dispatch-timeout
+  criterion is proven by `RemoteCapabilityFailureAcceptanceTest`'s
+  `syncDispatchTimeoutExpires_wholeResponseIsErrorShaped` test, using the same decoy process
+  configured to delay its response past `EchoService`'s 1000ms dispatch timeout — asserting the
+  whole "echo" response (not just the "upper" half) resolves as a top-level error event, since
+  the timeout is thrown directly out of `EchoService#processEcho`'s uncaught outer
+  `dispatcher.send(...)` call rather than being caught and concatenated like the HTTP-error
+  cases above. The async-dispatch-returns-a-future-immediately criterion is proven at unit
+  level by a new `EventBobTest` test exercising the real `EventBob#processEvent` with a
+  `CountDownLatch`-blocked handler, asserting the returned future is not done immediately after
+  the call returns.
 - Given "Check that the microlith is alive" (Process Inbound Event), when checked for
   Dropwizard-realized acceptance proof, then it is proven by `HealthcheckAcceptanceTest`
   (`io.eventbob.acceptance`), covering payload-omitted and explicit-null-payload cases in both
