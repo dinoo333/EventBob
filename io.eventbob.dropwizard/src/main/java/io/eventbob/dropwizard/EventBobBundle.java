@@ -7,6 +7,7 @@ import io.dropwizard.core.setup.Environment;
 import io.dropwizard.lifecycle.Managed;
 import io.eventbob.core.Capability;
 import io.eventbob.core.EventBob;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandler;
 import io.eventbob.core.HandlerLifecycle;
 import io.eventbob.core.HandlerLoader;
@@ -103,6 +104,8 @@ public class EventBobBundle implements ConfiguredBundle<Configuration> {
       throws Exception {
     EventBob.Builder builder = EventBob.builder();
 
+    // TODO: load event builder from configuration
+    builder.eventBuilder(EventBuilder.builder().build());
     builder.handler("healthcheck", healthcheckHandler);
 
     Map<String, EventHandler> allHandlers = loadAllHandlers(httpClient);
@@ -132,7 +135,7 @@ public class EventBobBundle implements ConfiguredBundle<Configuration> {
 
     // Register inline lifecycle-based handlers (same JVM, no classloader isolation)
     // Dispatcher is intentionally null: handlers receive it at event-processing time
-    // via EventHandler.handle(Event, Dispatcher).
+    // via EventHandler.handle(Event, EventBuilder, Dispatcher).
     if (!inlineLifecycles.isEmpty()) {
       LifecycleContext lifecycleContext = LifecycleContext.of(Map.of(), null);
       int registeredCapabilities = 0;

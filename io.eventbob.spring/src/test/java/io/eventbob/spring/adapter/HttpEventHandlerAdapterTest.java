@@ -72,7 +72,7 @@ class HttpEventHandlerAdapterTest {
             .withHeader("Content-Type", "application/json")
             .withBody(responseJson)));
 
-    Event result = adapter.handle(inputEvent, null);
+    Event result = adapter.handle(inputEvent, null, null);
 
     assertThat(result).isNotNull();
     assertThat(result.getSource()).isEqualTo("test");
@@ -96,7 +96,7 @@ class HttpEventHandlerAdapterTest {
             .withStatus(404)
             .withBody("Not Found")));
 
-    assertThatThrownBy(() -> adapter.handle(inputEvent, null))
+    assertThatThrownBy(() -> adapter.handle(inputEvent, null, null))
         .isInstanceOf(EventHandlingException.class)
         .hasMessageContaining("404")
         .hasMessageContaining("Client error from remote endpoint");
@@ -115,7 +115,7 @@ class HttpEventHandlerAdapterTest {
             .withStatus(500)
             .withBody("Internal Server Error")));
 
-    assertThatThrownBy(() -> adapter.handle(inputEvent, null))
+    assertThatThrownBy(() -> adapter.handle(inputEvent, null, null))
         .isInstanceOf(EventHandlingException.class)
         .hasMessageContaining("500")
         .hasMessageContaining("Server error from remote endpoint");
@@ -140,7 +140,7 @@ class HttpEventHandlerAdapterTest {
     HttpEventHandlerAdapter timeoutAdapter =
         new HttpEventHandlerAdapter(invalidEndpoint, timeoutClient);
 
-    assertThatThrownBy(() -> timeoutAdapter.handle(inputEvent, null))
+    assertThatThrownBy(() -> timeoutAdapter.handle(inputEvent, null, null))
         .isInstanceOf(EventHandlingException.class)
         .hasMessageContaining("Network error calling remote endpoint")
         .hasCauseInstanceOf(java.io.IOException.class);
@@ -160,7 +160,7 @@ class HttpEventHandlerAdapterTest {
             .withHeader("Content-Type", "application/json")
             .withBody("{invalid json")));
 
-    assertThatThrownBy(() -> adapter.handle(inputEvent, null))
+    assertThatThrownBy(() -> adapter.handle(inputEvent, null, null))
         .isInstanceOf(EventHandlingException.class)
         .hasMessageContaining("Failed to parse response from remote endpoint");
   }
@@ -192,7 +192,7 @@ class HttpEventHandlerAdapterTest {
             .withHeader("Content-Type", "application/json")
             .withBody(responseJson)));
 
-    Event result = adapter.handle(inputEvent, null);
+    Event result = adapter.handle(inputEvent, null, null);
 
     assertThat(result.getParameters()).containsEntry("timeout", "5000");
   }
@@ -224,7 +224,7 @@ class HttpEventHandlerAdapterTest {
             .withHeader("Content-Type", "application/json")
             .withBody(responseJson)));
 
-    Event result = adapter.handle(inputEvent, null);
+    Event result = adapter.handle(inputEvent, null, null);
 
     assertThat(result.getMetadata()).containsEntry("traceId", "abc123");
   }

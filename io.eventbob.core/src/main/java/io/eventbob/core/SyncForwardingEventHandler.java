@@ -30,7 +30,8 @@ public abstract class SyncForwardingEventHandler<I, O> implements EventHandler {
   }
 
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+  public Event handle(Event event, EventBuilder ignored, Dispatcher dispatcher)
+      throws EventHandlingException {
     try {
       I request = requestBuilder.apply(this, event);
       O response = delegate.apply(this, request);

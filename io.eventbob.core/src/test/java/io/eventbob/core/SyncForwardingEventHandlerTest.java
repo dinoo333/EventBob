@@ -33,7 +33,7 @@ class SyncForwardingEventHandlerTest {
         (h, resp) -> event(resp),
         (h, req) -> req + ":handled");
 
-    Event result = handler.handle(event("in"), null);
+    Event result = handler.handle(event("in"), null, null);
 
     assertThat(result.getPayload()).isEqualTo("req:in:handled");
   }
@@ -48,7 +48,7 @@ class SyncForwardingEventHandlerTest {
           throw thrown;
         });
 
-    assertThatThrownBy(() -> handler.handle(event("in"), null)).isSameAs(thrown);
+    assertThatThrownBy(() -> handler.handle(event("in"), null, null)).isSameAs(thrown);
   }
 
   @Test
@@ -60,7 +60,7 @@ class SyncForwardingEventHandlerTest {
         (h, resp) -> event(resp),
         (h, req) -> req);
 
-    assertThatThrownBy(() -> handler.handle(event("in"), null))
+    assertThatThrownBy(() -> handler.handle(event("in"), null, null))
         .isInstanceOf(EventHandlingException.class)
         .hasMessageContaining("Unexpected sync handling error")
         .hasCauseInstanceOf(IllegalStateException.class);
@@ -75,7 +75,7 @@ class SyncForwardingEventHandlerTest {
         },
         (h, req) -> req);
 
-    assertThatThrownBy(() -> handler.handle(event("in"), null))
+    assertThatThrownBy(() -> handler.handle(event("in"), null, null))
         .isInstanceOf(EventHandlingException.class)
         .hasMessageContaining("Unexpected sync handling error")
         .hasCauseInstanceOf(RuntimeException.class);
@@ -104,7 +104,7 @@ class SyncForwardingEventHandlerTest {
           return req;
         });
 
-    handler.handle(event("in"), null);
+    handler.handle(event("in"), null, null);
 
     assertThat(seenInRequestBuilder.get()).isSameAs(handler);
     assertThat(seenInDelegate.get()).isSameAs(handler);

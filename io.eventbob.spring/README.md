@@ -74,11 +74,8 @@ Create handlers that implement `EventHandler` and annotate with `@Capability`:
 @Capability("echo")
 public class EchoHandler implements EventHandler {
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) {
-    return event
-        .toBuilder()
-        .payload(event.getPayload())
-        .build();
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
+    return eventBuilder.build(event, event.getTarget(), event.getSource(), event.getPayload());
   }
 }
 ```
@@ -180,21 +177,16 @@ public class UpperMicrolithConfig {
 @Capability("echo")
 public class EchoHandler implements EventHandler {
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) {
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
     // Call remote upper capability via HTTP
     Event upperResult = dispatcher
         .dispatch(
-            event
-                .toBuilder()
-                .target("upper")
-                .build()
+            eventBuilder.build(event, event.getTarget(), "upper", event.getPayload())
         )
         .join();
 
-    return event
-        .toBuilder()
-        .payload("Echo: " + upperResult.getPayload())
-        .build();
+    return eventBuilder.build(
+        event, event.getTarget(), event.getSource(), "Echo: " + upperResult.getPayload());
   }
 }
 ```

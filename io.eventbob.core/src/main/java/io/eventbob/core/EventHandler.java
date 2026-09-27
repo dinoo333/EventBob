@@ -24,9 +24,11 @@ public interface EventHandler {
    * if needed.
    *
    * @param event      The incoming event to handle.
+   * @param eventBuilder The event builder to use for creating response events.
    * @param dispatcher The dispatcher to use for sending events if necessary.
    * @return The response event to be sent back to the caller.
    * @throws EventHandlingException If an error occurs during event handling.
    */
-  Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException;
+  Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException;
 }

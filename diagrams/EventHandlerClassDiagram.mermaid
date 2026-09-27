@@ -18,14 +18,19 @@ classDiagram
         +Map~String,Object~ getParameters()
         +Map~String,Object~ getMetadata()
         +Object getPayload()
-        +Builder toBuilder()
-        +Builder toBuilder(String source, String target)
+        ~Builder toBuilder()
         +static Builder builder()
     }
 
     class EventHandler {
         <<interface>>
-        +Event handle(Event, Dispatcher)
+        +Event handle(Event, EventBuilder, Dispatcher)
+    }
+
+    class EventBuilder {
+        -Map~RouteKey,List~ policies
+        +Event build(Event, String, String, Object)
+        +static Builder builder()
     }
 
     class Dispatcher {
@@ -118,7 +123,7 @@ classDiagram
 
     class SyncForwardingEventHandler~I,O~ {
         <<abstract>>
-        +Event handle(Event, Dispatcher)
+        +Event handle(Event, EventBuilder, Dispatcher)
     }
 
     RuntimeException <|-- EventHandlingException
@@ -126,6 +131,8 @@ classDiagram
     AutoCloseable <|-- HandlerLoader
     EventHandler ..> Event : handles
     EventHandler ..> Dispatcher : uses
+    EventHandler ..> EventBuilder : uses
+    EventBuilder ..> Event : builds
     EventBob ..|> AutoCloseable : implements
     EventBob o--> EventHandler : delegates handling
     EventBob ..> Dispatcher : exposes (this::processEvent)

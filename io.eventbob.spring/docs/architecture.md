@@ -67,8 +67,9 @@ occurs at this layer's boundary via a dedicated transfer object.
 
 - Interactor: Provide Healthcheck
     - Summary: Built-in handler registered under the "healthcheck" capability, returning system health status.
-    - Flow: an event targeting the healthcheck capability arrives; the built-in handler produces a health status
-      response event; the result is returned to the caller.
+    - Flow: an event targeting the healthcheck capability arrives; the built-in handler builds a reply event via
+      EventBuilder, with source set to the handler's own capability ("healthcheck") and target set to the original
+      caller (the inbound event's source), and payload set to `true`; the result is returned to the caller.
 
 ---
 

@@ -3,6 +3,7 @@ package io.eventbob.example.lower;
 import io.eventbob.core.Capability;
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandler;
 
 /**
@@ -35,11 +36,12 @@ public class LowerHandler implements EventHandler {
    * Handles an incoming event by converting its payload to lowercase.
    *
    * @param event      The incoming event to handle.
+   * @param eventBuilder The event builder to use for creating response events.
    * @param dispatcher The dispatcher to use for sending events if necessary.
    * @return The lowercased event.
    */
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) {
-    return lowerService.processLowercase(event, dispatcher);
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
+    return lowerService.processLowercase(event, eventBuilder, dispatcher);
   }
 }

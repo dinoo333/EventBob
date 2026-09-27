@@ -7,6 +7,7 @@ import io.eventbob.core.Capability;
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
 import io.eventbob.core.EventBob;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandler;
 import io.eventbob.core.HandlerLifecycle;
 import io.eventbob.core.LifecycleContext;
@@ -120,7 +121,7 @@ class EventBobBundleTest {
   @Capability("stub")
   static class StubHandler implements EventHandler {
     @Override
-    public Event handle(Event event, Dispatcher dispatcher) {
+    public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
       return event;
     }
   }

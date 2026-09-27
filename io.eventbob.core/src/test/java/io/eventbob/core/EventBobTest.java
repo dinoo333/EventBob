@@ -15,13 +15,13 @@ class EventBobTest {
 
   @Test
   void routesToCorrectHandlerByTarget() throws Exception {
-    EventHandler echoHandler = (event, dispatcher) ->
+    EventHandler echoHandler = (event, eventBuilder, dispatcher) ->
         event
             .toBuilder()
             .payload("echo: " + event.getPayload())
             .build();
 
-    EventHandler upperHandler = (event, dispatcher) ->
+    EventHandler upperHandler = (event, eventBuilder, dispatcher) ->
         event
             .toBuilder()
             .payload(event
@@ -65,7 +65,7 @@ class EventBobTest {
   void throwsHandlerNotFoundExceptionWhenTargetUnknown() throws Exception {
     EventBob bob = EventBob
         .builder()
-        .handler("known", (event, dispatcher) -> event)
+        .handler("known", (event, eventBuilder, dispatcher) -> event)
         .build();
 
     Event unknownTargetEvent = Event
@@ -93,7 +93,7 @@ class EventBobTest {
   void processEventReturnsCompletableFuture() {
     EventBob bob = EventBob
         .builder()
-        .handler("test", (event, dispatcher) -> event)
+        .handler("test", (event, eventBuilder, dispatcher) -> event)
         .build();
 
     Event event = Event
@@ -112,7 +112,7 @@ class EventBobTest {
   void executesAsynchronouslyOnBackgroundThread() throws Exception {
     AtomicReference<String> executingThreadName = new AtomicReference<>();
 
-    EventHandler captureThreadHandler = (event, dispatcher) -> {
+    EventHandler captureThreadHandler = (event, eventBuilder, dispatcher) -> {
       executingThreadName.set(Thread
           .currentThread()
           .getName());
@@ -142,7 +142,7 @@ class EventBobTest {
 
   @Test
   void invokesOnErrorCallbackWhenHandlerThrows() throws Exception {
-    EventHandler failingHandler = (event, dispatcher) -> {
+    EventHandler failingHandler = (event, eventBuilder, dispatcher) -> {
       throw new EventHandlingException("Simulated failure");
     };
 
@@ -179,7 +179,7 @@ class EventBobTest {
 
   @Test
   void usesOnErrorReturnValueAsResult() throws Exception {
-    EventHandler failingHandler = (event, dispatcher) -> {
+    EventHandler failingHandler = (event, eventBuilder, dispatcher) -> {
       throw new EventHandlingException("Simulated failure");
     };
 
@@ -211,7 +211,7 @@ class EventBobTest {
 
   @Test
   void usesDefaultErrorEventWhenOnErrorReturnsNull() throws Exception {
-    EventHandler failingHandler = (event, dispatcher) -> {
+    EventHandler failingHandler = (event, eventBuilder, dispatcher) -> {
       throw new EventHandlingException("Simulated failure");
     };
 
@@ -253,7 +253,7 @@ class EventBobTest {
   void passesNonNullDispatcherToHandler() throws Exception {
     AtomicReference<Dispatcher> capturedDispatcher = new AtomicReference<>();
 
-    EventHandler captureDispatcherHandler = (event, dispatcher) -> {
+    EventHandler captureDispatcherHandler = (event, eventBuilder, dispatcher) -> {
       capturedDispatcher.set(dispatcher);
       return event;
     };
@@ -277,7 +277,7 @@ class EventBobTest {
 
   @Test
   void handlerCanReDispatchEventsViaDispatcher() throws Exception {
-    EventHandler upperHandler = (event, dispatcher) ->
+    EventHandler upperHandler = (event, eventBuilder, dispatcher) ->
         event
             .toBuilder()
             .payload(event
@@ -286,7 +286,7 @@ class EventBobTest {
                 .toUpperCase())
             .build();
 
-    EventHandler delegatingHandler = (event, dispatcher) -> {
+    EventHandler delegatingHandler = (event, eventBuilder, dispatcher) -> {
       Event delegatedEvent = Event
           .builder()
           .source("delegating-handler")
@@ -329,13 +329,13 @@ class EventBobTest {
 
   @Test
   void reDispatchedEventsRouteToCorrectHandlers() throws Exception {
-    EventHandler echoHandler = (event, dispatcher) ->
+    EventHandler echoHandler = (event, eventBuilder, dispatcher) ->
         event
             .toBuilder()
             .payload("echo: " + event.getPayload())
             .build();
 
-    EventHandler chainHandler = (event, dispatcher) -> {
+    EventHandler chainHandler = (event, eventBuilder, dispatcher) -> {
       Event echoRequest = Event
           .builder()
           .source("chain")
@@ -378,7 +378,7 @@ class EventBobTest {
   @Test
   void builderValidatesTargetNotBlank() {
     EventBob.Builder builder = EventBob.builder();
-    EventHandler dummyHandler = (event, dispatcher) -> event;
+    EventHandler dummyHandler = (event, eventBuilder, dispatcher) -> event;
 
     assertThatThrownBy(() -> builder.handler(null, dummyHandler))
         .isInstanceOf(IllegalArgumentException.class)
@@ -404,7 +404,7 @@ class EventBobTest {
 
   @Test
   void builderSupportsFluentChaining() {
-    EventHandler handler = (event, dispatcher) -> event;
+    EventHandler handler = (event, eventBuilder, dispatcher) -> event;
 
     EventBob.Builder builder = EventBob
         .builder()
@@ -424,7 +424,7 @@ class EventBobTest {
     executionLog.put("h2", new AtomicReference<>());
     executionLog.put("h3", new AtomicReference<>());
 
-    EventHandler h1 = (event, dispatcher) -> {
+    EventHandler h1 = (event, eventBuilder, dispatcher) -> {
       executionLog
           .get("h1")
           .set("executed");
@@ -434,7 +434,7 @@ class EventBobTest {
           .build();
     };
 
-    EventHandler h2 = (event, dispatcher) -> {
+    EventHandler h2 = (event, eventBuilder, dispatcher) -> {
       executionLog
           .get("h2")
           .set("executed");
@@ -444,7 +444,7 @@ class EventBobTest {
           .build();
     };
 
-    EventHandler h3 = (event, dispatcher) -> {
+    EventHandler h3 = (event, eventBuilder, dispatcher) -> {
       executionLog
           .get("h3")
           .set("executed");
@@ -503,7 +503,7 @@ class EventBobTest {
 
   @Test
   void handlerReturningNullProducesNullResult() throws Exception {
-    EventHandler nullReturningHandler = (event, dispatcher) -> null;
+    EventHandler nullReturningHandler = (event, eventBuilder, dispatcher) -> null;
 
     EventBob bob = EventBob
         .builder()
@@ -552,7 +552,7 @@ class EventBobTest {
   void processEventReturnsImmediatelyWithoutWaitingForHandlerToComplete() throws Exception {
     CountDownLatch handlerReleaseLatch = new CountDownLatch(1);
 
-    EventHandler blockingHandler = (event, dispatcher) -> {
+    EventHandler blockingHandler = (event, eventBuilder, dispatcher) -> {
       try {
         handlerReleaseLatch.await();
       } catch (InterruptedException e) {
@@ -594,7 +594,7 @@ class EventBobTest {
   void handlerNotFoundExceptionTriggersErrorPath() throws Exception {
     EventBob bob = EventBob
         .builder()
-        .handler("exists", (event, dispatcher) -> event)
+        .handler("exists", (event, eventBuilder, dispatcher) -> event)
         .build();
 
     Event unknownTargetEvent = Event

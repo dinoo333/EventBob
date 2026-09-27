@@ -52,7 +52,8 @@ package io.eventbob.core;
  *
  *     public void initialize(LifecycleContext context) {
  *         String config = (String) context.getConfiguration().get("someKey");
- *         // Dispatcher is not stored here; it arrives per-event via handle(Event, Dispatcher)
+ *         // Dispatcher is not stored here; it arrives per-event via
+ *         // handle(Event, EventBuilder, Dispatcher)
  *         this.handler = new SimpleHandler(config);
  *     }
  *

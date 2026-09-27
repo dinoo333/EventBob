@@ -8,7 +8,7 @@ sequenceDiagram
     Note over E,R: Process Inbound Event
     E ->> R: handle(Event)
     Note over R: Route Inbound Event
-    R ->> H: handle(Event, dispatcher)
+    R ->> H: handle(Event, EventBuilder, dispatcher)
     H -->> R: Event (payload = true)
     R -->> E: Event
     E -->> M: HTTP response

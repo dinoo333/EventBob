@@ -3,6 +3,7 @@ package io.eventbob.spring.handlers;
 import io.eventbob.core.Capability;
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandler;
 import io.eventbob.core.EventHandlingException;
 
@@ -15,10 +16,8 @@ import io.eventbob.core.EventHandlingException;
 @Capability("healthcheck")
 public class HealthcheckHandler implements EventHandler {
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    return event
-        .toBuilder()
-        .payload(true)
-        .build();
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException {
+    return eventBuilder.build(event, event.getTarget(), event.getSource(), true);
   }
 }

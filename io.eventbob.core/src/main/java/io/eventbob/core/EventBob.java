@@ -15,6 +15,7 @@ import java.util.function.BiFunction;
 public class EventBob implements AutoCloseable {
   private final ExecutorService backgroundExecutor;
   private final Dispatcher dispatcher;
+  private final EventBuilder eventBuilder;
   private final Map<String, EventHandler> handlers;
 
   /**
@@ -22,6 +23,7 @@ public class EventBob implements AutoCloseable {
    */
   private EventBob(Builder builder) {
     this.handlers = Map.copyOf(Objects.requireNonNull(builder.handlers, "handlers"));
+    this.eventBuilder = builder.eventBuilder;
     this.backgroundExecutor = Executors.newVirtualThreadPerTaskExecutor();
     this.dispatcher = this::processEvent;
   }
@@ -41,7 +43,7 @@ public class EventBob implements AutoCloseable {
     return CompletableFuture
         .supplyAsync(() -> {
           EventHandler delegate = findHandler(event);
-          return delegate.handle(event, dispatcher);
+          return delegate.handle(event, eventBuilder, dispatcher);
         }, backgroundExecutor)
         .exceptionally(e -> {
           var errorEvent = onError.apply(e, event);
@@ -86,6 +88,7 @@ public class EventBob implements AutoCloseable {
    */
   public static final class Builder {
     private final Map<String, EventHandler> handlers = new LinkedHashMap<>();
+    private EventBuilder eventBuilder;
 
     /**
      * Register a handler for the given target string.
@@ -100,6 +103,17 @@ public class EventBob implements AutoCloseable {
       }
       Objects.requireNonNull(handler, "handler");
       this.handlers.put(target, handler);
+      return this;
+    }
+
+    /**
+     * Set the event builder used to construct outbound events for registered handlers.
+     *
+     * @param eventBuilder The event builder.
+     * @return This builder.
+     */
+    public Builder eventBuilder(EventBuilder eventBuilder) {
+      this.eventBuilder = eventBuilder;
       return this;
     }
 

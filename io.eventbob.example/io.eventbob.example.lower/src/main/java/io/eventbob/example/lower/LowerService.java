@@ -2,6 +2,7 @@ package io.eventbob.example.lower;
 
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 
 /**
  * Service that implements lowercase transformation logic.
@@ -16,12 +17,12 @@ public class LowerService {
    * Transforms input string to lowercase.
    *
    * @param event      The lower event
+   * @param eventBuilder the event builder
    * @param dispatcher the dispatcher (not used by this method)
    * @return lowercase version of input
    */
-  public Event processLowercase(Event event, Dispatcher dispatcher) {
-    return event
-        .toBuilder("lower", event.getSource())
-        .build(((String) event.getPayload()).toLowerCase());
+  public Event processLowercase(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
+    return eventBuilder.build(event, "lower", event.getSource(),
+        ((String) event.getPayload()).toLowerCase());
   }
 }

@@ -3,6 +3,7 @@ package io.eventbob.example.echo;
 import io.eventbob.core.Capability;
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandler;
 import io.eventbob.core.EventHandlingException;
 
@@ -45,23 +46,26 @@ public class EchoHandler implements EventHandler {
   /**
    * Handles an incoming event by branching on the event's target field.
    *
-   * @param event      The incoming event to handle.
-   * @param dispatcher The dispatcher to use for sending events if necessary.
+   * @param event        The incoming event to handle.
+   * @param eventBuilder The event builder to use for creating response events.
+   * @param dispatcher   The dispatcher to use for sending events if necessary.
    * @return The response event.
    * @throws EventHandlingException if event dispatching fails.
    */
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException {
     return "invert".equals(event.getTarget())
-        ? handleInvert(event, dispatcher)
-        : handleEcho(event, dispatcher);
+        ? handleInvert(event, eventBuilder, dispatcher)
+        : handleEcho(event, eventBuilder, dispatcher);
   }
 
-  private Event handleInvert(Event event, Dispatcher dispatcher) {
-    return echoService.processInvert(event, dispatcher);
+  private Event handleInvert(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
+    return echoService.processInvert(event, eventBuilder, dispatcher);
   }
 
-  private Event handleEcho(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    return echoService.processEcho(event, dispatcher);
+  private Event handleEcho(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException {
+    return echoService.processEcho(event, eventBuilder, dispatcher);
   }
 }
