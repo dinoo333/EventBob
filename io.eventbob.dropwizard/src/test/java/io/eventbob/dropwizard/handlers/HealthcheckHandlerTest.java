@@ -3,12 +3,15 @@ package io.eventbob.dropwizard.handlers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandlingException;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class HealthcheckHandlerTest {
+
+  private static final EventBuilder EVENT_BUILDER = EventBuilder.builder().build();
 
   private HealthcheckHandler handler;
 
@@ -25,35 +28,36 @@ class HealthcheckHandlerTest {
         .target("healthcheck")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getPayload()).isEqualTo(true);
   }
 
   @Test
-  void shouldPreserveEventSource() throws EventHandlingException {
+  void shouldSetResultSourceToInputTargetForReplyRouting() throws EventHandlingException {
     Event input = Event
         .builder()
         .source("monitoring-system")
         .target("healthcheck")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
-    assertThat(result.getSource()).isEqualTo("monitoring-system");
+    assertThat(result.getSource()).isEqualTo("healthcheck");
   }
 
   @Test
-  void shouldPreserveEventTarget() throws EventHandlingException {
+  void shouldSetResultTargetToInputSourceForReplyRouting() throws EventHandlingException {
     Event input = Event
         .builder()
         .source("client")
         .target("healthcheck")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
-    assertThat(result.getTarget()).isEqualTo("healthcheck");
+    assertThat(result.getSource()).isEqualTo("healthcheck");
+    assertThat(result.getTarget()).isEqualTo("client");
   }
 
   @Test
@@ -65,7 +69,7 @@ class HealthcheckHandlerTest {
         .metadata(Map.of("traceId", "abc123", "spanId", "xyz789"))
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getMetadata())
         .containsEntry("traceId", "abc123")
@@ -81,7 +85,7 @@ class HealthcheckHandlerTest {
         .parameters(Map.of("timeout", "5000"))
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getParameters()).containsEntry("timeout", "5000");
   }
@@ -95,7 +99,7 @@ class HealthcheckHandlerTest {
         .payload("some-data")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getPayload()).isEqualTo(true);
   }
@@ -108,7 +112,7 @@ class HealthcheckHandlerTest {
         .target("healthcheck")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getPayload()).isEqualTo(true);
   }
@@ -129,8 +133,8 @@ class HealthcheckHandlerTest {
         .payload(12345)
         .build();
 
-    Event result1 = handler.handle(input1, null);
-    Event result2 = handler.handle(input2, null);
+    Event result1 = handler.handle(input1, EVENT_BUILDER, null);
+    Event result2 = handler.handle(input2, EVENT_BUILDER, null);
 
     assertThat(result1.getPayload()).isEqualTo(true);
     assertThat(result2.getPayload()).isEqualTo(true);

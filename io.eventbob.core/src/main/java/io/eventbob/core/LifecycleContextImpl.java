@@ -49,7 +49,8 @@ class LifecycleContextImpl implements LifecycleContext {
     if (dispatcher == null) {
       throw new IllegalStateException(
           "No dispatcher was provided at initialization time. "
-              + "Use the Dispatcher passed to EventHandler.handle(Event, Dispatcher) instead.");
+              + "Use the Dispatcher passed to "
+              + "EventHandler.handle(Event, EventBuilder, Dispatcher) instead.");
     }
     return dispatcher;
   }

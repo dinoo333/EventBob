@@ -73,7 +73,8 @@ class CapabilityTest {
   @Capability("get-user")
   static class SingleCapabilityHandler implements EventHandler {
     @Override
-    public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+    public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+        throws EventHandlingException {
       return event;
     }
   }
@@ -81,7 +82,8 @@ class CapabilityTest {
   @Capability(value = "update-user", version = 2)
   static class VersionedCapabilityHandler implements EventHandler {
     @Override
-    public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+    public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+        throws EventHandlingException {
       return event;
     }
   }
@@ -93,14 +95,16 @@ class CapabilityTest {
   })
   static class MultiCapabilityHandler implements EventHandler {
     @Override
-    public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+    public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+        throws EventHandlingException {
       return event;
     }
   }
 
   static class NoCapabilityHandler implements EventHandler {
     @Override
-    public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+    public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+        throws EventHandlingException {
       return event;
     }
   }

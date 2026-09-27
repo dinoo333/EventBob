@@ -3,6 +3,7 @@ package io.eventbob.example.upper;
 import io.eventbob.core.Capability;
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandler;
 import io.eventbob.core.EventHandlingException;
 
@@ -33,15 +34,10 @@ public class UpperHandler implements EventHandler {
   }
 
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException {
     String input = (String) event.getPayload();
     String uppercased = upperService.processUppercase(input, dispatcher);
-
-    return event
-        .toBuilder()
-        .source("upper")
-        .target(event.getSource())
-        .payload(uppercased)
-        .build();
+    return eventBuilder.build(event, "upper", event.getSource(), uppercased);
   }
 }

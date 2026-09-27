@@ -55,7 +55,7 @@ public interface LifecycleContext {
    *
    * <p>Use this factory to create a context when initializing lifecycles directly
    * (not via JAR loading). Pass {@code null} for dispatcher when handlers receive
-   * it at event-processing time via {@link EventHandler#handle(Event, Dispatcher)}.
+   * it at event-processing time via {@link EventHandler#handle(Event, EventBuilder, Dispatcher)}.
    * </p>
    *
    * @param configuration handler-specific configuration (never null; use {@code Map.of()} for
@@ -103,7 +103,7 @@ public interface LifecycleContext {
    * @return the dispatcher for this microlith
    * @throws IllegalStateException if no dispatcher was provided at initialization time;
    *                               in that case, use the dispatcher passed to
-   *                               {@link EventHandler#handle(Event, Dispatcher)}
+   *                               {@link EventHandler#handle(Event, EventBuilder, Dispatcher)}
    */
   Dispatcher getDispatcher();
 

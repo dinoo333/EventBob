@@ -39,6 +39,7 @@ other modules depend inward on these contracts; this module depends on nothing o
 | Error envelope (default error event)         | A fallback routing envelope produced when no handler is registered for the target capability and the caller's error callback returns null or itself fails | Error handling                       | The guarantee that the router always returns a valid event; the error envelope carries the original event, the error message, and the error type in its payload                                                                              |
 | Standard metadata vocabulary                 | The set of well-known metadata key names defined by the core module for routing, correlation, and observability                                           | Routing, observability               | Canonical string keys carried in an event's Metadata map: `correlation-id`, `reply-to`, `method`, `path`, `trace-id`, `span-id`                                                                                                              |
 | Synchronous forwarding handler               | A handler integration contract implementation that forwards a request to an external system synchronously and translates the reply back into an event     | Handler integration, remote adapters | An abstract base class that sequences request-building, delegate invocation, and response-parsing, and normalizes any unexpected failure from those steps into a handler error; concrete adapters (e.g. HTTP) supply the three collaborators |
+| EventBuilder                                 | A route-keyed extension point that lets registered handlers modify an event's parameters/metadata during construction, matched by source/target            | Routing, extensibility               | A configured registry of source/target-keyed callbacks invoked when building an outbound event for that route; unmatched routes build unmodified                                                                                              |
 
 ### Commands
 
@@ -109,6 +110,8 @@ classDiagram
   Capability "1" --> "1" EventHandler : routes to
   EventHandler ..> Event : handles
   EventHandler ..> Dispatcher : uses
+  EventHandler ..> EventBuilder : uses
+  EventBuilder ..> "Event.Builder" : configures
   SyncForwardingEventHandler ..|> EventHandler : implements
   Dispatcher --> Router : delegates through
   HandlerLoader ..> Capability : produces

@@ -31,11 +31,9 @@ the difference.
 @Capability("echo")
 public class EchoHandler implements EventHandler {
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    return event
-        .toBuilder()
-        .payload(event.getPayload())
-        .build();
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException {
+    return eventBuilder.build(event, event.getTarget(), event.getSource(), event.getPayload());
   }
 }
 ```
@@ -105,11 +103,9 @@ The handler contract is framework-agnostic, so the same handler works unmodified
 @Capability("echo")
 public class EchoHandler implements EventHandler {
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    return event
-        .toBuilder()
-        .payload(event.getPayload())
-        .build();
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException {
+    return eventBuilder.build(event, event.getTarget(), event.getSource(), event.getPayload());
   }
 }
 ```
@@ -324,7 +320,8 @@ Interface for implementing capabilities:
 
 ```java
 public interface EventHandler {
-  Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException;
+  Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException;
 }
 ```
 
@@ -349,22 +346,17 @@ Interface for dispatching events to other capabilities (used for chaining):
 @Capability("uppercase-and-reverse")
 public class CompositeHandler implements EventHandler {
   @Override
-  public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+  public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException {
     Event uppercased = dispatcher
         .send(
-            event
-                .toBuilder()
-                .target("upper")
-                .build(),
+            eventBuilder.build(event, event.getTarget(), "upper", event.getPayload()),
             (error, evt) -> null
         )
         .join();
     return dispatcher
         .send(
-            uppercased
-                .toBuilder()
-                .target("reverse")
-                .build(),
+            eventBuilder.build(uppercased, event.getTarget(), "reverse", uppercased.getPayload()),
             (error, evt) -> null
         )
         .join();

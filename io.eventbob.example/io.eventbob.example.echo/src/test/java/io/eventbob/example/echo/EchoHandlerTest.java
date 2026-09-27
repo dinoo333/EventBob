@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandlingException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class EchoHandlerTest {
+
+  private static final EventBuilder EVENT_BUILDER = EventBuilder.builder().build();
 
   private EchoHandler handler;
 
@@ -35,7 +38,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getPayload()).isEqualTo("kcolc");
     assertThat(result.getSource()).isEqualTo("invert");
@@ -55,7 +58,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getPayload()).isEqualTo("");
   }
@@ -73,7 +76,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getPayload()).isEqualTo("a");
   }
@@ -105,7 +108,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getPayload()).isEqualTo("hello HELLO");
     assertThat(result.getSource()).isEqualTo("echo");
@@ -138,7 +141,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    handler.handle(input, dispatcher);
+    handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(dispatcher.firstSentEvent).isNotNull();
     assertThat(dispatcher.firstSentEvent.getTarget()).isEqualTo("lower");
@@ -171,7 +174,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    handler.handle(input, dispatcher);
+    handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(dispatcher.firstSentEvent).isNotNull();
     assertThat(dispatcher.firstSentEvent.getSource()).isEqualTo("echo");
@@ -204,7 +207,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    handler.handle(input, dispatcher);
+    handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(dispatcher.firstSentEvent).isNotNull();
     assertThat(dispatcher.firstSentEvent.getPayload()).isEqualTo("HELLO WORLD");
@@ -237,7 +240,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getPayload()).isEqualTo("hello world HELLO WORLD");
   }
@@ -269,7 +272,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getSource()).isEqualTo("echo");
   }
@@ -301,7 +304,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getTarget()).isEqualTo("client");
   }
@@ -334,7 +337,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getMetadata()).isEqualTo(Map.of("traceId", "abc123"));
   }
@@ -367,7 +370,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getParameters()).isEqualTo(Map.of("locale", "en-US"));
   }
@@ -385,7 +388,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    assertThatThrownBy(() -> handler.handle(input, dispatcher))
+    assertThatThrownBy(() -> handler.handle(input, EVENT_BUILDER, dispatcher))
         .isInstanceOf(EventHandlingException.class)
         .hasMessageContaining("Failed to send event")
         .hasCauseInstanceOf(RuntimeException.class);
@@ -404,7 +407,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    assertThatThrownBy(() -> handler.handle(input, dispatcher))
+    assertThatThrownBy(() -> handler.handle(input, EVENT_BUILDER, dispatcher))
         .isInstanceOf(EventHandlingException.class)
         .hasMessageContaining("Timeout waiting for response")
         .hasCauseInstanceOf(TimeoutException.class);
@@ -437,7 +440,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getPayload()).isEqualTo(" ");
   }
@@ -469,7 +472,7 @@ class EchoHandlerTest {
     EchoService echoService = new EchoService();
     handler = new EchoHandler(echoService);
 
-    Event result = handler.handle(input, dispatcher);
+    Event result = handler.handle(input, EVENT_BUILDER, dispatcher);
 
     assertThat(result.getPayload()).isEqualTo("12345 12345");
   }

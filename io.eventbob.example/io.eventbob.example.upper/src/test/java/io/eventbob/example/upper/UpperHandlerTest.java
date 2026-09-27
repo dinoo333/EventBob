@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandlingException;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class UpperHandlerTest {
+
+  private static final EventBuilder EVENT_BUILDER = EventBuilder.builder().build();
 
   private UpperHandler handler;
 
@@ -29,7 +32,7 @@ class UpperHandlerTest {
         .payload("hello world")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getPayload()).isEqualTo("HELLO WORLD");
   }
@@ -43,7 +46,7 @@ class UpperHandlerTest {
         .payload("HeLLo WoRLd")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getPayload()).isEqualTo("HELLO WORLD");
   }
@@ -57,7 +60,7 @@ class UpperHandlerTest {
         .payload("HELLO WORLD")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getPayload()).isEqualTo("HELLO WORLD");
   }
@@ -71,7 +74,7 @@ class UpperHandlerTest {
         .payload("")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getPayload()).isEqualTo("");
   }
@@ -85,7 +88,7 @@ class UpperHandlerTest {
         .payload("test")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getSource()).isEqualTo("upper");
   }
@@ -99,7 +102,7 @@ class UpperHandlerTest {
         .payload("test")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getTarget()).isEqualTo("client");
   }
@@ -114,7 +117,7 @@ class UpperHandlerTest {
         .metadata(Map.of("traceId", "abc123"))
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getMetadata()).containsEntry("traceId", "abc123");
   }
@@ -129,7 +132,7 @@ class UpperHandlerTest {
         .payload("test")
         .build();
 
-    Event result = handler.handle(input, null);
+    Event result = handler.handle(input, EVENT_BUILDER, null);
 
     assertThat(result.getParameters()).containsEntry("locale", "en-US");
   }
@@ -143,7 +146,7 @@ class UpperHandlerTest {
         .payload(12345)
         .build();
 
-    assertThatThrownBy(() -> handler.handle(input, null))
+    assertThatThrownBy(() -> handler.handle(input, EVENT_BUILDER, null))
         .isInstanceOf(ClassCastException.class);
   }
 
@@ -155,7 +158,7 @@ class UpperHandlerTest {
         .target("upper")
         .build();
 
-    assertThatThrownBy(() -> handler.handle(input, null))
+    assertThatThrownBy(() -> handler.handle(input, EVENT_BUILDER, null))
         .isInstanceOf(NullPointerException.class);
   }
 }

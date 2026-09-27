@@ -17,7 +17,8 @@ import java.lang.annotation.Target;
  * })
  * public class MessageContentResource implements EventHandler {
  *   &#64;Override
- *   public Event handle(Event event, Dispatcher dispatcher) throws EventHandlingException {
+ *   public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+ *       throws EventHandlingException {
  *     // Implementation
  *   }
  * }

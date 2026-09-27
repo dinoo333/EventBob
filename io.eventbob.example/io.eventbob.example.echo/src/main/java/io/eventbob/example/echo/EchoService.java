@@ -2,6 +2,7 @@ package io.eventbob.example.echo;
 
 import io.eventbob.core.Dispatcher;
 import io.eventbob.core.Event;
+import io.eventbob.core.EventBuilder;
 import io.eventbob.core.EventHandlingException;
 
 /**
@@ -16,24 +17,21 @@ public class EchoService {
   /**
    * Processes echo request by calling lower and upper capabilities.
    *
-   * @param event the echo event
+   * @param event        the echo event
+   * @param eventBuilder the event builder
    * @return combined result from lower and upper
    * @throws EventHandlingException if dispatch fails event
    */
-  public Event processEcho(Event event, Dispatcher dispatcher) throws EventHandlingException {
-    Event lowerRequest = event
-        .toBuilder("echo", "lower")
-        .build(event.getPayload());
+  public Event processEcho(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
+      throws EventHandlingException {
+    Event lowerRequest = eventBuilder.build(event, "echo", "lower", event.getPayload());
     Event lowerResponse = dispatcher.send(lowerRequest, (err, evt) -> null, 1000);
 
-    Event upperRequest = event
-        .toBuilder("echo", "upper")
-        .build(event.getPayload());
+    Event upperRequest = eventBuilder.build(event, "echo", "upper", event.getPayload());
     Event upperResponse = dispatcher.send(upperRequest, (err, evt) -> null, 1000);
 
-    return event
-        .toBuilder("echo", event.getSource())
-        .build(lowerResponse.getPayload() + " " + upperResponse.getPayload());
+    return eventBuilder.build(event, "echo", event.getSource(),
+        lowerResponse.getPayload() + " " + upperResponse.getPayload());
   }
 
   /**
@@ -43,10 +41,9 @@ public class EchoService {
    * @param dispatcher the dispatcher (not used by this method)
    * @return reversed string event
    */
-  public Event processInvert(Event event, Dispatcher dispatcher) {
-    return event
-        .toBuilder("invert", event.getSource())
-        .build(new StringBuilder((String) event.getPayload())
+  public Event processInvert(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
+    return eventBuilder.build(event, "invert", event.getSource(),
+        new StringBuilder((String) event.getPayload())
             .reverse()
             .toString());
   }

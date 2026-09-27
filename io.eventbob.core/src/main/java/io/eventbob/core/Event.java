@@ -56,27 +56,10 @@ public final class Event {
   /**
    * Create a new builder pre-populated with a deep copy of this event's data.
    */
-  public Builder toBuilder() {
+  Builder toBuilder() {
     return new Builder()
         .source(this.source)
         .target(this.target)
-        .parameters(this.parameters)
-        .metadata(this.metadata)
-        .payload(this.payload);
-  }
-
-  /**
-   * Create a new builder pre-populated with a deep copy of this event's data, but with a new
-   * source and target.
-   *
-   * @param source The source
-   * @param target The target
-   * @return The builder.
-   */
-  public Builder toBuilder(String source, String target) {
-    return new Builder()
-        .source(source)
-        .target(target)
         .parameters(this.parameters)
         .metadata(this.metadata)
         .payload(this.payload);
@@ -139,8 +122,8 @@ public final class Event {
   public static final class Builder {
     private String source;
     private String target;
-    private Map<String, Object> parameters = Collections.emptyMap();
-    private Map<String, Object> metadata = Collections.emptyMap();
+    private Map<String, Object> parameters = new LinkedHashMap<>();
+    private Map<String, Object> metadata = new LinkedHashMap<>();
     private Object payload;
 
     private static Map<String, Object> mutable(Map<String, Object> m) {
@@ -189,6 +172,24 @@ public final class Event {
     public Builder metadata(Map<String, Object> metadata) {
       this.metadata = mutable(metadata);
       return this;
+    }
+
+    /**
+     * Return the live, mutable parameters map for in-progress construction.
+     *
+     * @return The mutable parameters map
+     */
+    public Map<String, Object> getParameters() {
+      return parameters;
+    }
+
+    /**
+     * Return the live, mutable metadata map for in-progress construction.
+     *
+     * @return The mutable metadata map
+     */
+    public Map<String, Object> getMetadata() {
+      return metadata;
     }
 
     /**

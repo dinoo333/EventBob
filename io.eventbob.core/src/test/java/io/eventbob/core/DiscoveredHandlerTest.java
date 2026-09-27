@@ -38,7 +38,7 @@ class DiscoveredHandlerTest {
 
   private static class TestHandler implements EventHandler {
     @Override
-    public Event handle(Event event, Dispatcher dispatcher) {
+    public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
       return event; // Test stub implementation
     }
   }

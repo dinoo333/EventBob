@@ -156,6 +156,21 @@ class EventTest {
   }
 
   @Test
+  void bareBuilderGetParametersAndGetMetadataAreMutableBeforeBuild() {
+    Event.Builder builder = Event.builder()
+        .source("svc")
+        .target("target");
+
+    builder.getParameters().put("k1", "v1");
+    builder.getMetadata().put("k2", "v2");
+
+    Event e = builder.build();
+
+    assertThat(e.getParameters()).containsExactly(entry("k1", "v1"));
+    assertThat(e.getMetadata()).containsExactly(entry("k2", "v2"));
+  }
+
+  @Test
   void nullPayloadAllowed() {
     Event e = Event
         .builder()

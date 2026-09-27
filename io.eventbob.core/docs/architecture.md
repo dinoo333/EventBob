@@ -101,6 +101,8 @@ graph TD
 - Capability marker: a repeatable declaration that binds a handler implementation to one or more capability identifiers.
 - Standard metadata vocabulary: a vocabulary of well-known metadata key names for routing and observability.
 - Failure types: a hierarchy of typed failures covering handler errors and routing misses.
+- EventBuilder: a generic, route-keyed extension point invoked during event construction; handlers
+  register callbacks per source/target route to customize outbound events for that route.
 
 **Inbound dependencies:** none — this is the innermost layer.
 **Outbound dependencies:** JDK only.

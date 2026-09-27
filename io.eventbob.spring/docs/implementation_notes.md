@@ -36,7 +36,7 @@
 
 - **Null-dispatcher call-time injection in `EventBobConfig`**: Inline lifecycles are initialised with
   `LifecycleContext.of(Map.of(), null)`. The null dispatcher is intentional: handlers receive the dispatcher as a
-  parameter of `handle(Event, Dispatcher)` at event-processing time. JAR-based loaders are constructed with
+  parameter of `handle(Event, EventBuilder, Dispatcher)` at event-processing time. JAR-based loaders are constructed with
   `HandlerLoader.lifecycleLoader(handlerJarPaths, null)` for the same reason.
 
 - **Fail-fast duplicate capability detection across sources**: `EventBobConfig.loadAllHandlers()` checks for duplicate

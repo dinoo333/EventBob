@@ -46,6 +46,18 @@ loaders.
   itself, following the companion factory pattern. `configuration` must not be null (validated immediately with
   `Objects.requireNonNull`); `dispatcher` may be null when call-time injection is used.
 
+- **Route-keyed extension point with a dedicated key record**: `EventBuilder` keys its per-route
+  callback lists with a private `RouteKey(String source, String target)` record rather than a
+  concatenated string (`source + "/" + target`), which avoided a collision hazard: distinct routes
+  such as `("a/b", "c")` and `("a", "b/c")` would otherwise concatenate to the same string key.
+  Callbacks for a route accumulate via `computeIfAbsent(routeKey, k -> new ArrayList<>()).add(...)`
+  and run in registration order when `build(...)` matches that route; an unmatched route is a
+  no-op. `Event.Builder`'s new `getParameters()`/`getMetadata()` return the live, mutable internal
+  maps directly — a scratch/in-progress contract intended for use only before `.build()` by
+  callbacks mutating an in-flight event. This is deliberately different from `Event`'s own
+  `getParameters()`/`getMetadata()`, which return unmodifiable defensive copies of a finished
+  value; the two getter pairs share a name but not a contract.
+
 ### 3 Coding problems
 
 - **YAML configuration loading not implemented**: `LifecycleHandlerLoader.loadConfiguration()` always returns
