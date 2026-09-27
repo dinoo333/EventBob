@@ -75,7 +75,7 @@ Create handlers that implement `EventHandler` and annotate with `@Capability`:
 public class EchoHandler implements EventHandler {
   @Override
   public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
-    return eventBuilder.build(event, event.getTarget(), event.getSource(), event.getPayload());
+    return eventBuilder.response(event).build();
   }
 }
 ```
@@ -181,12 +181,13 @@ public class EchoHandler implements EventHandler {
     // Call remote upper capability via HTTP
     Event upperResult = dispatcher
         .dispatch(
-            eventBuilder.build(event, event.getTarget(), "upper", event.getPayload())
+            eventBuilder.request(event, "upper").payload(event.getPayload()).build()
         )
         .join();
 
-    return eventBuilder.build(
-        event, event.getTarget(), event.getSource(), "Echo: " + upperResult.getPayload());
+    return eventBuilder.response(event)
+        .payload("Echo: " + upperResult.getPayload())
+        .build();
   }
 }
 ```

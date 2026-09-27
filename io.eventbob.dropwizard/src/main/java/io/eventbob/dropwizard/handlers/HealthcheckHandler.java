@@ -18,6 +18,6 @@ public class HealthcheckHandler implements EventHandler {
   @Override
   public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
       throws EventHandlingException {
-    return eventBuilder.build(event, event.getTarget(), event.getSource(), true);
+    return eventBuilder.response(event).payload(true).build();
   }
 }
