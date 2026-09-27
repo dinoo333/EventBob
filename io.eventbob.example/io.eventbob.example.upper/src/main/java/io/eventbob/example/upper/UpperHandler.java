@@ -38,6 +38,6 @@ public class UpperHandler implements EventHandler {
       throws EventHandlingException {
     String input = (String) event.getPayload();
     String uppercased = upperService.processUppercase(input, dispatcher);
-    return eventBuilder.build(event, "upper", event.getSource(), uppercased);
+    return eventBuilder.response(event).payload(uppercased).build();
   }
 }

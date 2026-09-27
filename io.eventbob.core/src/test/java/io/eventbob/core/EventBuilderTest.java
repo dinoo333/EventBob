@@ -19,59 +19,60 @@ class EventBuilderTest {
   }
 
   @Test
-  void policyRunsForMatchingRouteAndMutationIsReflected() {
+  void requestPolicyRunsForMatchingRouteAndMutationIsReflected() {
     EventBuilder builder = EventBuilder
         .builder()
-        .policy("a", "b", eb -> eb.getParameters().put("touched", "yes"))
+        .requestPolicy("template-target", "b", eb -> eb.getParameters().put("touched", "yes"))
         .build();
 
-    Event result = builder.build(template(), "a", "b", "payload");
+    Event result = builder.request(template(), "b").payload("payload").build();
 
     assertThat(result.getParameters()).containsEntry("touched", "yes");
-    assertThat(result.getSource()).isEqualTo("a");
+    assertThat(result.getSource()).isEqualTo("template-target");
     assertThat(result.getTarget()).isEqualTo("b");
     assertThat(result.getPayload()).isEqualTo("payload");
   }
 
   @Test
-  void multiplePoliciesForSameRouteAccumulateAndRunInRegistrationOrder() {
+  void multipleRequestPoliciesForSameRouteAccumulateAndRunInRegistrationOrder() {
     List<String> order = new ArrayList<>();
     EventBuilder builder = EventBuilder
         .builder()
-        .policy("a", "b", eb -> order.add("first"))
-        .policy("a", "b", eb -> order.add("second"))
+        .requestPolicy("template-target", "b", eb -> order.add("first"))
+        .requestPolicy("template-target", "b", eb -> order.add("second"))
         .build();
 
-    builder.build(template(), "a", "b", null);
+    builder.request(template(), "b").build();
 
     assertThat(order).containsExactly("first", "second");
   }
 
   @Test
-  void differentRoutesStayIndependentDespiteConcatenationCollision() {
+  void differentRequestRoutesStayIndependentDespiteConcatenationCollision() {
     EventBuilder builder = EventBuilder
         .builder()
-        .policy("a/b", "c", eb -> eb.getParameters().put("route", "a/b|c"))
-        .policy("a", "b/c", eb -> eb.getParameters().put("route", "a|b/c"))
+        .requestPolicy("a/b", "c", eb -> eb.getParameters().put("route", "a/b|c"))
+        .requestPolicy("a", "b/c", eb -> eb.getParameters().put("route", "a|b/c"))
         .build();
 
-    Event result = builder.build(template(), "a/b", "c", null);
+    Event fromAb = Event.builder().source("x").target("a/b").build();
+    Event result = builder.request(fromAb, "c").build();
 
     assertThat(result.getParameters())
         .containsExactly(Map.entry("route", "a/b|c"));
   }
 
   @Test
-  void unmatchedRouteBuildIsNoOp() {
+  void unmatchedRequestRouteBuildIsNoOp() {
     EventBuilder builder = EventBuilder
         .builder()
-        .policy("a", "b", eb -> eb.getParameters().put("touched", "yes"))
+        .requestPolicy("a", "b", eb -> eb.getParameters().put("touched", "yes"))
         .build();
 
-    Event result = builder.build(template(), "x", "y", "payload");
+    Event result = builder.request(template(), "y").payload("payload").build();
 
     assertThat(result.getParameters()).isEmpty();
-    assertThat(result.getSource()).isEqualTo("x");
+    assertThat(result.getSource()).isEqualTo("template-target");
     assertThat(result.getTarget()).isEqualTo("y");
     assertThat(result.getPayload()).isEqualTo("payload");
   }
@@ -79,12 +80,13 @@ class EventBuilderTest {
   @Test
   void builderReuseAfterBuildDoesNotAffectAlreadyBuiltEventBuilder() {
     EventBuilder.Builder builderBuilder = EventBuilder.builder()
-        .policy("a", "b", eb -> eb.getParameters().put("first", "policy"));
+        .requestPolicy("template-target", "b", eb -> eb.getParameters().put("first", "policy"));
     EventBuilder alreadyBuilt = builderBuilder.build();
 
-    builderBuilder.policy("a", "b", eb -> eb.getParameters().put("second", "policy"));
+    builderBuilder.requestPolicy("template-target", "b",
+        eb -> eb.getParameters().put("second", "policy"));
 
-    Event result = alreadyBuilt.build(template(), "a", "b", null);
+    Event result = alreadyBuilt.request(template(), "b").build();
 
     assertThat(result.getParameters()).containsExactly(Map.entry("first", "policy"));
   }
@@ -93,48 +95,116 @@ class EventBuilderTest {
   void policyRegistrationFailsFastOnInvalidArguments() {
     EventBuilder.Builder builder = EventBuilder.builder();
 
-    assertThatThrownBy(() -> builder.policy(null, "t", eb -> {}))
+    assertThatThrownBy(() -> builder.requestPolicy(null, "t", eb -> {}))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("source");
 
-    assertThatThrownBy(() -> builder.policy("", "t", eb -> {}))
+    assertThatThrownBy(() -> builder.requestPolicy("", "t", eb -> {}))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("source");
 
-    assertThatThrownBy(() -> builder.policy("s", null, eb -> {}))
+    assertThatThrownBy(() -> builder.requestPolicy("s", null, eb -> {}))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("target");
 
-    assertThatThrownBy(() -> builder.policy("s", "t", null))
+    assertThatThrownBy(() -> builder.requestPolicy("s", "t", null))
+        .isInstanceOf(NullPointerException.class);
+
+    assertThatThrownBy(() -> builder.responsePolicy(null, "t", eb -> {}))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("source");
+
+    assertThatThrownBy(() -> builder.responsePolicy("", "t", eb -> {}))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("source");
+
+    assertThatThrownBy(() -> builder.responsePolicy("s", null, eb -> {}))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("target");
+
+    assertThatThrownBy(() -> builder.responsePolicy("s", "t", null))
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
-  void adviceMutatesParametersAndMetadataVisibleInBuiltEvent() {
+  void requestPolicyMutatesParametersAndMetadataVisibleInBuiltEvent() {
     EventBuilder builder = EventBuilder
         .builder()
-        .policy("a", "b", eb -> {
+        .requestPolicy("template-target", "b", eb -> {
           eb.getParameters().put("p1", "v1");
           eb.getMetadata().put("m1", "v1");
         })
         .build();
 
-    Event result = builder.build(template(), "a", "b", null);
+    Event result = builder.request(template(), "b").build();
 
     assertThat(result.getParameters()).containsExactly(Map.entry("p1", "v1"));
     assertThat(result.getMetadata()).containsExactly(Map.entry("m1", "v1"));
   }
 
   @Test
-  void laterPolicyReplaceClobbersEarlierPolicyGetterMutation() {
+  void laterRequestPolicyReplaceClobbersEarlierPolicyGetterMutation() {
     EventBuilder builder = EventBuilder
         .builder()
-        .policy("a", "b", eb -> eb.getParameters().put("a", "1"))
-        .policy("a", "b", eb -> eb.parameters(Map.of("b", "2")))
+        .requestPolicy("template-target", "b", eb -> eb.getParameters().put("a", "1"))
+        .requestPolicy("template-target", "b", eb -> eb.parameters(Map.of("b", "2")))
         .build();
 
-    Event result = builder.build(template(), "a", "b", null);
+    Event result = builder.request(template(), "b").build();
 
     assertThat(result.getParameters()).containsExactly(Map.entry("b", "2"));
+  }
+
+  @Test
+  void responseSwapsSourceAndTargetAndRunsResponsePolicies() {
+    EventBuilder builder = EventBuilder
+        .builder()
+        .responsePolicy("template-target", "template-source",
+            eb -> eb.getParameters().put("touched", "yes"))
+        .build();
+
+    Event result = builder.response(template()).payload("payload").build();
+
+    assertThat(result.getSource()).isEqualTo("template-target");
+    assertThat(result.getTarget()).isEqualTo("template-source");
+    assertThat(result.getParameters()).containsEntry("touched", "yes");
+    assertThat(result.getPayload()).isEqualTo("payload");
+  }
+
+  @Test
+  void requestPolicyDoesNotFireOnResponseForSameRouteAndViceVersa() {
+    List<String> fired = new ArrayList<>();
+    EventBuilder builder = EventBuilder
+        .builder()
+        .requestPolicy("template-target", "template-source", eb -> fired.add("request"))
+        .responsePolicy("template-target", "template-source", eb -> fired.add("response"))
+        .build();
+
+    builder.request(template(), "template-source").build();
+    assertThat(fired).containsExactly("request");
+
+    fired.clear();
+    builder.response(template()).build();
+    assertThat(fired).containsExactly("response");
+  }
+
+  @Test
+  void postHocSourceAndTargetOverrideDoesNotRerunPolicyResolution() {
+    List<String> fired = new ArrayList<>();
+    EventBuilder builder = EventBuilder
+        .builder()
+        .responsePolicy("template-target", "template-source", eb -> fired.add("original-route"))
+        .responsePolicy("overridden-source", "overridden-target",
+            eb -> fired.add("overridden-route"))
+        .build();
+
+    Event result = builder.response(template())
+        .source("overridden-source")
+        .target("overridden-target")
+        .build();
+
+    assertThat(fired).containsExactly("original-route");
+    assertThat(result.getSource()).isEqualTo("overridden-source");
+    assertThat(result.getTarget()).isEqualTo("overridden-target");
   }
 }

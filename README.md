@@ -33,7 +33,7 @@ public class EchoHandler implements EventHandler {
   @Override
   public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
       throws EventHandlingException {
-    return eventBuilder.build(event, event.getTarget(), event.getSource(), event.getPayload());
+    return eventBuilder.response(event).build();
   }
 }
 ```
@@ -105,7 +105,7 @@ public class EchoHandler implements EventHandler {
   @Override
   public Event handle(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
       throws EventHandlingException {
-    return eventBuilder.build(event, event.getTarget(), event.getSource(), event.getPayload());
+    return eventBuilder.response(event).build();
   }
 }
 ```
@@ -350,13 +350,15 @@ public class CompositeHandler implements EventHandler {
       throws EventHandlingException {
     Event uppercased = dispatcher
         .send(
-            eventBuilder.build(event, event.getTarget(), "upper", event.getPayload()),
+            eventBuilder.request(event, "upper").payload(event.getPayload()).build(),
             (error, evt) -> null
         )
         .join();
     return dispatcher
         .send(
-            eventBuilder.build(uppercased, event.getTarget(), "reverse", uppercased.getPayload()),
+            eventBuilder.request(uppercased, "reverse")
+                .payload(uppercased.getPayload())
+                .build(),
             (error, evt) -> null
         )
         .join();

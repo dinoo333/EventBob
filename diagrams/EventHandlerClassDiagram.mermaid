@@ -28,8 +28,10 @@ classDiagram
     }
 
     class EventBuilder {
-        -Map~RouteKey,List~ policies
-        +Event build(Event, String, String, Object)
+        -Map~RouteKey,List~ requestPolicies
+        -Map~RouteKey,List~ responsePolicies
+        +"Event.Builder" request(Event, String)
+        +"Event.Builder" response(Event)
         +static Builder builder()
     }
 

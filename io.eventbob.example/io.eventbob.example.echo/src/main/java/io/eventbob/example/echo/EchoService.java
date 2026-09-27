@@ -24,14 +24,17 @@ public class EchoService {
    */
   public Event processEcho(Event event, EventBuilder eventBuilder, Dispatcher dispatcher)
       throws EventHandlingException {
-    Event lowerRequest = eventBuilder.build(event, "echo", "lower", event.getPayload());
+    Event lowerRequest = eventBuilder.request(event, "lower").payload(event.getPayload())
+        .build();
     Event lowerResponse = dispatcher.send(lowerRequest, (err, evt) -> null, 1000);
 
-    Event upperRequest = eventBuilder.build(event, "echo", "upper", event.getPayload());
+    Event upperRequest = eventBuilder.request(event, "upper").payload(event.getPayload())
+        .build();
     Event upperResponse = dispatcher.send(upperRequest, (err, evt) -> null, 1000);
 
-    return eventBuilder.build(event, "echo", event.getSource(),
-        lowerResponse.getPayload() + " " + upperResponse.getPayload());
+    return eventBuilder.response(event)
+        .payload(lowerResponse.getPayload() + " " + upperResponse.getPayload())
+        .build();
   }
 
   /**
@@ -42,9 +45,10 @@ public class EchoService {
    * @return reversed string event
    */
   public Event processInvert(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
-    return eventBuilder.build(event, "invert", event.getSource(),
-        new StringBuilder((String) event.getPayload())
+    return eventBuilder.response(event)
+        .payload(new StringBuilder((String) event.getPayload())
             .reverse()
-            .toString());
+            .toString())
+        .build();
   }
 }

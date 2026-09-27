@@ -51,12 +51,24 @@ loaders.
   concatenated string (`source + "/" + target`), which avoided a collision hazard: distinct routes
   such as `("a/b", "c")` and `("a", "b/c")` would otherwise concatenate to the same string key.
   Callbacks for a route accumulate via `computeIfAbsent(routeKey, k -> new ArrayList<>()).add(...)`
-  and run in registration order when `build(...)` matches that route; an unmatched route is a
-  no-op. `Event.Builder`'s new `getParameters()`/`getMetadata()` return the live, mutable internal
-  maps directly — a scratch/in-progress contract intended for use only before `.build()` by
-  callbacks mutating an in-flight event. This is deliberately different from `Event`'s own
-  `getParameters()`/`getMetadata()`, which return unmodifiable defensive copies of a finished
-  value; the two getter pairs share a name but not a contract.
+  and run in registration order when `request(...)`/`response(...)` matches that route;
+  an unmatched route is a no-op. `Event.Builder`'s new `getParameters()`/`getMetadata()` return the
+  live, mutable internal maps directly — a scratch/in-progress contract intended for use only
+  before `.build()` by callbacks mutating an in-flight event. This is deliberately different from
+  `Event`'s own `getParameters()`/`getMetadata()`, which return unmodifiable defensive copies of a
+  finished value; the two getter pairs share a name but not a contract.
+
+- **Split request/response policy sets, eager resolution**: `EventBuilder` maintains two
+  independent `RouteKey`-keyed maps, `requestPolicies` and `responsePolicies`, populated via
+  `Builder.requestPolicy(...)`/`Builder.responsePolicy(...)`. `request(template, target)`
+  defaults `source` from `template.getTarget()` (no template default exists for `target`, so it is
+  a required argument); `response(template)` defaults both `source` and `target` via a full
+  swap of the template's target/source. Both methods resolve and run their route's policies
+  **eagerly, exactly once**, against the returned `Event.Builder`, before returning it — a caller
+  that subsequently calls `.source(...)`/`.target(...)` on that builder changes only the final
+  `Event`'s fields, not which policies already ran. The old combined `build(Event, String, String,
+  Object)` method was removed entirely (not deprecated) since it could not express two independent
+  policy sets for the same route pair.
 
 ### 3 Coding problems
 

@@ -22,7 +22,8 @@ public class LowerService {
    * @return lowercase version of input
    */
   public Event processLowercase(Event event, EventBuilder eventBuilder, Dispatcher dispatcher) {
-    return eventBuilder.build(event, "lower", event.getSource(),
-        ((String) event.getPayload()).toLowerCase());
+    return eventBuilder.response(event)
+        .payload(((String) event.getPayload()).toLowerCase())
+        .build();
   }
 }
